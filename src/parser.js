@@ -13,7 +13,9 @@ const DEFAULT_SYMBOLS = {
 };
 
 const MARKER_CHARS = '+@<>•*%';
-const MARK_RE = /^([ \t]*)([+@<>•*%]+)(?=[ \t]|$)([ \t]*)(.*)$/;
+const MARK_RE = /^([ \t]*)([+@<>•*%]+)([ \t]*)(.*)$/;
+// Without a space after the marker, only these symbols count, so "**bold**" and "%" stay plain text.
+const STRONG_MARKERS = /[+@<>•]/;
 const JIRA_RE = /(^|\s)jira:([A-Za-z][A-Za-z0-9_]*-\d+)(?![\w-])/;
 const HAS_WORD_RE = /[\p{L}\p{N}]/u;
 
@@ -43,6 +45,10 @@ function indentWidth(str) {
 function markerInfo(line) {
   const m = MARK_RE.exec(line);
   if (!m || !HAS_WORD_RE.test(m[4])) return null;
+  if (!m[3]) {
+    // "+1 for that", "<div>" and similar are not markers.
+    if (!STRONG_MARKERS.test(m[2]) || /^\d/.test(m[4]) || (m[2] === '<' && /^\/?[a-z][a-z0-9]*(\s[^<>]*)?\/?>/i.test(m[4]))) return null;
+  }
   return { indent: m[1], run: m[2], gap: m[3] || ' ', body: m[4] };
 }
 

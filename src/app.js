@@ -47,7 +47,7 @@ class App {
     this.secrets = secretApi;
     this.config = cfgMod.loadConfig(dir);
     this.stateData = cfgMod.loadState(dir);
-    this.index = new Index({ getConfig: () => this.config });
+    this.index = new Index({ getConfig: () => this.config, getNoteLinks: (file) => this.stateData.noteOf[file] || {} });
     this.undoStack = [];
     this.lastWriteAt = 0;
     this.index.refresh(this.now());
@@ -131,13 +131,27 @@ class App {
     cfgMod.saveState(this.dir, this.stateData);
   }
 
+  /** The nearest task above an unmarked line in the same file, or null. */
+  taskAbove(u) {
+    let best = null;
+    for (const t of this.index.tasks) if (t.file === u.file && t.lineIndex < u.lineIndex && (!best || t.lineIndex > best.lineIndex)) best = t;
+    return best;
+  }
+
+  /** Mark unmarked lines as notes (stored in state, never in the file). Each attaches to the task above it, if any. */
   dismiss(items) {
     for (const t of items) {
       const list = (this.stateData.dismissed[t.file] = this.stateData.dismissed[t.file] || []);
       if (!list.includes(t.textHash)) list.push(t.textHash);
+      const parent = this.taskAbove(t);
+      if (parent) {
+        const links = (this.stateData.noteOf[t.file] = this.stateData.noteOf[t.file] || {});
+        links[t.textHash] = parent.listKey;
+      }
     }
     this.saveState();
     this.undoStack.push({ type: 'dismiss', items: items.map((t) => ({ file: t.file, hash: t.textHash })) });
+    this.index.refresh(this.now());
     this.index.emit('change', this.index.rev);
   }
 
@@ -150,7 +164,7 @@ class App {
       if (!list.length) throw new HttpError(404, 'Nothing left to skip in that file');
       this.stateData.reviewed[file] = list[0].fileMtime;
       this.dismiss(list);
-      return { ok: true, message: `Skipped ${list.length} unmarked ${list.length === 1 ? 'line' : 'lines'} in ${list[0].fileLabel}`, undo: true };
+      return { ok: true, message: `Marked ${list.length} ${list.length === 1 ? 'line' : 'lines'} as notes in ${list[0].fileLabel}`, undo: true };
     }
     if (op === 'reviewFile') {
       const file = String(id).startsWith('f:') ? String(id).slice(2) : (this.index.get(id) || {}).file;
@@ -171,8 +185,12 @@ class App {
     const done = (r, message) => (r ? { ok: true, message, undo: true, focusId: r.focusId } : { ok: true, message: `No change: ${t.text}` });
     switch (op) {
       case 'dismiss':
+      case 'note': {
+        if (t.kind !== 'unmarked') return { ok: true, message: `Already a task, no action needed: ${t.text}` };
+        const parent = this.taskAbove(t);
         this.dismiss([t]);
-        return { ok: true, message: `Skipped: ${t.text}` };
+        return { ok: true, message: parent ? `Marked as a note, attached to: ${parent.text}` : `Marked as a note: ${t.text}`, undo: true };
+      }
       case 'listToggle':
         return this.listToggle(t, list);
       case 'listSet':
@@ -361,11 +379,13 @@ class App {
     if (e.type === 'dismiss') {
       for (const { file, hash } of e.items) {
         this.stateData.dismissed[file] = (this.stateData.dismissed[file] || []).filter((h) => h !== hash);
+        if (this.stateData.noteOf[file]) delete this.stateData.noteOf[file][hash];
         delete this.stateData.reviewed[file];
       }
       this.saveState();
+      this.index.refresh(this.now());
       this.index.emit('change', this.index.rev);
-      return { ok: true, message: 'Undid skip' };
+      return { ok: true, message: 'Undid mark as note' };
     }
     try {
       replaceLine(e.file, { lineIndex: e.lineIndex, expected: e.after, replacement: e.before });

@@ -213,11 +213,17 @@
       return;
     }
     const idx = activeIndex();
+    let nextId = null;
+    if (st.view === 'triage' && (op === 'todo' || op === 'note') && item.type === 'unmarked') {
+      const vis = visibleItems();
+      const nxt = vis.slice(idx + 1).find((i) => i.type === 'unmarked' && !i.known) || vis.find((i) => i.type === 'unmarked' && !i.known && i.id !== item.id);
+      nextId = nxt ? nxt.id : null;
+    }
     try {
       const res = await api('/api/action', { method: 'POST', body: { id: item.id, op, value, list } });
       announce(res.message);
       if (op === 'open') return;
-      await loadView({ focusId: res.focusId, keepIndex: idx });
+      await loadView({ focusId: nextId || res.focusId, keepIndex: idx });
     } catch (err) {
       alertMessage(err.message);
       if (err.status === 409 || err.status === 404) await loadView({ keepIndex: idx });
@@ -307,8 +313,8 @@
         notes.append(el('h3', { text: 'Nearby lines' }), el('ul', {}, ...ctx.before.map((n) => el('li', { text: `Before: ${n}` })), el('li', { text: `This line: ${item.text}` }), ...ctx.after.map((n) => el('li', { text: `After: ${n}` }))));
       }
       add('Mark as to-do (a)', () => act('todo'));
-      add('Skip this line (s)', () => act('dismiss'));
-      add('Skip all unmarked lines in this file (shift and s)', () => act('dismissFile', null, { id: `f:${fileOf(item)}`, type: 'group' }));
+      add('Mark as a note (s)', () => act('note'));
+      add('Mark all remaining lines in this file as notes (shift and s)', () => act('dismissFile', null, { id: `f:${fileOf(item)}`, type: 'group' }));
       add('Mark this file as reviewed (shift and r)', () => act('reviewFile'));
     } else {
       add('Choose lists for this task (l)', () => listKey());
@@ -659,8 +665,8 @@
     o: () => act('open'),
     u: () => undo(),
     a: () => (st.view === 'triage' ? act('todo') : announce('The a key marks unmarked lines as to-dos in the triage view. Press 0 to open triage.')),
-    s: () => (st.view === 'triage' ? act('dismiss') : announce('The s key skips unmarked lines in the triage view. Press 0 to open triage.')),
-    S: () => (st.view === 'triage' ? skipFile() : announce('Shift and s skips a whole file in the triage view. Press 0 to open triage.')),
+    s: () => (st.view === 'triage' ? act('note') : announce('The s key marks unmarked lines as notes in the triage view. Press 0 to open triage.')),
+    S: () => (st.view === 'triage' ? skipFile() : announce('Shift and s marks every remaining line in a file as a note in the triage view. Press 0 to open triage.')),
   };
 
   function reviewFile() {

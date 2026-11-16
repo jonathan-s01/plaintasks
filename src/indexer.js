@@ -62,9 +62,10 @@ function walk(folder, visit) {
 }
 
 class Index extends EventEmitter {
-  constructor({ getConfig }) {
+  constructor({ getConfig, getNoteLinks }) {
     super();
     this.getConfig = getConfig;
+    this.getNoteLinks = getNoteLinks || (() => ({}));
     this.cache = new Map();
     this.files = [];
     this.tasks = [];
@@ -215,6 +216,17 @@ class Index extends EventEmitter {
         file.taskCount += 1;
       } else unmarked.push(base);
     });
+
+    // Lines the user marked as notes in triage attach to the task they chose.
+    const links = this.getNoteLinks(file.file);
+    for (const u of unmarked) {
+      if (u.file !== file.file || !links[u.textHash]) continue;
+      const parent = tasks.find((t) => t.file === file.file && t.listKey === links[u.textHash]);
+      if (parent) {
+        parent.notes = [...parent.notes, u.text];
+        u.attachedTo = parent.text;
+      }
+    }
   }
 
   get(id) {

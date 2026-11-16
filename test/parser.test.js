@@ -24,9 +24,16 @@ test('default markers map to flags, and combine', () => {
   assert.deepEqual(f[9], ['done', 'ongoing']);
 });
 
-test('markers need a following space, so markdown bold and plain words are not tasks', () => {
-  const r = parse('**bold** text\n+1 for that\n* \n');
+test('markdown bold, "+1" and html tags are not tasks', () => {
+  const r = parse('**bold** text\n+1 for that\n* \n<div>x</div>\n%percent\n');
   assert.equal(tasks(r).length, 0);
+});
+
+test('strong markers work without a following space', () => {
+  const r = parse('+Wayne thing\n+•top 5\n@call Sam\n<go through pages\n>Erin to send\n•check sites\n');
+  assert.deepEqual(tasks(r).map((t) => t.text), ['Wayne thing', 'top 5', 'call Sam', 'go through pages', 'Erin to send', 'check sites']);
+  assert.equal(tasks(r)[0].flags.done, true);
+  assert.equal(tasks(r)[1].flags.ongoing, true);
 });
 
 test('consecutive marked lines are separate tasks; blank line ends a block', () => {

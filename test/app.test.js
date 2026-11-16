@@ -63,6 +63,22 @@ test('triage lists unmarked lines, marks them, and can skip them', async () => {
   assert.equal(fs.readFileSync(path.join(notes, 'a.txt'), 'utf8').includes('thought two'), true);
 });
 
+test('triage shows the whole file; marking a note attaches it to the task above and is undoable', async () => {
+  const { notes, app } = setup({ 'a.txt': '@ call Sam\n\nask about budget\n' });
+  const tri = () => items(app, 'triage');
+  assert.deepEqual(tri().map((i) => i.type), ['group', 'task', 'unmarked']);
+  assert.equal(app.view({ view: 'triage' }).count, 1);
+  const line = tri()[2];
+  await app.action({ id: line.id, op: 'note' });
+  const after = tri();
+  assert.equal(app.view({ view: 'triage' }).items.length, 0, 'file leaves triage once everything is reviewed');
+  assert.deepEqual(app.task(items(app, 'open')[0].id).notes, ['ask about budget']);
+  assert.equal(fs.readFileSync(path.join(notes, 'a.txt'), 'utf8'), '@ call Sam\n\nask about budget\n');
+  app.undo();
+  assert.equal(app.view({ view: 'triage' }).count, 1);
+  assert.equal(after.length, 0);
+});
+
 test('due dates accept friendly input and are written as ISO', async () => {
   const { notes, app } = setup({ 'a.txt': '@ ship it\n' });
   const t = items(app)[0];

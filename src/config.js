@@ -108,6 +108,7 @@ function loadState(dir) {
   s.lists = lists;
   delete s.mylist;
   if (typeof s.lastList !== 'string' || !lists.some((l) => l.id === s.lastList)) s.lastList = DEFAULT_LIST;
+  s.noteOf = s.noteOf && typeof s.noteOf === 'object' ? s.noteOf : {};
   s.reviewed = s.reviewed && typeof s.reviewed === 'object' ? s.reviewed : {};
   return s;
 }
