@@ -143,3 +143,40 @@ for (const [name, page] of [['list page', '/'], ['settings page', '/setup'], ['l
     }
   });
 }
+
+test('My list: l adds, g grabs, arrows reorder with announcements, Enter drops', async () => {
+  const env = await boot({ 'a.txt': '@ one\n@ two\n@ three\n' });
+  try {
+    const { window } = await openPage(env);
+    const doc = window.document;
+    const tree = doc.getElementById('tree');
+    const rows = () => [...tree.querySelectorAll('[role=treeitem]')];
+    const live = () => doc.getElementById('live').textContent;
+    await waitFor(() => rows().length === 3, 'items');
+    for (let i = 0; i < 3; i += 1) {
+      const before = live();
+      key(window, doc.activeElement, 'l');
+      await waitFor(() => live() !== before || /Added to My list/.test(live()), 'added');
+      await waitFor(() => /^On My list/.test(rows()[i].textContent.replace(/^.*?\.\s/, '')) || /On My list/.test(rows()[i].textContent), 'marker');
+      key(window, doc.activeElement, 'ArrowDown');
+    }
+    key(window, doc.activeElement, '-');
+    await waitFor(() => /My list/.test(doc.getElementById('list-heading').textContent) && rows().length === 3, 'my list view');
+    assert.deepEqual(rows().map((r) => /(one|two|three)\./.exec(r.textContent)[1]), ['one', 'two', 'three']);
+
+    key(window, rows()[0], 'g');
+    await waitFor(() => /Picked up: one/.test(live()), 'grab announced');
+    assert.equal(doc.getElementById('grab-status').hidden, false);
+    key(window, doc.activeElement, 'ArrowDown');
+    await waitFor(() => /position 2 of 3: one/.test(live()), 'move announced');
+    await waitFor(() => /one\./.test(rows()[1].textContent) && doc.activeElement === rows()[1], 'focus follows item');
+    assert.equal(doc.getElementById('grab-status').hidden, false);
+    key(window, doc.activeElement, 'Enter');
+    await waitFor(() => /Dropped at position 2 of 3: one/.test(live()), 'drop announced');
+    assert.equal(doc.getElementById('grab-status').hidden, true);
+    assert.deepEqual(env.app.view({ view: 'mylist', q: '', showCompleted: false }).items.map((i) => i.text), ['two', 'one', 'three']);
+    window.close();
+  } finally {
+    env.close();
+  }
+});

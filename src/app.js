@@ -9,7 +9,7 @@ const { Index, walk, isExcluded, modeFor, TEXT_EXT } = require('./indexer');
 const { applyOp, OpError } = require('./ops');
 const { replaceLine, ConflictError } = require('./writer');
 const { parseFriendly, formatDate, toISO } = require('./dates');
-const { VIEWS, buildView, viewCounts, untriaged } = require('./views');
+const { VIEWS, buildView, viewCounts, untriaged, myListTasks } = require('./views');
 const { convertRtfFiles } = require('./rtf');
 const { JiraClient, JiraError, KEY_RE } = require('./jira');
 const secrets = require('./secrets');
@@ -144,8 +144,20 @@ class App {
       const file = String(id).replace(/^f:/, '');
       const list = untriaged(this.index, this.stateData).filter((u) => u.file === file);
       if (!list.length) throw new HttpError(404, 'Nothing left to skip in that file');
+      this.stateData.reviewed[file] = list[0].fileMtime;
       this.dismiss(list);
       return { ok: true, message: `Skipped ${list.length} unmarked ${list.length === 1 ? 'line' : 'lines'} in ${list[0].fileLabel}`, undo: true };
+    }
+    if (op === 'reviewFile') {
+      const file = String(id).startsWith('f:') ? String(id).slice(2) : (this.index.get(id) || {}).file;
+      const f = this.index.files.find((x) => x.file === file);
+      if (!f) throw new HttpError(404, 'That file is no longer in the list. The list has been refreshed.', 'gone');
+      const prev = this.stateData.reviewed[file];
+      this.stateData.reviewed[file] = f.mtimeMs;
+      this.saveState();
+      this.undoStack.push({ type: 'reviewed', file, prev });
+      this.touchList();
+      return { ok: true, message: `Marked ${f.label} as reviewed. It returns to the new and changed filter when the file changes.`, undo: true };
     }
     if (op === 'refresh') {
       this.index.refresh(today);
@@ -157,6 +169,10 @@ class App {
       case 'dismiss':
         this.dismiss([t]);
         return { ok: true, message: `Skipped: ${t.text}` };
+      case 'listToggle':
+        return this.listToggle(t);
+      case 'listMove':
+        return this.listMove(t, value);
       case 'open':
         this.opener(t.file, t.line);
         return { ok: true, message: `Opening ${t.fileLabel}. The task is on line ${t.line}.` };
@@ -189,12 +205,69 @@ class App {
     }
   }
 
+  touchList() {
+    this.lastWriteAt = Date.now();
+    this.index.emit('change', this.index.rev);
+  }
+
+  setList(next, before, t) {
+    this.stateData.mylist = next;
+    this.saveState();
+    this.undoStack.push({ type: 'order', before, id: t.id, text: t.text });
+    if (this.undoStack.length > 100) this.undoStack.shift();
+    this.touchList();
+  }
+
+  listToggle(t) {
+    if (t.kind !== 'task') throw new HttpError(400, 'Only tasks can go on My list. Mark this line as a to-do first.');
+    const before = [...this.stateData.mylist];
+    if (before.includes(t.listKey)) {
+      this.setList(before.filter((k) => k !== t.listKey), before, t);
+      return { ok: true, message: `Removed from My list: ${t.text}`, undo: true, focusId: t.id };
+    }
+    this.setList([...before, t.listKey], before, t);
+    const n = myListTasks(this.index, this.stateData).filter((x) => !x.flags.done).length;
+    return { ok: true, message: `Added to My list, position ${n} of ${n}: ${t.text}`, undo: true, focusId: t.id };
+  }
+
+  listMove(t, how) {
+    const open = myListTasks(this.index, this.stateData).filter((x) => !x.flags.done);
+    const cur = open.findIndex((x) => x.listKey === t.listKey);
+    if (cur < 0) throw new HttpError(400, 'That task is not on My list. Press l to add it.');
+    const last = open.length - 1;
+    const to = { up: cur - 1, down: cur + 1, top: 0, bottom: last }[how];
+    if (to === undefined) throw new HttpError(400, 'Move up, down, top or bottom');
+    if (to < 0 || to > last || to === cur) {
+      return { ok: true, message: `Already ${cur === 0 && to <= cur ? 'first' : 'last'} on My list: ${t.text}`, focusId: t.id };
+    }
+    const before = [...this.stateData.mylist];
+    const next = before.filter((k) => k !== t.listKey);
+    const anchor = next.indexOf(open[to].listKey);
+    next.splice(to < cur ? anchor : anchor + 1, 0, t.listKey);
+    this.setList(next, before, t);
+    return { ok: true, message: `Moved ${to < cur ? 'up' : 'down'} to position ${to + 1} of ${open.length}: ${t.text}`, undo: true, focusId: t.id };
+  }
+
   undo() {
     const e = this.undoStack.pop();
     if (!e) throw new HttpError(400, 'Nothing to undo');
+    if (e.type === 'order') {
+      this.stateData.mylist = e.before;
+      this.saveState();
+      this.touchList();
+      return { ok: true, message: `Undid My list change: ${e.text}`, focusId: this.index.get(e.id) ? e.id : null };
+    }
+    if (e.type === 'reviewed') {
+      if (e.prev === undefined) delete this.stateData.reviewed[e.file];
+      else this.stateData.reviewed[e.file] = e.prev;
+      this.saveState();
+      this.touchList();
+      return { ok: true, message: 'Undid mark as reviewed' };
+    }
     if (e.type === 'dismiss') {
       for (const { file, hash } of e.items) {
         this.stateData.dismissed[file] = (this.stateData.dismissed[file] || []).filter((h) => h !== hash);
+        delete this.stateData.reviewed[file];
       }
       this.saveState();
       this.index.emit('change', this.index.rev);
@@ -252,10 +325,11 @@ class App {
       throw new HttpError(400, `Cannot open folder: ${abs}`);
     }
     const dirs = entries.filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => e.name).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
-    const textFiles = entries.filter((e) => e.isFile() && TEXT_EXT.has(path.extname(e.name).toLowerCase())).length;
+    const fileNames = entries.filter((e) => e.isFile() && !e.name.startsWith('.') && TEXT_EXT.has(path.extname(e.name).toLowerCase())).map((e) => e.name).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+    const textFiles = fileNames.length;
     const rtfFiles = entries.filter((e) => e.isFile() && path.extname(e.name).toLowerCase() === '.rtf').length;
     const parent = path.dirname(abs) === abs ? null : path.dirname(abs);
-    return { path: abs, parent, dirs, textFiles, rtfFiles, home: os.homedir() };
+    return { path: abs, parent, dirs, files: fileNames, textFiles, rtfFiles, home: os.homedir() };
   }
 
   folderTree(i) {

@@ -267,3 +267,14 @@ fieldset {
     background: Canvas;
   }
 }
+
+.grab-status {
+  border: 2px solid currentColor;
+  padding: 0.5rem 0.75rem;
+  font-weight: bold;
+}
+
+.grabbed {
+  outline: 3px dashed currentColor;
+  outline-offset: -3px;
+}

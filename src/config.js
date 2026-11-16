@@ -49,9 +49,13 @@ function normalizeFolder(f, { mustExist = true } = {}) {
     try {
       st = fs.statSync(abs);
     } catch {
-      throw new Error(`Folder not found: ${abs}`);
+      throw new Error(`Folder or file not found: ${abs}`);
     }
-    if (!st.isDirectory()) throw new Error(`Not a folder: ${abs}`);
+    if (st.isFile()) {
+      const ext = path.extname(abs).toLowerCase();
+      if (ext === '.rtf') throw new Error('RTF files must be converted to .txt first. Add the folder that contains it to get the conversion offer.');
+      if (!['.txt', '.md', '.text'].includes(ext)) throw new Error(`Only .txt, .md and .text files can be added: ${abs}`);
+    } else if (!st.isDirectory()) throw new Error(`Not a folder or text file: ${abs}`);
   }
   const unmarked = f.unmarked || 'notes';
   if (!UNMARKED_MODES.includes(unmarked)) throw new Error('Unmarked lines must be "notes" or "tasks"');
@@ -92,6 +96,8 @@ function saveConfig(dir, cfg) {
 function loadState(dir) {
   const s = readJson(path.join(dir, 'state.json'), { dismissed: {} });
   s.dismissed = s.dismissed || {};
+  s.mylist = Array.isArray(s.mylist) ? s.mylist.filter((k) => typeof k === 'string') : [];
+  s.reviewed = s.reviewed && typeof s.reviewed === 'object' ? s.reviewed : {};
   return s;
 }
 

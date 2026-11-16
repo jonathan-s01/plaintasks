@@ -130,3 +130,62 @@ test('jira: works unconfigured, links keys, shows status, creates issues (mock f
   assert.equal(created.key, 'ABC-99');
   assert.match(fs.readFileSync(path.join(notes, 'a.txt'), 'utf8'), /jira:ABC-99/);
 });
+
+test('My list: add, reorder, undo, survive done, and never touch the files', async () => {
+  const { notes, app } = setup({ 'a.txt': '@ alpha\n@ beta\n', 'b.txt': '@ gamma\n' });
+  const before = { a: fs.readFileSync(path.join(notes, 'a.txt'), 'utf8'), b: fs.readFileSync(path.join(notes, 'b.txt'), 'utf8') };
+  const byText = (t) => items(app).find((i) => i.text === t);
+  for (const t of ['alpha', 'beta', 'gamma']) await app.action({ id: byText(t).id, op: 'listToggle' });
+  const order = () => items(app, 'mylist').map((i) => i.text);
+  assert.deepEqual(order(), ['alpha', 'beta', 'gamma']);
+  assert.ok(byText('beta').meta.includes('On My list'));
+
+  let res = await app.action({ id: byText('gamma').id, op: 'listMove', value: 'up' });
+  assert.match(res.message, /position 2 of 3/);
+  assert.deepEqual(order(), ['alpha', 'gamma', 'beta']);
+  await app.action({ id: byText('beta').id, op: 'listMove', value: 'top' });
+  assert.deepEqual(order(), ['beta', 'alpha', 'gamma']);
+  res = await app.action({ id: byText('beta').id, op: 'listMove', value: 'up' });
+  assert.match(res.message, /Already first/);
+  app.undo();
+  assert.deepEqual(order(), ['alpha', 'gamma', 'beta']);
+
+  await app.action({ id: byText('alpha').id, op: 'toggleDone' });
+  assert.deepEqual(order(), ['gamma', 'beta'], 'done tasks leave the visible list');
+  assert.equal(fs.readFileSync(path.join(notes, 'b.txt'), 'utf8'), before.b);
+
+  const app2 = new App({ dir: app.dir, now: NOW, opener() {}, secretApi: { getJiraToken: () => null } });
+  assert.deepEqual(items(app2, 'mylist').map((i) => i.text), ['gamma', 'beta'], 'order is persisted');
+  await app.action({ id: byText('gamma').id, op: 'listToggle' });
+  assert.deepEqual(order(), ['beta']);
+});
+
+test('a single text file can be added as a source and RTF files are refused', () => {
+  const { notes, app } = setup({ 'a.txt': '@ one\n', 'b.txt': '@ two\n', 'c.rtf': '{\\rtf1 hi}' });
+  app.setFolders([{ path: path.join(notes, 'b.txt') }]);
+  assert.deepEqual(items(app).map((i) => i.text), ['two']);
+  assert.throws(() => app.setFolders([{ path: path.join(notes, 'c.rtf') }]), /converted/);
+  app.setFolders([{ path: notes }, { path: path.join(notes, 'sub') }]);
+  assert.equal(app.browse(notes).files.includes('a.txt'), true);
+});
+
+test('triage: context, progress, flags on unmarked lines, and reviewed-file filtering', async () => {
+  const { notes, app } = setup({ 'a.txt': 'Heading\nfirst thought\nsecond thought\n\nlast thought\n', 'b.txt': 'other idea\n' });
+  const tri = () => items(app, 'triage', { changedOnly: true });
+  const lines = tri().filter((i) => i.type === 'unmarked');
+  const second = lines.find((i) => i.text === 'second thought');
+  assert.ok(second.meta.some((m) => /3 of 4 to review in this file/.test(m)));
+  assert.deepEqual(second.context.before, ['Heading', 'first thought']);
+
+  await app.action({ id: second.id, op: 'important' });
+  assert.match(fs.readFileSync(path.join(notes, 'a.txt'), 'utf8'), /^\*.*second thought$/m);
+
+  const group = tri().find((i) => i.type === 'group' && /b\.txt/.test(i.text));
+  await app.action({ id: group.id, op: 'reviewFile' });
+  assert.ok(!tri().some((i) => /b\.txt/.test(i.text)), 'reviewed file is hidden in changed-only');
+  assert.ok(items(app, 'triage').some((i) => /b\.txt/.test(i.text)), 'but still listed without the filter');
+  fs.appendFileSync(path.join(notes, 'b.txt'), 'new idea\n');
+  app.index.refresh(NOW());
+  assert.ok(tri().some((i) => /b\.txt/.test(i.text)), 'a changed file returns');
+  app.undo();
+});

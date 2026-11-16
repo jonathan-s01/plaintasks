@@ -6,6 +6,7 @@ const VIEWS = [
   { id: 'open', title: 'All open tasks', hierarchical: true },
   { id: 'file', title: 'By file', hierarchical: true },
   { id: 'group', title: 'By group or project', hierarchical: true },
+  { id: 'mylist', title: 'My list', empty: 'My list is empty. Press l on any task to add it, then reorder it here with g.' },
   { id: 'due', title: 'Due soon and overdue', empty: 'No open tasks are overdue or due within 7 days.' },
   { id: 'waitingMe', title: 'Waiting on me', empty: 'Nothing is waiting on you.' },
   { id: 'waitingOthers', title: 'Waiting on others', empty: 'Nothing is waiting on someone else.' },
@@ -69,6 +70,7 @@ function describe(t, today, level, extra = {}) {
     jira: t.jira,
     fileLabel: t.fileLabel,
     line: t.line,
+    ...(t.kind === 'unmarked' ? { context: { before: t.before || [], after: t.after || [] } } : {}),
   };
 }
 
@@ -86,8 +88,14 @@ function predicates(today) {
   };
 }
 
-function untriaged(index, state) {
-  return index.unmarked.filter((u) => !((state.dismissed || {})[u.file] || []).includes(u.textHash));
+function untriaged(index, state, { changedOnly = false } = {}) {
+  const reviewed = state.reviewed || {};
+  return index.unmarked.filter((u) => !((state.dismissed || {})[u.file] || []).includes(u.textHash) && !(changedOnly && reviewed[u.file] === u.fileMtime));
+}
+
+function myListTasks(index, state) {
+  const byKey = new Map(index.tasks.map((t) => [t.listKey, t]));
+  return (state.mylist || []).map((k) => byKey.get(k)).filter(Boolean);
 }
 
 function viewCounts(index, state, today) {
@@ -95,6 +103,7 @@ function viewCounts(index, state, today) {
   const counts = {};
   for (const v of VIEWS) {
     if (v.id === 'triage') counts.triage = untriaged(index, state).length;
+    else if (v.id === 'mylist') counts.mylist = myListTasks(index, state).filter((t) => !t.flags.done).length;
     else if (v.id === 'completed') counts.completed = index.tasks.filter(preds.completed).length;
     else counts[v.id] = index.tasks.filter((t) => !t.flags.done && preds[v.id](t)).length;
   }
@@ -159,17 +168,31 @@ function buildView(index, state, opts = {}) {
   let items;
 
   if (view === 'triage') {
-    const list = untriaged(index, state).filter(match).sort((a, b) => b.fileMtime - a.fileMtime || a.fileLabel.localeCompare(b.fileLabel) || a.line - b.line);
+    const list = untriaged(index, state, { changedOnly: !!opts.changedOnly }).filter(match).sort((a, b) => b.fileMtime - a.fileMtime || a.fileLabel.localeCompare(b.fileLabel) || a.line - b.line);
     items = [];
     let cur = null;
+    let pos = 0;
+    let total = 0;
     for (const u of list) {
       if (cur !== u.file) {
         cur = u.file;
-        const n = list.filter((x) => x.file === cur).length;
-        items.push({ id: `f:${u.file}`, type: 'group', level: 1, text: u.fileLabel, words: [], meta: [n === 1 ? '1 unmarked line' : `${n} unmarked lines`], hasChildren: true, file: u.file });
+        pos = 0;
+        total = list.filter((x) => x.file === cur).length;
+        items.push({ id: `f:${u.file}`, type: 'group', level: 1, text: u.fileLabel, words: [], meta: [total === 1 ? '1 unmarked line' : `${total} unmarked lines`], hasChildren: true, file: u.file });
       }
-      items.push(describe(u, today, 2, { hideFile: false, hideGroup: false }));
+      pos += 1;
+      const it = describe(u, today, 2, { hideFile: true, hideGroup: false });
+      it.meta.push(`Line ${u.line}`, `${pos} of ${total} to review in this file`);
+      it.file = u.file;
+      items.push(it);
     }
+  } else if (view === 'mylist') {
+    items = myListTasks(index, state)
+      .filter((t) => (showCompleted || !t.flags.done) && match(t))
+      .map((t) => {
+        const p = t.parentId ? index.get(t.parentId) : null;
+        return describe(t, today, 1, { parentText: p ? p.text : null });
+      });
   } else if (view === 'open') {
     items = buildHierarchy(index, ctx, null);
   } else if (view === 'file') {
@@ -191,8 +214,18 @@ function buildView(index, state, opts = {}) {
     });
   }
 
+  if (view !== 'mylist' && view !== 'triage' && (state.mylist || []).length) {
+    const onList = new Set(state.mylist);
+    for (const i of items) {
+      const t = i.type === 'task' ? index.get(i.id) : null;
+      if (t && onList.has(t.listKey)) {
+        i.inList = true;
+        i.meta.unshift('On My list');
+      }
+    }
+  }
   const count = items.filter((i) => i.type === 'task' || i.type === 'unmarked').length;
   return { view, title: def.title, items, count, empty: def.empty || 'No open tasks.', rev: index.rev };
 }
 
-module.exports = { VIEWS, VIEW_IDS, buildView, viewCounts, describe, matcher, untriaged, DUE_SOON_DAYS };
+module.exports = { myListTasks, VIEWS, VIEW_IDS, buildView, viewCounts, describe, matcher, untriaged, DUE_SOON_DAYS };

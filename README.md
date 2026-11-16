@@ -14,7 +14,7 @@ npm start
 
 This starts the server on `http://localhost:4747` and opens Safari. If no folders are set up yet it opens the settings page. Options: `--port 4748`, `--no-open`.
 
-First run: on the settings page type a folder path (for example `~/Documents/notes`) or pick one in the folder browser, then press Add folder. Go back to the task list.
+First run: on the settings page type a folder path (for example `~/Documents/notes`) or a single `.txt`/`.md` file, or pick them in the browser, then press Add. You can add as many folders and files as you like; each folder lets you tick which files and subfolders to include. Go back to the task list.
 
 Your settings live outside the repo, in `~/.config/plaintasks/` (override with `PLAINTASKS_CONFIG_DIR`). They are never committed.
 
@@ -48,7 +48,8 @@ Website relaunch
 - **Jira link.** `jira:ABC-123` ties a task to an issue.
 - **Per-file legends.** A file can define its own symbols with lines like `+ = done`, `nothing = to do`, or `• and indenting = subtasks`. `nothing = to do` makes unmarked lines tasks in that file; `nothing = notes` makes them notes. Legend lines are not tasks.
 - **Unmarked lines per folder.** Each watched folder has a setting: unmarked lines are *notes* (default) or *tasks*. Individual files can override it in the settings page. Precedence: file legend, then per-file setting, then folder setting.
-- **Triage.** Unmarked lines in notes-mode files show up in the Triage view. Press `a` to turn one into a `@` to-do, `s` to skip it.
+- **Triage (initial review).** Unmarked lines in notes-mode files show up in the Triage view, grouped by file, newest file first. Each line is read with its position ("3 of 12 to review in this file") and Enter shows the lines around it. `a` makes it a `@` to-do, `x`, `m`, `w`, `i`, `p` mark it done, waiting or important straight away, `s` skips the line, Shift+`s` skips the whole file, `n` / Shift+`n` jump to the next / previous file, Shift+`r` marks a file as reviewed, and `f` shows only files that are new or changed since you reviewed them.
+- **My list.** A personal, reorderable working list that is independent of which file a task lives in. Press `l` on any task to add or remove it, press `-` to open My list. Order is stored in `~/.config/plaintasks/state.json`, never in your text files, and is matched to tasks by file and task text, so it survives marking done or setting dates but resets if you reword the task. Reorder with Option+Up / Option+Down, or press `g` to pick a task up, then Up, Down, Home and End move it and Enter or Escape drops it. Each move is announced with the new position ("Moved down to position 3 of 7"). `u` undoes a move.
 
 ## Safe writing
 
@@ -61,7 +62,7 @@ Website relaunch
 
 ## Views
 
-All open, by file, by group or project, due soon and overdue, waiting on me, waiting on others, important, in progress, completed, and triage. Completed tasks are hidden everywhere except the Completed view; `c` shows them in the others. Search filters the current view.
+All open, by file, by group or project, due soon and overdue, waiting on me, waiting on others, important, in progress, completed, triage, and My list. Completed tasks are hidden everywhere except the Completed view; `c` shows them in the others. Search filters the current view.
 
 ## Keyboard
 
@@ -80,7 +81,10 @@ Press `?` in the app for the list. The short version:
 | `o` | open the source file in your editor |
 | `u` | undo |
 | `a` / `s` / Shift+`s` | triage: mark as to-do / skip / skip the whole file |
-| `1`–`9`, `0` | switch view (1 open, 2 file, 3 group, 4 due, 5 waiting on me, 6 waiting on others, 7 important, 8 in progress, 9 completed, 0 triage) |
+| `n` / Shift+`n`, Shift+`r`, `f` | triage: next / previous file, mark file reviewed, only new or changed files |
+| `l` | add to / remove from My list |
+| `g`, Option+Up / Down | My list: pick up and reorder with arrows, or move one place |
+| `1`–`9`, `0`, `-` | switch view (1 open, 2 file, 3 group, 4 due, 5 waiting on me, 6 waiting on others, 7 important, 8 in progress, 9 completed, 0 triage, minus My list) |
 | `v` | jump to the view menu |
 | `c` | show / hide completed |
 | `/` | search |

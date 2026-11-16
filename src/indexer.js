@@ -28,6 +28,16 @@ function modeFor(folder, rel) {
 /** Walk a watched folder, yielding text files, rtf files and directories (relative, "/"-separated). */
 function walk(folder, visit) {
   const root = folder.path;
+  let rootStat = null;
+  try {
+    rootStat = fs.statSync(root);
+  } catch {
+    return;
+  }
+  if (rootStat.isFile()) {
+    visit({ type: 'file', rel: path.basename(root), abs: root, ext: path.extname(root).toLowerCase() });
+    return;
+  }
   const rec = (dirAbs, relDir) => {
     let entries;
     try {
@@ -84,7 +94,8 @@ class Index extends EventEmitter {
         problems.push({ folder: folder.path, message: 'Folder not found' });
         return;
       }
-      const folderName = path.basename(folder.path);
+      const isFile = fs.statSync(folder.path).isFile();
+      const folderName = path.basename(isFile ? path.dirname(folder.path) : folder.path);
       walk(folder, (e) => {
         if (e.type !== 'file' || isExcluded(e.rel, folder.excluded)) return;
         if (e.ext === '.rtf') {
@@ -155,8 +166,28 @@ class Index extends EventEmitter {
       occ.set(k, n);
       return sha(`${file.file}\0${k}\0${n}`);
     });
+    const textOcc = new Map();
+    const listKeys = parsed.items.map((it) => {
+      const n = (textOcc.get(it.text) || 0) + 1;
+      textOcc.set(it.text, n);
+      return sha(`${file.file}\0${it.text}\0${n}`);
+    });
+    const unmarkedItems = parsed.items.filter((it) => it.kind !== 'task');
     parsed.items.forEach((it, i) => {
+      const nearby = (from, step) => {
+        const out = [];
+        for (let j = from; j >= 0 && j < parsed.lines.length && out.length < 2; j += step) {
+          const t = parsed.lines[j].trim();
+          if (t) out.push(t);
+          else break;
+        }
+        return step < 0 ? out.reverse() : out;
+      };
       const base = {
+        listKey: listKeys[i],
+        before: it.kind === 'task' ? [] : nearby(it.lineIndex - 1, -1),
+        after: it.kind === 'task' ? [] : nearby(it.lineIndex + 1, 1),
+        fileUnmarkedTotal: unmarkedItems.length,
         id: ids[i],
         kind: it.kind,
         file: file.file,

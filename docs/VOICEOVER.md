@@ -51,6 +51,16 @@ Automated tests (jsdom and axe-core) cover structure and keyboard logic, but the
 - `v` jumps to the View menu; `c` toggles completed; `/` goes to search; Escape returns to the list.
 - `?` opens the shortcuts table.
 
+**Triage (initial review)**
+- `0`, then Down: each unmarked line is read with "Line N. 3 of 12 to review in this file". Enter shows the nearby lines.
+- `a` marks it as a to-do and focus lands on the next line. `s` skips. `n` jumps to the next file heading, Shift+`n` back. Shift+`r` marks the file reviewed. `f` toggles "new or changed files only"; confirm it is announced.
+
+**My list and reordering**
+- On any task press `l`: "Added to My list, position N of N". The task is then read with "On My list".
+- `-` opens My list. Press `g` on a task: you should hear "Picked up: ... Position 2 of 5". Press Down: "Moved down to position 3 of 5" and focus stays on the same task. Press Enter: "Dropped at position 3 of 5".
+- Also try Option+Up and Option+Down without picking up. Check that this does not clash with VoiceOver's own keys; tell me if it does.
+- `u` undoes a move. The text files must not change when you reorder.
+
 **External edits**
 - Edit the file in TextEdit and save. The list should refresh without losing your place. If your VoiceOver cursor was in the list, you may hear "The list was updated because a file changed".
 

@@ -26,16 +26,19 @@
     <section aria-labelledby="add-h">
       <h2 id="add-h">Add a folder</h2>
       <div class="field">
-        <label for="add-path">Folder path</label>
+        <label for="add-path">Folder or file path</label>
         <input id="add-path" type="text" autocomplete="off" spellcheck="false" aria-describedby="add-hint">
-        <span id="add-hint" class="hint">Type or paste a path, for example ~/Documents/notes. Or use the folder browser below.</span>
+        <span id="add-hint" class="hint">Type or paste a folder or a single .txt or .md file, for example ~/Documents/notes. Or use the browser below. You can add as many as you like.</span>
       </div>
-      <p><button type="button" id="add-btn">Add folder</button></p>
+      <p><button type="button" id="add-btn">Add folder or file</button></p>
 
       <h3 id="browse-h">Folder browser</h3>
       <p id="browse-path"></p>
       <p><button type="button" id="browse-up">Go up one folder</button> <button type="button" id="browse-use">Use this folder</button></p>
-      <ul id="browse-list"></ul>
+      <h4 id="browse-folders-h">Subfolders</h4>
+      <ul id="browse-list" aria-labelledby="browse-folders-h"></ul>
+      <h4 id="browse-files-h">Text files in this folder</h4>
+      <ul id="browse-files" aria-labelledby="browse-files-h"></ul>
     </section>
 
     <section aria-labelledby="jira-h">

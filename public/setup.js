@@ -104,7 +104,7 @@
   async function addFolder(p) {
     const path = (p || '').trim();
     if (!path) {
-      alertMessage('Enter a folder path first.');
+      alertMessage('Enter a folder or file path first.');
       $('add-path').focus();
       return;
     }
@@ -140,6 +140,12 @@
       ul.append(el('li', {}, el('button', { type: 'button', text: `Open ${d}`, onclick: () => browse(`${browseInfo.path}/${d}`).then(() => $('browse-path').focus()) })));
     }
     if (!browseInfo.dirs.length) ul.append(el('li', { text: 'No subfolders.' }));
+    const fl = $('browse-files');
+    fl.replaceChildren();
+    for (const f of browseInfo.files || []) {
+      fl.append(el('li', {}, el('button', { type: 'button', text: `Add file ${f}`, onclick: () => addFolder(`${browseInfo.path}/${f}`) })));
+    }
+    if (!(browseInfo.files || []).length) fl.append(el('li', { text: 'No text files here.' }));
   }
 
   $('add-btn').addEventListener('click', () => addFolder($('add-path').value));

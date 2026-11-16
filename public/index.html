@@ -31,6 +31,7 @@
   <main>
     <h2 id="list-heading" tabindex="-1">Loading</h2>
     <p id="list-status"></p>
+    <p id="grab-status" class="grab-status" hidden></p>
     <div id="tree-wrap">
       <div id="tree"></div>
       <p id="empty" tabindex="-1" hidden></p>
@@ -107,7 +108,14 @@
         <tr><th scope="row">j</th><td>Jira: link, status, create</td></tr>
         <tr><th scope="row">o</th><td>Open the source file in your text editor</td></tr>
         <tr><th scope="row">u</th><td>Undo the last change</td></tr>
-        <tr><th scope="row">a</th><td>Triage view: mark the unmarked line as a to-do</td></tr>
+        <tr><th scope="row">l</th><td>Add the task to My list, or remove it</td></tr>
+        <tr><th scope="row">g</th><td>My list: pick up the task to reorder. Then Up, Down, Home and End move it, Enter or Escape drops it</td></tr>
+        <tr><th scope="row">Option and Up, Option and Down</th><td>My list: move the task up or down one place without picking it up</td></tr>
+        <tr><th scope="row">minus</th><td>Open My list</td></tr>
+        <tr><th scope="row">a</th><td>Triage view: mark the unmarked line as a to-do. x, m, w, i and p also work on unmarked lines</td></tr>
+        <tr><th scope="row">n, shift and n</th><td>Triage view: next or previous file</td></tr>
+        <tr><th scope="row">f</th><td>Triage view: show only files not yet reviewed or changed since review</td></tr>
+        <tr><th scope="row">shift and r</th><td>Triage view: mark the whole file as reviewed</td></tr>
         <tr><th scope="row">s</th><td>Triage view: skip the line. Shift and s skips every line in the file</td></tr>
         <tr><th scope="row">1 to 9, 0</th><td>Switch view: 1 all open, 2 by file, 3 by group, 4 due, 5 waiting on me, 6 waiting on others, 7 important, 8 in progress, 9 completed, 0 triage</td></tr>
         <tr><th scope="row">v</th><td>Jump to the view menu</td></tr>

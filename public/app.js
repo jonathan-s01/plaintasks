@@ -5,7 +5,7 @@
   const $ = (id) => document.getElementById(id);
   const params = new URLSearchParams(location.search);
   const listMode = params.get('ui') === 'list';
-  const VIEW_KEYS = { 1: 'open', 2: 'file', 3: 'group', 4: 'due', 5: 'waitingMe', 6: 'waitingOthers', 7: 'important', 8: 'inProgress', 9: 'completed', 0: 'triage' };
+  const VIEW_KEYS = { 1: 'open', 2: 'file', 3: 'group', 4: 'due', 5: 'waitingMe', 6: 'waitingOthers', 7: 'important', 8: 'inProgress', 9: 'completed', 0: 'triage', '-': 'mylist' };
   const store = {
     get: (k, d) => {
       try {
@@ -33,6 +33,8 @@
     activeId: null,
     jira: null,
     pendingFocus: null,
+    changedOnly: store.get('changed', '0') === '1',
+    grab: null,
   };
 
   const tree = $('tree');
@@ -111,7 +113,7 @@
         id: `item-${it.id.replace(/[^\w-]/g, '_')}`,
         'data-id': it.id,
         tabindex: it.id === st.activeId ? '0' : '-1',
-        class: [it.type === 'group' ? 'group' : '', it.due && it.due.state === 'overdue' ? 'overdue' : ''].filter(Boolean).join(' '),
+        class: [it.type === 'group' ? 'group' : '', it.id === st.grab ? 'grabbed' : '', it.due && it.due.state === 'overdue' ? 'overdue' : ''].filter(Boolean).join(' '),
       });
       node.style.setProperty('--level', String(it.level));
       if (listMode) {
@@ -130,8 +132,11 @@
     }
 
     $('list-heading').textContent = st.model.title;
+    const gi = st.grab ? vis.findIndex((i) => i.id === st.grab) : -1;
+    $('grab-status').hidden = gi < 0;
+    $('grab-status').textContent = gi < 0 ? '' : `Reordering "${vis[gi].text}", position ${gi + 1} of ${vis.length}. Up and Down move it. Home and End send it to the top or bottom. Enter or Escape drops it.`;
     const n = st.model.count;
-    $('list-status').textContent = `${n} ${st.model.view === 'triage' ? (n === 1 ? 'unmarked line' : 'unmarked lines') : n === 1 ? 'task' : 'tasks'}${st.q ? ` matching "${st.q}"` : ''}${st.showCompleted && st.model.view !== 'completed' ? ', including completed' : ''}.`;
+    $('list-status').textContent = `${n} ${st.model.view === 'triage' ? (n === 1 ? 'unmarked line' : 'unmarked lines') : n === 1 ? 'task' : 'tasks'}${st.q ? ` matching "${st.q}"` : ''}${st.showCompleted && st.model.view !== 'completed' ? ', including completed' : ''}${st.changedOnly && st.model.view === 'triage' ? ', new or changed files only' : ''}.`;
   }
 
   function nodeFor(id) {
@@ -152,7 +157,7 @@
 
   async function loadView({ focusId = null, keepIndex = null, focus = true, announceText = null } = {}) {
     const [model] = await Promise.all([
-      api(`/api/view?view=${encodeURIComponent(st.view)}&q=${encodeURIComponent(st.q)}&completed=${st.showCompleted ? 1 : 0}`),
+      api(`/api/view?view=${encodeURIComponent(st.view)}&q=${encodeURIComponent(st.q)}&completed=${st.showCompleted ? 1 : 0}&changed=${st.changedOnly ? 1 : 0}`),
       loadSummary(),
     ]);
     st.model = model;
@@ -185,8 +190,18 @@
     return visibleItems().findIndex((i) => i.id === st.activeId);
   }
 
+  let queue = Promise.resolve();
+  const enqueue = (fn) => {
+    queue = queue.then(fn, fn);
+    return queue;
+  };
+
   async function act(op, value, item = currentItem()) {
-    if (!item) return;
+    if (!item) return undefined;
+    return enqueue(() => doAct(op, value, item));
+  }
+
+  async function doAct(op, value, item) {
     const isTask = item.type === 'task' || item.type === 'unmarked';
     if (!isTask && op !== 'dismissFile') {
       announce('That is a heading, not a task.');
@@ -219,6 +234,7 @@
     st.view = id;
     store.set('view', id);
     st.collapsed.clear();
+    st.grab = null;
     st.activeId = null;
     const model = await loadView({ focus: !fromSelect });
     $('view').value = id;
@@ -281,9 +297,23 @@
     box.replaceChildren();
     const add = (label, fn) => box.append(el('button', { type: 'button', text: label, onclick: async () => { closeDialog(dlg); await fn(); } }));
     if (item.type === 'unmarked') {
+      const ctx = item.context || { before: [], after: [] };
+      if (ctx.before.length || ctx.after.length) {
+        notes.append(el('h3', { text: 'Nearby lines' }), el('ul', {}, ...ctx.before.map((n) => el('li', { text: `Before: ${n}` })), el('li', { text: `This line: ${item.text}` }), ...ctx.after.map((n) => el('li', { text: `After: ${n}` }))));
+      }
       add('Mark as to-do (a)', () => act('todo'));
       add('Skip this line (s)', () => act('dismiss'));
       add('Skip all unmarked lines in this file (shift and s)', () => act('dismissFile', null, { id: `f:${fileOf(item)}`, type: 'group' }));
+      add('Mark this file as reviewed (shift and r)', () => act('reviewFile'));
+    } else {
+      add(item.inList || st.view === 'mylist' ? 'Remove from My list (l)' : 'Add to My list (l)', () => act('listToggle'));
+      if (st.view === 'mylist') {
+        add('Move up (alt and up)', () => act('listMove', 'up'));
+        add('Move down (alt and down)', () => act('listMove', 'down'));
+        add('Move to top', () => act('listMove', 'top'));
+        add('Move to bottom', () => act('listMove', 'bottom'));
+        add('Reorder with arrow keys (g)', () => startGrab());
+      }
     }
     add(item.flags.done ? 'Reopen (x)' : 'Mark done (x)', () => act('toggleDone'));
     for (const [flag, on, off, key] of FLAG_LABELS) add(`${item.flags[flag] ? off : on} (${key})`, () => act(flag));
@@ -419,7 +449,78 @@
     setActive(vis[i].id, true);
   }
 
+  function inMyList() {
+    return st.view === 'mylist';
+  }
+
+  function startGrab() {
+    const item = currentItem();
+    if (!inMyList()) {
+      announce('Reordering works in My list. Press minus to open it, or press l on a task to add it.');
+      return;
+    }
+    if (!item || item.type !== 'task') return;
+    st.grab = item.id;
+    render();
+    setActive(item.id, true);
+    const vis = visibleItems();
+    announce(`Picked up: ${item.text}. Position ${activeIndex() + 1} of ${vis.length}. Up and Down move it. Enter drops it.`);
+  }
+
+  function drop(cancelMsg) {
+    if (!st.grab) return;
+    const item = currentItem();
+    st.grab = null;
+    render();
+    setActive(st.activeId, true);
+    announce(`${cancelMsg || 'Dropped'} at position ${activeIndex() + 1} of ${visibleItems().length}${item ? `: ${item.text}` : ''}.`);
+  }
+
+  async function moveInList(how) {
+    const item = currentItem();
+    if (!inMyList()) {
+      announce('Moving works in My list. Press minus to open it, or press l on a task to add it.');
+      return;
+    }
+    if (!item || item.type !== 'task') return;
+    await act('listMove', how, item);
+    if (st.grab) {
+      st.grab = st.activeId;
+      render();
+      setActive(st.activeId, true);
+    }
+  }
+
+  function nextFile(dir = 1) {
+    const heads = visibleItems().filter((i) => i.type === 'group' && i.file);
+    if (!heads.length) {
+      announce('Open the triage view with 0 to step through files.');
+      return;
+    }
+    const cur = activeIndex();
+    const vis = visibleItems();
+    const pick = dir > 0 ? heads.find((h) => vis.indexOf(h) > cur) : [...heads].reverse().find((h) => vis.indexOf(h) < cur);
+    if (!pick) {
+      announce(dir > 0 ? 'No more files.' : 'This is the first file.');
+      return;
+    }
+    setActive(pick.id, true);
+  }
+
+  async function toggleChanged() {
+    st.changedOnly = !st.changedOnly;
+    store.set('changed', st.changedOnly ? '1' : '0');
+    const model = await loadView({ focus: true });
+    announce(`${st.changedOnly ? 'Showing only files not yet reviewed or changed since review' : 'Showing all files'}. ${model.count} ${model.count === 1 ? 'unmarked line' : 'unmarked lines'}.`);
+  }
+
   const ACTION_KEYS = {
+    l: () => act('listToggle'),
+    g: () => startGrab(),
+    n: () => nextFile(1),
+    N: () => nextFile(-1),
+    f: () => (st.view === 'triage' ? toggleChanged() : announce('The f key filters the triage view to new or changed files. Press 0 to open triage.')),
+    R: () => reviewFile(),
     x: () => act('toggleDone'),
     m: () => act('waitingOnMe'),
     w: () => act('waitingOnOthers'),
@@ -434,6 +535,17 @@
     s: () => (st.view === 'triage' ? act('dismiss') : announce('The s key skips unmarked lines in the triage view. Press 0 to open triage.')),
     S: () => (st.view === 'triage' ? skipFile() : announce('Shift and s skips a whole file in the triage view. Press 0 to open triage.')),
   };
+
+  function reviewFile() {
+    if (st.view !== 'triage') {
+      announce('Shift and r marks a file as reviewed in the triage view. Press 0 to open triage.');
+      return;
+    }
+    const item = currentItem();
+    if (!item) return;
+    const file = item.type === 'group' ? item.file : fileOf(item);
+    if (file) act('reviewFile', null, { id: `f:${file}`, type: 'group' });
+  }
 
   function skipFile() {
     const item = currentItem();
@@ -466,7 +578,7 @@
       api('/api/action', { method: 'POST', body: { op: 'refresh' } }).then(() => loadView({ focus: false })).then(() => announce('List refreshed.'));
       return true;
     }
-    if (/^[0-9]$/.test(e.key) && VIEW_KEYS[e.key]) {
+    if (/^[0-9-]$/.test(e.key) && VIEW_KEYS[e.key]) {
       switchView(VIEW_KEYS[e.key]);
       return true;
     }
@@ -474,7 +586,21 @@
   }
 
   tree.addEventListener('keydown', (e) => {
+    if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault();
+      moveInList(e.key === 'ArrowUp' ? 'up' : 'down');
+      return;
+    }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (st.grab) {
+      const moves = { ArrowUp: 'up', ArrowDown: 'down', Home: 'top', End: 'bottom' };
+      e.preventDefault();
+      if (moves[e.key]) moveInList(moves[e.key]);
+      else if (e.key === 'Enter' || e.key === 'g' || e.key === ' ') drop('Dropped');
+      else if (e.key === 'Escape') drop('Dropped');
+      else announce('Reordering. Up and Down move the task. Enter drops it.');
+      return;
+    }
     const item = currentItem();
     switch (e.key) {
       case 'ArrowDown':

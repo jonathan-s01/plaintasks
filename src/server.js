@@ -97,7 +97,7 @@ function createServer(app, { token = crypto.randomBytes(24).toString('hex') } = 
         case '/api/summary':
           return send(res, 200, app.summary());
         case '/api/view':
-          return send(res, 200, app.view({ view: q.get('view'), q: q.get('q') || '', showCompleted: q.get('completed') === '1' }));
+          return send(res, 200, app.view({ view: q.get('view'), q: q.get('q') || '', showCompleted: q.get('completed') === '1', changedOnly: q.get('changed') === '1' }));
         case '/api/detail':
           return send(res, 200, app.detail(q.get('id')));
         case '/api/config':
