@@ -49,7 +49,7 @@ Website relaunch
 - **Per-file legends.** A file can define its own symbols with lines like `+ = done`, `nothing = to do`, or `• and indenting = subtasks`. `nothing = to do` makes unmarked lines tasks in that file; `nothing = notes` makes them notes. Legend lines are not tasks.
 - **Unmarked lines per folder.** Each watched folder has a setting: unmarked lines are *notes* (default) or *tasks*. Individual files can override it in the settings page. Precedence: file legend, then per-file setting, then folder setting.
 - **Triage (initial review).** Unmarked lines in notes-mode files show up in the Triage view, grouped by file, newest file first. Each line is read with its position ("3 of 12 to review in this file") and Enter shows the lines around it. `a` makes it a `@` to-do, `x`, `m`, `w`, `i`, `p` mark it done, waiting or important straight away, `s` skips the line, Shift+`s` skips the whole file, `n` / Shift+`n` jump to the next / previous file, Shift+`r` marks a file as reviewed, and `f` shows only files that are new or changed since you reviewed them.
-- **My list.** A personal, reorderable working list that is independent of which file a task lives in. Press `l` on any task to add or remove it, press `-` to open My list. Order is stored in `~/.config/plaintasks/state.json`, never in your text files, and is matched to tasks by file and task text, so it survives marking done or setting dates but resets if you reword the task. Reorder with Option+Up / Option+Down, or press `g` to pick a task up, then Up, Down, Home and End move it and Enter or Escape drops it. Each move is announced with the new position ("Moved down to position 3 of 7"). `u` undoes a move.
+- **Lists (My list and your own).** Personal, reorderable working lists that are independent of which file a task lives in. You start with one, **My list**; make more in Manage lists (Shift+`m` or the Manage lists button) or from the chooser. A task can be on several lists. Press `l` on a task: with only My list it adds or removes straight away; with several lists a dialog shows a checkbox per list plus a field to create a new list and add the task to it. Shift+`l` adds or removes the task from the list you are viewing, or the one you used last. Press `-` for My list, `[` and `]` to step through lists, or use the View menu. Lists and their order are stored in `~/.config/plaintasks/state.json`, never in your text files, and tasks are matched by file and task text, so membership survives marking done or setting dates but resets if you reword the task. Deleting a list never touches your files (My list can be renamed, not deleted). Reorder with Option+Up / Option+Down, or press `g` to pick a task up, then Up, Down, Home and End move it and Enter or Escape drops it. Each move is announced ("Moved down to position 3 of 7"). `u` undoes list changes.
 
 ## Safe writing
 
@@ -82,9 +82,10 @@ Press `?` in the app for the list. The short version:
 | `u` | undo |
 | `a` / `s` / Shift+`s` | triage: mark as to-do / skip / skip the whole file |
 | `n` / Shift+`n`, Shift+`r`, `f` | triage: next / previous file, mark file reviewed, only new or changed files |
-| `l` | add to / remove from My list |
-| `g`, Option+Up / Down | My list: pick up and reorder with arrows, or move one place |
-| `1`–`9`, `0`, `-` | switch view (1 open, 2 file, 3 group, 4 due, 5 waiting on me, 6 waiting on others, 7 important, 8 in progress, 9 completed, 0 triage, minus My list) |
+| `l` / Shift+`l` | choose lists for the task / quick add or remove on the current or last-used list |
+| `[` / `]`, Shift+`m` | previous / next list, manage lists |
+| `g`, Option+Up / Down | in a list: pick up and reorder with arrows, or move one place |
+| `1`–`9`, `0`, `-` | switch view (1 open, 2 file, 3 group, 4 due, 5 waiting on me, 6 waiting on others, 7 important, 8 in progress, 9 completed, 0 triage, minus My list; other lists via `[` `]` or the View menu) |
 | `v` | jump to the view menu |
 | `c` | show / hide completed |
 | `/` | search |

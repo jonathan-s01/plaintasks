@@ -61,6 +61,12 @@ Automated tests (jsdom and axe-core) cover structure and keyboard logic, but the
 - Also try Option+Up and Option+Down without picking up. Check that this does not clash with VoiceOver's own keys; tell me if it does.
 - `u` undoes a move. The text files must not change when you reorder.
 
+**Several lists**
+- Shift+`m` (or the Manage lists button): create "Work", rename it, delete it. Check that errors ("already exists") are read out.
+- With two or more lists, `l` on a task opens "Choose lists": a group of checkboxes (one per list) and a "new list" field. Tick two, press Save: you should hear "task is on My list and Work".
+- `[` and `]` step through lists with the list name and count announced. Shift+`l` adds or removes the task from the list you are viewing.
+- Tasks on lists read "On lists: My list, Work" in the other views.
+
 **External edits**
 - Edit the file in TextEdit and save. The list should refresh without losing your place. If your VoiceOver cursor was in the list, you may hear "The list was updated because a file changed".
 

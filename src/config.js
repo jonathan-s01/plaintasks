@@ -93,10 +93,21 @@ function saveConfig(dir, cfg) {
   writeJsonAtomic(path.join(dir, 'config.json'), cfg);
 }
 
+const DEFAULT_LIST = 'mylist';
+
 function loadState(dir) {
   const s = readJson(path.join(dir, 'state.json'), { dismissed: {} });
   s.dismissed = s.dismissed || {};
-  s.mylist = Array.isArray(s.mylist) ? s.mylist.filter((k) => typeof k === 'string') : [];
+  const clean = (keys) => (Array.isArray(keys) ? keys.filter((k) => typeof k === 'string') : []);
+  const lists = Array.isArray(s.lists)
+    ? s.lists.filter((l) => l && typeof l.id === 'string' && typeof l.name === 'string').map((l) => ({ id: l.id, name: l.name, keys: clean(l.keys) }))
+    : [];
+  const mine = lists.find((l) => l.id === DEFAULT_LIST);
+  if (mine) lists.splice(lists.indexOf(mine), 1);
+  lists.unshift(mine || { id: DEFAULT_LIST, name: 'My list', keys: clean(s.mylist) });
+  s.lists = lists;
+  delete s.mylist;
+  if (typeof s.lastList !== 'string' || !lists.some((l) => l.id === s.lastList)) s.lastList = DEFAULT_LIST;
   s.reviewed = s.reviewed && typeof s.reviewed === 'object' ? s.reviewed : {};
   return s;
 }
@@ -105,4 +116,4 @@ function saveState(dir, state) {
   writeJsonAtomic(path.join(dir, 'state.json'), state);
 }
 
-module.exports = { configDir, loadConfig, saveConfig, loadState, saveState, normalizeFolder, expandHome, cleanRel, UNMARKED_MODES };
+module.exports = { DEFAULT_LIST, configDir, loadConfig, saveConfig, loadState, saveState, normalizeFolder, expandHome, cleanRel, UNMARKED_MODES };

@@ -138,7 +138,7 @@ test('My list: add, reorder, undo, survive done, and never touch the files', asy
   for (const t of ['alpha', 'beta', 'gamma']) await app.action({ id: byText(t).id, op: 'listToggle' });
   const order = () => items(app, 'mylist').map((i) => i.text);
   assert.deepEqual(order(), ['alpha', 'beta', 'gamma']);
-  assert.ok(byText('beta').meta.includes('On My list'));
+  assert.ok(byText('beta').meta.includes('On list: My list'));
 
   let res = await app.action({ id: byText('gamma').id, op: 'listMove', value: 'up' });
   assert.match(res.message, /position 2 of 3/);
@@ -188,4 +188,54 @@ test('triage: context, progress, flags on unmarked lines, and reviewed-file filt
   app.index.refresh(NOW());
   assert.ok(tri().some((i) => /b\.txt/.test(i.text)), 'a changed file returns');
   app.undo();
+});
+
+test('multiple lists: create, put a task on several, rename, delete, undo, order per list', async () => {
+  const { notes, app } = setup({ 'a.txt': '@ alpha\n@ beta\n@ gamma\n' });
+  const before = fs.readFileSync(path.join(notes, 'a.txt'), 'utf8');
+  const byText = (t) => items(app).find((i) => i.text === t);
+  const listItems = (id) => items(app, `list:${id}`).map((i) => i.text);
+
+  let res = await app.action({ id: byText('alpha').id, op: 'listSet', value: { ids: ['mylist'], newName: 'Work' } });
+  const work = res.listId;
+  assert.ok(work);
+  assert.match(res.message, /alpha is on My list and Work/);
+  await app.action({ id: byText('beta').id, op: 'listToggle', list: work });
+  await app.action({ id: byText('gamma').id, op: 'listSet', value: { ids: [work, 'mylist'] } });
+  assert.deepEqual(listItems(work), ['alpha', 'beta', 'gamma']);
+  assert.deepEqual(listItems('mylist'), ['alpha', 'gamma']);
+  assert.ok(byText('alpha').meta.includes('On lists: My list, Work'));
+
+  await app.action({ id: byText('gamma').id, op: 'listMove', value: 'top', list: work });
+  assert.deepEqual(listItems(work), ['gamma', 'alpha', 'beta']);
+  assert.deepEqual(listItems('mylist'), ['alpha', 'gamma'], 'other list order is untouched');
+
+  await app.action({ id: byText('alpha').id, op: 'listSet', value: { ids: [] } });
+  assert.deepEqual(listItems('mylist'), ['gamma']);
+  assert.deepEqual(listItems(work), ['gamma', 'beta']);
+  app.undo();
+  assert.deepEqual(listItems('mylist'), ['alpha', 'gamma']);
+
+  await assert.rejects(() => app.action({ op: 'listCreate', value: ' work ' }), /already exists/);
+  await app.action({ op: 'listRename', list: work, value: 'Project X' });
+  assert.equal(app.summary().lists.find((l) => l.id === work).name, 'Project X');
+  await assert.rejects(() => app.action({ op: 'listDelete', list: 'mylist' }), /cannot be deleted/);
+  app.stateData.lastList = work;
+  await app.action({ op: 'listDelete', list: work });
+  assert.equal(app.stateData.lastList, 'mylist');
+  assert.equal(app.view({ view: `list:${work}`, q: '' }).view, 'open', 'a deleted list falls back to all tasks');
+  app.undo();
+  assert.deepEqual(listItems(work), ['gamma', 'alpha', 'beta']);
+  assert.equal(fs.readFileSync(path.join(notes, 'a.txt'), 'utf8'), before);
+
+  const app2 = new App({ dir: app.dir, now: NOW, opener() {}, secretApi: { getJiraToken: () => null } });
+  assert.deepEqual(app2.summary().lists.map((l) => l.name), ['My list', 'Project X']);
+});
+
+test('state from the single-list version is migrated into My list', () => {
+  const { app, cfg, notes } = setup({ 'a.txt': '@ one\n' });
+  const key = items(app, 'open')[0].id && app.index.tasks[0].listKey;
+  fs.writeFileSync(path.join(cfg, 'state.json'), JSON.stringify({ dismissed: {}, mylist: [key] }));
+  const app2 = new App({ dir: cfg, now: NOW, opener() {}, secretApi: { getJiraToken: () => null } });
+  assert.deepEqual(app2.view({ view: 'list:mylist', q: '' }).items.map((i) => i.text), ['one']);
 });

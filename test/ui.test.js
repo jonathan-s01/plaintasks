@@ -157,7 +157,7 @@ test('My list: l adds, g grabs, arrows reorder with announcements, Enter drops',
       const before = live();
       key(window, doc.activeElement, 'l');
       await waitFor(() => live() !== before || /Added to My list/.test(live()), 'added');
-      await waitFor(() => /^On My list/.test(rows()[i].textContent.replace(/^.*?\.\s/, '')) || /On My list/.test(rows()[i].textContent), 'marker');
+      await waitFor(() => /On list: My list/.test(rows()[i].textContent), 'marker');
       key(window, doc.activeElement, 'ArrowDown');
     }
     key(window, doc.activeElement, '-');
@@ -174,7 +174,50 @@ test('My list: l adds, g grabs, arrows reorder with announcements, Enter drops',
     key(window, doc.activeElement, 'Enter');
     await waitFor(() => /Dropped at position 2 of 3: one/.test(live()), 'drop announced');
     assert.equal(doc.getElementById('grab-status').hidden, true);
-    assert.deepEqual(env.app.view({ view: 'mylist', q: '', showCompleted: false }).items.map((i) => i.text), ['two', 'one', 'three']);
+    assert.deepEqual(env.app.view({ view: 'list:mylist', q: '', showCompleted: false }).items.map((i) => i.text), ['two', 'one', 'three']);
+    window.close();
+  } finally {
+    env.close();
+  }
+});
+
+test('multiple lists: l opens a chooser, new list is created, [ ] cycle lists, dialogs pass axe', async () => {
+  const env = await boot({ 'a.txt': '@ one\n@ two\n' });
+  try {
+    env.app.action({ op: 'listCreate', value: 'Work' });
+    const { window } = await openPage(env);
+    const doc = window.document;
+    const tree = doc.getElementById('tree');
+    const rows = () => [...tree.querySelectorAll('[role=treeitem]')];
+    const live = () => doc.getElementById('live').textContent;
+    await waitFor(() => rows().length === 2, 'items');
+    key(window, doc.activeElement, 'l');
+    await waitFor(() => doc.getElementById('lists-dialog').hasAttribute('open'), 'chooser opens');
+    const boxes = () => [...doc.querySelectorAll('#lists-choices input')];
+    assert.deepEqual([...doc.querySelectorAll('#lists-choices label')].map((l) => l.textContent), ['My list', 'Work']);
+    assert.equal(doc.activeElement, boxes()[0]);
+
+    window.eval(axe.source);
+    const results = await window.axe.run(doc.getElementById('lists-dialog'), { rules: { 'color-contrast': { enabled: false }, region: { enabled: false } } });
+    assert.equal(results.violations.length, 0, results.violations.map((v) => v.id).join());
+
+    boxes()[1].checked = true;
+    doc.getElementById('lists-new').value = 'Errands';
+    doc.getElementById('lists-form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+    await waitFor(() => /one is on Work and Errands/.test(live()), 'saved and announced');
+    await waitFor(() => /On lists: Work, Errands/.test(rows()[0].textContent), 'meta shows both lists');
+
+    key(window, doc.activeElement, ']');
+    await waitFor(() => /^My list/.test(doc.getElementById('list-heading').textContent), 'first list');
+    key(window, doc.activeElement, ']');
+    await waitFor(() => /^Work/.test(doc.getElementById('list-heading').textContent) && rows().length === 1, 'second list');
+    key(window, doc.activeElement, 'L');
+    await waitFor(() => /Removed from Work: one/.test(live()), 'quick toggle removes');
+
+    key(window, doc.body, 'M');
+    await waitFor(() => doc.getElementById('manage-dialog').hasAttribute('open'), 'manage opens');
+    const res2 = await window.axe.run(doc.getElementById('manage-dialog'), { rules: { 'color-contrast': { enabled: false }, region: { enabled: false } } });
+    assert.equal(res2.violations.length, 0, res2.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join()}`).join('\n'));
     window.close();
   } finally {
     env.close();

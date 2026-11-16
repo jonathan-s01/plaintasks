@@ -5,7 +5,7 @@
   const $ = (id) => document.getElementById(id);
   const params = new URLSearchParams(location.search);
   const listMode = params.get('ui') === 'list';
-  const VIEW_KEYS = { 1: 'open', 2: 'file', 3: 'group', 4: 'due', 5: 'waitingMe', 6: 'waitingOthers', 7: 'important', 8: 'inProgress', 9: 'completed', 0: 'triage', '-': 'mylist' };
+  const VIEW_KEYS = { 1: 'open', 2: 'file', 3: 'group', 4: 'due', 5: 'waitingMe', 6: 'waitingOthers', 7: 'important', 8: 'inProgress', 9: 'completed', 0: 'triage', '-': 'list:mylist' };
   const store = {
     get: (k, d) => {
       try {
@@ -49,8 +49,8 @@
   async function loadSummary() {
     st.summary = await api('/api/summary');
     const select = $('view');
-    if (!select.options.length) {
-      for (const v of st.summary.views) select.append(el('option', { value: v.id }));
+    if ([...select.options].map((o) => o.value).join() !== st.summary.views.map((v) => v.id).join()) {
+      select.replaceChildren(...st.summary.views.map((v) => el('option', { value: v.id })));
     }
     for (const v of st.summary.views) {
       const opt = [...select.options].find((o) => o.value === v.id);
@@ -161,6 +161,11 @@
       loadSummary(),
     ]);
     st.model = model;
+    if (model.view !== st.view) {
+      st.view = model.view;
+      store.set('view', st.view);
+      $('view').value = st.view;
+    }
     // Drop collapsed ids that no longer exist.
     const ids = new Set(model.items.map((i) => i.id));
     for (const id of [...st.collapsed]) if (!ids.has(id)) st.collapsed.delete(id);
@@ -196,12 +201,12 @@
     return queue;
   };
 
-  async function act(op, value, item = currentItem()) {
+  async function act(op, value, item = currentItem(), list = undefined) {
     if (!item) return undefined;
-    return enqueue(() => doAct(op, value, item));
+    return enqueue(() => doAct(op, value, item, list));
   }
 
-  async function doAct(op, value, item) {
+  async function doAct(op, value, item, list) {
     const isTask = item.type === 'task' || item.type === 'unmarked';
     if (!isTask && op !== 'dismissFile') {
       announce('That is a heading, not a task.');
@@ -209,7 +214,7 @@
     }
     const idx = activeIndex();
     try {
-      const res = await api('/api/action', { method: 'POST', body: { id: item.id, op, value } });
+      const res = await api('/api/action', { method: 'POST', body: { id: item.id, op, value, list } });
       announce(res.message);
       if (op === 'open') return;
       await loadView({ focusId: res.focusId, keepIndex: idx });
@@ -306,8 +311,8 @@
       add('Skip all unmarked lines in this file (shift and s)', () => act('dismissFile', null, { id: `f:${fileOf(item)}`, type: 'group' }));
       add('Mark this file as reviewed (shift and r)', () => act('reviewFile'));
     } else {
-      add(item.inList || st.view === 'mylist' ? 'Remove from My list (l)' : 'Add to My list (l)', () => act('listToggle'));
-      if (st.view === 'mylist') {
+      add('Choose lists for this task (l)', () => listKey());
+      if (curListId()) {
         add('Move up (alt and up)', () => act('listMove', 'up'));
         add('Move down (alt and down)', () => act('listMove', 'down'));
         add('Move to top', () => act('listMove', 'top'));
@@ -449,14 +454,135 @@
     setActive(vis[i].id, true);
   }
 
+  function curListId() {
+    return st.view.startsWith('list:') ? st.view.slice(5) : null;
+  }
+
+  function listName(id) {
+    const l = st.summary && st.summary.lists.find((x) => x.id === id);
+    return l ? l.name : 'the list';
+  }
+
   function inMyList() {
-    return st.view === 'mylist';
+    return curListId() !== null;
+  }
+
+  // One list: l toggles straight away. Several lists: l asks which ones.
+  function listKey() {
+    const item = currentItem();
+    if (!item || item.type !== 'task') {
+      announce('Select a task first. Lines in triage need to be marked as to-dos before they can go on a list.');
+      return undefined;
+    }
+    if (st.summary.lists.length === 1) return act('listToggle', null, item, st.summary.lists[0].id);
+    return openLists();
+  }
+
+  function quickList() {
+    const item = currentItem();
+    if (!item || item.type !== 'task') return undefined;
+    const id = curListId() || st.summary.lastList;
+    return act('listToggle', null, item, id);
+  }
+
+  function renderListChoices(box, item, checkedIds) {
+    box.replaceChildren(...st.summary.lists.map((l, i) => el('div', { class: 'row' },
+      el('input', { type: 'checkbox', id: `lc-${i}`, value: l.id, checked: checkedIds.includes(l.id) }),
+      el('label', { for: `lc-${i}`, text: l.name }))));
+  }
+
+  function openLists() {
+    const item = currentItem();
+    if (!item || item.type !== 'task') return;
+    $('lists-task').textContent = item.text;
+    $('lists-new').value = '';
+    $('lists-error').textContent = '';
+    renderListChoices($('lists-choices'), item, item.lists || []);
+    openDialog($('lists-dialog'), item.id);
+    const first = $('lists-choices').querySelector('input');
+    if (first) first.focus();
+  }
+
+  async function saveLists(e) {
+    e.preventDefault();
+    const item = currentItem();
+    const idx = activeIndex();
+    const ids = [...$('lists-choices').querySelectorAll('input:checked')].map((c) => c.value);
+    try {
+      const res = await api('/api/action', { method: 'POST', body: { id: item.id, op: 'listSet', value: { ids, newName: $('lists-new').value } } });
+      closeDialog($('lists-dialog'));
+      announce(res.message);
+      await loadView({ focusId: res.focusId, keepIndex: idx });
+    } catch (err) {
+      $('lists-error').textContent = err.message;
+      $('lists-new').focus();
+    }
+  }
+  $('lists-form').addEventListener('submit', saveLists);
+  $('lists-cancel').addEventListener('click', () => closeDialog($('lists-dialog')));
+
+  // ---------- manage lists ----------
+
+  async function manageCall(body, focusSel) {
+    try {
+      const res = await api('/api/action', { method: 'POST', body });
+      announce(res.message);
+      $('manage-error').textContent = '';
+      await loadView({ focus: false });
+      renderManage();
+      if (focusSel) {
+        const f = $('manage-lists').querySelector(focusSel) || $('manage-new');
+        f.focus();
+      }
+      return res;
+    } catch (err) {
+      $('manage-error').textContent = err.message;
+      return null;
+    }
+  }
+
+  function renderManage() {
+    const box = $('manage-lists');
+    box.replaceChildren(...st.summary.lists.map((l, i) => {
+      const input = el('input', { type: 'text', id: `ml-${i}`, value: l.name, autocomplete: 'off', spellcheck: 'false' });
+      const row = el('li', { class: 'row' },
+        el('label', { for: `ml-${i}`, text: `Name of list ${i + 1}, ${l.count} open ${l.count === 1 ? 'task' : 'tasks'}` }), input,
+        el('button', { type: 'button', text: `Rename ${l.name}`, onclick: () => manageCall({ op: 'listRename', list: l.id, value: input.value }, `#ml-${i}`) }));
+      if (l.id !== 'mylist') {
+        row.append(el('button', { type: 'button', text: `Delete ${l.name}`, onclick: () => {
+          if (window.confirm(`Delete the list ${l.name}? Your tasks and text files are not changed.`)) manageCall({ op: 'listDelete', list: l.id }, null);
+        } }));
+      }
+      return row;
+    }));
+  }
+
+  function openManage() {
+    $('manage-error').textContent = '';
+    $('manage-new').value = '';
+    renderManage();
+    openDialog($('manage-dialog'), st.activeId);
+    $('manage-lists').querySelector('input').focus();
+  }
+  $('manage-btn').addEventListener('click', openManage);
+  $('manage-close').addEventListener('click', () => closeDialog($('manage-dialog')));
+  $('manage-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const res = await manageCall({ op: 'listCreate', value: $('manage-new').value }, '#manage-new');
+    if (res) $('manage-new').value = '';
+  });
+
+  function cycleList(dir) {
+    const lists = st.summary.views.filter((v) => v.id.startsWith('list:'));
+    const cur = lists.findIndex((v) => v.id === st.view);
+    const next = cur < 0 ? (dir > 0 ? 0 : lists.length - 1) : (cur + dir + lists.length) % lists.length;
+    switchView(lists[next].id);
   }
 
   function startGrab() {
     const item = currentItem();
     if (!inMyList()) {
-      announce('Reordering works in My list. Press minus to open it, or press l on a task to add it.');
+      announce('Reordering works in a list. Press minus to open My list, or open a list from the view menu.');
       return;
     }
     if (!item || item.type !== 'task') return;
@@ -479,11 +605,11 @@
   async function moveInList(how) {
     const item = currentItem();
     if (!inMyList()) {
-      announce('Moving works in My list. Press minus to open it, or press l on a task to add it.');
+      announce('Moving works in a list. Press minus to open My list, or open a list from the view menu.');
       return;
     }
     if (!item || item.type !== 'task') return;
-    await act('listMove', how, item);
+    await act('listMove', how, item, curListId());
     if (st.grab) {
       st.grab = st.activeId;
       render();
@@ -515,7 +641,8 @@
   }
 
   const ACTION_KEYS = {
-    l: () => act('listToggle'),
+    l: () => listKey(),
+    L: () => quickList(),
     g: () => startGrab(),
     n: () => nextFile(1),
     N: () => nextFile(-1),
@@ -568,6 +695,14 @@
     }
     if (e.key === 'c') {
       toggleCompleted();
+      return true;
+    }
+    if (e.key === ']' || e.key === '[') {
+      cycleList(e.key === ']' ? 1 : -1);
+      return true;
+    }
+    if (e.key === 'M') {
+      openManage();
       return true;
     }
     if (e.key === '?') {

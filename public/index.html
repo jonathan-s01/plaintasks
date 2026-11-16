@@ -23,6 +23,7 @@
         <span id="search-hint" class="hint">Press slash to jump here. Escape returns to the list.</span>
       </div>
       <button id="toggle-completed" type="button" aria-pressed="false">Show completed</button>
+      <button id="manage-btn" type="button">Manage lists</button>
       <button id="help-btn" type="button">Keyboard shortcuts</button>
       <a href="/setup">Settings</a>
     </div>
@@ -47,6 +48,34 @@
     <div id="actions-notes"></div>
     <div id="actions-buttons" role="group" aria-label="Actions"></div>
     <p><button type="button" id="actions-close">Close</button></p>
+  </dialog>
+
+  <dialog id="lists-dialog" aria-labelledby="lists-title">
+    <form method="dialog" id="lists-form">
+      <h2 id="lists-title">Choose lists</h2>
+      <p id="lists-task"></p>
+      <fieldset>
+        <legend>This task is on</legend>
+        <div id="lists-choices"></div>
+      </fieldset>
+      <label for="lists-new">Or create a new list and add it</label>
+      <input id="lists-new" type="text" autocomplete="off" spellcheck="false">
+      <p id="lists-error" class="error" role="alert"></p>
+      <p><button type="submit">Save</button> <button type="button" id="lists-cancel">Cancel</button></p>
+    </form>
+  </dialog>
+
+  <dialog id="manage-dialog" aria-labelledby="manage-title">
+    <h2 id="manage-title">Manage lists</h2>
+    <p>Lists are personal and are kept outside your text files. Deleting a list never changes your files.</p>
+    <ul id="manage-lists" class="plain"></ul>
+    <form id="manage-form">
+      <label for="manage-new">New list name</label>
+      <input id="manage-new" type="text" autocomplete="off" spellcheck="false">
+      <button type="submit">Create list</button>
+    </form>
+    <p id="manage-error" class="error" role="alert"></p>
+    <p><button type="button" id="manage-close">Close</button></p>
   </dialog>
 
   <dialog id="due-dialog" aria-labelledby="due-title">
@@ -108,9 +137,12 @@
         <tr><th scope="row">j</th><td>Jira: link, status, create</td></tr>
         <tr><th scope="row">o</th><td>Open the source file in your text editor</td></tr>
         <tr><th scope="row">u</th><td>Undo the last change</td></tr>
-        <tr><th scope="row">l</th><td>Add the task to My list, or remove it</td></tr>
-        <tr><th scope="row">g</th><td>My list: pick up the task to reorder. Then Up, Down, Home and End move it, Enter or Escape drops it</td></tr>
-        <tr><th scope="row">Option and Up, Option and Down</th><td>My list: move the task up or down one place without picking it up</td></tr>
+        <tr><th scope="row">l</th><td>Choose which lists the task is on. With only My list, it adds or removes the task straight away</td></tr>
+        <tr><th scope="row">shift and l</th><td>Add the task to the list you are viewing, or the one you used last, or remove it from there</td></tr>
+        <tr><th scope="row">left bracket, right bracket</th><td>Previous or next list</td></tr>
+        <tr><th scope="row">shift and m</th><td>Manage lists: create, rename, delete</td></tr>
+        <tr><th scope="row">g</th><td>In a list: pick up the task to reorder. Then Up, Down, Home and End move it, Enter or Escape drops it</td></tr>
+        <tr><th scope="row">Option and Up, Option and Down</th><td>In a list: move the task up or down one place without picking it up</td></tr>
         <tr><th scope="row">minus</th><td>Open My list</td></tr>
         <tr><th scope="row">a</th><td>Triage view: mark the unmarked line as a to-do. x, m, w, i and p also work on unmarked lines</td></tr>
         <tr><th scope="row">n, shift and n</th><td>Triage view: next or previous file</td></tr>

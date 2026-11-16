@@ -5,11 +5,12 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const cfgMod = require('./config');
+const { DEFAULT_LIST } = cfgMod;
 const { Index, walk, isExcluded, modeFor, TEXT_EXT } = require('./indexer');
 const { applyOp, OpError } = require('./ops');
 const { replaceLine, ConflictError } = require('./writer');
 const { parseFriendly, formatDate, toISO } = require('./dates');
-const { VIEWS, buildView, viewCounts, untriaged, myListTasks } = require('./views');
+const { allViews, buildView, viewCounts, untriaged, listTasks } = require('./views');
 const { convertRtfFiles } = require('./rtf');
 const { JiraClient, JiraError, KEY_RE } = require('./jira');
 const secrets = require('./secrets');
@@ -67,7 +68,9 @@ class App {
     const counts = viewCounts(this.index, this.stateData, today);
     return {
       rev: this.index.rev,
-      views: VIEWS.map((v) => ({ id: v.id, title: v.title, count: counts[v.id] })),
+      views: allViews(this.stateData).map((v) => ({ id: v.id, title: v.title, count: counts[v.id] })),
+      lists: this.stateData.lists.map((l) => ({ id: l.id, name: l.name, count: counts[`list:${l.id}`] })),
+      lastList: this.stateData.lastList,
       folders: this.config.folders.length,
       files: this.index.files.length,
       problems: this.index.problems,
@@ -138,8 +141,9 @@ class App {
     this.index.emit('change', this.index.rev);
   }
 
-  async action({ id, op, value }) {
+  async action({ id, op, value, list }) {
     const today = this.now();
+    if (op === 'listCreate' || op === 'listRename' || op === 'listDelete') return this.listManage(op, list, value);
     if (op === 'dismissFile') {
       const file = String(id).replace(/^f:/, '');
       const list = untriaged(this.index, this.stateData).filter((u) => u.file === file);
@@ -170,9 +174,11 @@ class App {
         this.dismiss([t]);
         return { ok: true, message: `Skipped: ${t.text}` };
       case 'listToggle':
-        return this.listToggle(t);
+        return this.listToggle(t, list);
+      case 'listSet':
+        return this.listSet(t, value);
       case 'listMove':
-        return this.listMove(t, value);
+        return this.listMove(t, value, list);
       case 'open':
         this.opener(t.file, t.line);
         return { ok: true, message: `Opening ${t.fileLabel}. The task is on line ${t.line}.` };
@@ -210,52 +216,140 @@ class App {
     this.index.emit('change', this.index.rev);
   }
 
-  setList(next, before, t) {
-    this.stateData.mylist = next;
+  snapshot() {
+    return { lists: JSON.parse(JSON.stringify(this.stateData.lists)), lastList: this.stateData.lastList };
+  }
+
+  /** Applies a change to the lists, saves it, and records one undo step. */
+  mutateLists(fn, text, id) {
+    const before = this.snapshot();
+    fn(this.stateData.lists);
     this.saveState();
-    this.undoStack.push({ type: 'order', before, id: t.id, text: t.text });
+    this.undoStack.push({ type: 'lists', before, id, text });
     if (this.undoStack.length > 100) this.undoStack.shift();
     this.touchList();
   }
 
-  listToggle(t) {
-    if (t.kind !== 'task') throw new HttpError(400, 'Only tasks can go on My list. Mark this line as a to-do first.');
-    const before = [...this.stateData.mylist];
-    if (before.includes(t.listKey)) {
-      this.setList(before.filter((k) => k !== t.listKey), before, t);
-      return { ok: true, message: `Removed from My list: ${t.text}`, undo: true, focusId: t.id };
-    }
-    this.setList([...before, t.listKey], before, t);
-    const n = myListTasks(this.index, this.stateData).filter((x) => !x.flags.done).length;
-    return { ok: true, message: `Added to My list, position ${n} of ${n}: ${t.text}`, undo: true, focusId: t.id };
+  getList(listId) {
+    const l = this.stateData.lists.find((x) => x.id === (listId || this.stateData.lastList));
+    if (!l) throw new HttpError(404, 'That list no longer exists.', 'gone');
+    return l;
   }
 
-  listMove(t, how) {
-    const open = myListTasks(this.index, this.stateData).filter((x) => !x.flags.done);
+  cleanName(name, exceptId) {
+    const n = String(name || '').replace(/\s+/g, ' ').trim();
+    if (!n) throw new HttpError(400, 'Enter a name for the list.');
+    if (n.length > 60) throw new HttpError(400, 'List names can be at most 60 characters.');
+    if (this.stateData.lists.some((l) => l.id !== exceptId && l.name.toLowerCase() === n.toLowerCase())) throw new HttpError(400, `A list called "${n}" already exists.`);
+    return n;
+  }
+
+  newListId() {
+    const taken = new Set(this.stateData.lists.map((l) => l.id));
+    let id;
+    do id = `l${Math.random().toString(36).slice(2, 8)}`;
+    while (taken.has(id));
+    return id;
+  }
+
+  openCount(listId) {
+    return listTasks(this.index, this.stateData, listId).filter((x) => !x.flags.done).length;
+  }
+
+  requireTask(t) {
+    if (t.kind !== 'task') throw new HttpError(400, 'Only tasks can go on a list. Mark this line as a to-do first.');
+  }
+
+  listToggle(t, listId) {
+    this.requireTask(t);
+    const target = this.getList(listId);
+    const had = target.keys.includes(t.listKey);
+    this.mutateLists((lists) => {
+      const l = lists.find((x) => x.id === target.id);
+      if (had) l.keys = l.keys.filter((k) => k !== t.listKey);
+      else l.keys.push(t.listKey);
+      this.stateData.lastList = target.id;
+    }, t.text, t.id);
+    const n = this.openCount(target.id);
+    return { ok: true, message: had ? `Removed from ${target.name}: ${t.text}` : `Added to ${target.name}, position ${n} of ${n}: ${t.text}`, undo: true, focusId: t.id };
+  }
+
+  /** Sets exactly which lists a task is on; optionally creates a new list first. */
+  listSet(t, value) {
+    this.requireTask(t);
+    const wanted = new Set(Array.isArray(value && value.ids) ? value.ids : []);
+    const newName = value && value.newName && String(value.newName).trim() ? this.cleanName(value.newName) : null;
+    for (const id of wanted) this.getList(id);
+    let createdId = null;
+    this.mutateLists((lists) => {
+      if (newName) {
+        createdId = this.newListId();
+        lists.push({ id: createdId, name: newName, keys: [] });
+        wanted.add(createdId);
+      }
+      for (const l of lists) {
+        const has = l.keys.includes(t.listKey);
+        if (wanted.has(l.id) && !has) l.keys.push(t.listKey);
+        else if (!wanted.has(l.id) && has) l.keys = l.keys.filter((k) => k !== t.listKey);
+      }
+      const last = createdId || [...wanted].pop();
+      if (last) this.stateData.lastList = last;
+    }, t.text, t.id);
+    const names = this.stateData.lists.filter((l) => wanted.has(l.id)).map((l) => l.name);
+    return { ok: true, message: names.length ? `${t.text} is on ${names.join(' and ')}` : `${t.text} is on no lists`, undo: true, focusId: t.id, listId: createdId };
+  }
+
+  listMove(t, how, listId) {
+    const target = this.getList(listId);
+    const open = listTasks(this.index, this.stateData, target.id).filter((x) => !x.flags.done);
     const cur = open.findIndex((x) => x.listKey === t.listKey);
-    if (cur < 0) throw new HttpError(400, 'That task is not on My list. Press l to add it.');
+    if (cur < 0) throw new HttpError(400, `That task is not on ${target.name}. Press l to add it.`);
     const last = open.length - 1;
     const to = { up: cur - 1, down: cur + 1, top: 0, bottom: last }[how];
     if (to === undefined) throw new HttpError(400, 'Move up, down, top or bottom');
     if (to < 0 || to > last || to === cur) {
-      return { ok: true, message: `Already ${cur === 0 && to <= cur ? 'first' : 'last'} on My list: ${t.text}`, focusId: t.id };
+      return { ok: true, message: `Already ${to < cur ? 'first' : 'last'} on ${target.name}: ${t.text}`, focusId: t.id };
     }
-    const before = [...this.stateData.mylist];
-    const next = before.filter((k) => k !== t.listKey);
-    const anchor = next.indexOf(open[to].listKey);
-    next.splice(to < cur ? anchor : anchor + 1, 0, t.listKey);
-    this.setList(next, before, t);
+    this.mutateLists((lists) => {
+      const l = lists.find((x) => x.id === target.id);
+      const next = l.keys.filter((k) => k !== t.listKey);
+      const anchor = next.indexOf(open[to].listKey);
+      next.splice(to < cur ? anchor : anchor + 1, 0, t.listKey);
+      l.keys = next;
+    }, t.text, t.id);
     return { ok: true, message: `Moved ${to < cur ? 'up' : 'down'} to position ${to + 1} of ${open.length}: ${t.text}`, undo: true, focusId: t.id };
+  }
+
+  listManage(op, listId, value) {
+    if (op === 'listCreate') {
+      const name = this.cleanName(value);
+      const id = this.newListId();
+      this.mutateLists((lists) => lists.push({ id, name, keys: [] }), name);
+      return { ok: true, message: `Created list ${name}`, undo: true, listId: id };
+    }
+    const target = this.getList(listId);
+    if (op === 'listRename') {
+      const name = this.cleanName(value, target.id);
+      this.mutateLists((lists) => { lists.find((l) => l.id === target.id).name = name; }, name);
+      return { ok: true, message: `Renamed ${target.name} to ${name}`, undo: true };
+    }
+    if (target.id === DEFAULT_LIST) throw new HttpError(400, 'My list is the default list and cannot be deleted. You can rename it.');
+    this.mutateLists((lists) => {
+      lists.splice(lists.findIndex((l) => l.id === target.id), 1);
+      if (this.stateData.lastList === target.id) this.stateData.lastList = DEFAULT_LIST;
+    }, target.name);
+    return { ok: true, message: `Deleted list ${target.name}. Your text files were not changed.`, undo: true };
   }
 
   undo() {
     const e = this.undoStack.pop();
     if (!e) throw new HttpError(400, 'Nothing to undo');
-    if (e.type === 'order') {
-      this.stateData.mylist = e.before;
+    if (e.type === 'lists') {
+      this.stateData.lists = e.before.lists;
+      this.stateData.lastList = e.before.lastList;
       this.saveState();
       this.touchList();
-      return { ok: true, message: `Undid My list change: ${e.text}`, focusId: this.index.get(e.id) ? e.id : null };
+      return { ok: true, message: `Undid list change: ${e.text}`, focusId: e.id && this.index.get(e.id) ? e.id : null };
     }
     if (e.type === 'reviewed') {
       if (e.prev === undefined) delete this.stateData.reviewed[e.file];

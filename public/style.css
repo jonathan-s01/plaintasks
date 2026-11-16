@@ -278,3 +278,8 @@ fieldset {
   outline: 3px dashed currentColor;
   outline-offset: -3px;
 }
+
+ul.plain {
+  list-style: none;
+  padding: 0;
+}
