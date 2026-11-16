@@ -1,0 +1,11 @@
+node_modules/
+.DS_Store
+*.log
+
+# Local user data must never be committed
+config.json
+state.json
+.env
+.env.*
+*.local
+.plaintasks/

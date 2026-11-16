@@ -1,0 +1,102 @@
+'use strict';
+
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const crypto = require('node:crypto');
+
+const UNMARKED_MODES = ['notes', 'tasks'];
+
+function configDir(env = process.env) {
+  return env.PLAINTASKS_CONFIG_DIR || path.join(os.homedir(), '.config', 'plaintasks');
+}
+
+function expandHome(p) {
+  if (p === '~') return os.homedir();
+  if (p.startsWith('~/')) return path.join(os.homedir(), p.slice(2));
+  return p;
+}
+
+function writeJsonAtomic(file, data) {
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  const tmp = `${file}.${process.pid}.${crypto.randomBytes(3).toString('hex')}.tmp`;
+  fs.writeFileSync(tmp, `${JSON.stringify(data, null, 2)}\n`, { mode: 0o600 });
+  fs.renameSync(tmp, file);
+}
+
+function readJson(file, fallback) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (err) {
+    if (err.code === 'ENOENT') return fallback;
+    throw new Error(`Could not read ${file}: ${err.message}`);
+  }
+}
+
+function cleanRel(rel) {
+  if (typeof rel !== 'string') throw new Error('Paths must be strings');
+  const norm = path.posix.normalize(rel.replace(/\\/g, '/')).replace(/^\.\//, '').replace(/\/$/, '');
+  if (!norm || norm === '.' || norm.startsWith('..') || path.posix.isAbsolute(norm)) throw new Error(`Invalid relative path: ${rel}`);
+  return norm;
+}
+
+/** Validate and normalise one watched-folder entry. Throws with a readable message. */
+function normalizeFolder(f, { mustExist = true } = {}) {
+  if (!f || typeof f.path !== 'string') throw new Error('Folder path is required');
+  const abs = path.resolve(expandHome(f.path.trim()));
+  if (mustExist) {
+    let st;
+    try {
+      st = fs.statSync(abs);
+    } catch {
+      throw new Error(`Folder not found: ${abs}`);
+    }
+    if (!st.isDirectory()) throw new Error(`Not a folder: ${abs}`);
+  }
+  const unmarked = f.unmarked || 'notes';
+  if (!UNMARKED_MODES.includes(unmarked)) throw new Error('Unmarked lines must be "notes" or "tasks"');
+  const overrides = {};
+  for (const [rel, mode] of Object.entries(f.overrides || {})) {
+    if (!UNMARKED_MODES.includes(mode)) throw new Error('Unmarked lines must be "notes" or "tasks"');
+    overrides[cleanRel(rel)] = mode;
+  }
+  return {
+    path: abs,
+    unmarked,
+    excluded: [...new Set((f.excluded || []).map(cleanRel))].sort(),
+    overrides,
+  };
+}
+
+function defaultConfig() {
+  return { folders: [], jira: null };
+}
+
+function loadConfig(dir) {
+  const raw = readJson(path.join(dir, 'config.json'), defaultConfig());
+  const cfg = { ...defaultConfig(), ...raw };
+  cfg.folders = (cfg.folders || []).map((f) => {
+    try {
+      return normalizeFolder(f, { mustExist: false });
+    } catch {
+      return null;
+    }
+  }).filter(Boolean);
+  return cfg;
+}
+
+function saveConfig(dir, cfg) {
+  writeJsonAtomic(path.join(dir, 'config.json'), cfg);
+}
+
+function loadState(dir) {
+  const s = readJson(path.join(dir, 'state.json'), { dismissed: {} });
+  s.dismissed = s.dismissed || {};
+  return s;
+}
+
+function saveState(dir, state) {
+  writeJsonAtomic(path.join(dir, 'state.json'), state);
+}
+
+module.exports = { configDir, loadConfig, saveConfig, loadState, saveState, normalizeFolder, expandHome, cleanRel, UNMARKED_MODES };

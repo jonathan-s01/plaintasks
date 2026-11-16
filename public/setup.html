@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="plaintasks-token" content="__TOKEN__">
+  <title>Settings - plaintasks</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to settings</a>
+  <header>
+    <h1>plaintasks settings</h1>
+    <p><a href="/">Back to the task list</a></p>
+  </header>
+
+  <main id="main">
+    <section aria-labelledby="folders-h">
+      <h2 id="folders-h" tabindex="-1">Watched folders</h2>
+      <p>plaintasks reads the text files (.txt, .md) in these folders, including subfolders, and writes changes such as done marks back into those files. Nothing is stored anywhere else.</p>
+      <div id="folders"></div>
+      <p id="no-folders" hidden>No folders yet. Add one below.</p>
+    </section>
+
+    <section aria-labelledby="add-h">
+      <h2 id="add-h">Add a folder</h2>
+      <div class="field">
+        <label for="add-path">Folder path</label>
+        <input id="add-path" type="text" autocomplete="off" spellcheck="false" aria-describedby="add-hint">
+        <span id="add-hint" class="hint">Type or paste a path, for example ~/Documents/notes. Or use the folder browser below.</span>
+      </div>
+      <p><button type="button" id="add-btn">Add folder</button></p>
+
+      <h3 id="browse-h">Folder browser</h3>
+      <p id="browse-path"></p>
+      <p><button type="button" id="browse-up">Go up one folder</button> <button type="button" id="browse-use">Use this folder</button></p>
+      <ul id="browse-list"></ul>
+    </section>
+
+    <section aria-labelledby="jira-h">
+      <h2 id="jira-h">Jira (optional)</h2>
+      <p>Everything works without Jira. If you set it up you can link tasks to issues, see issue status, and create issues from tasks. The token is saved in the macOS Keychain, never in a file in this project. You can also provide it in the PLAINTASKS_JIRA_TOKEN environment variable.</p>
+      <form id="jira-form">
+        <div class="field">
+          <label for="j-type">Jira type</label>
+          <select id="j-type">
+            <option value="cloud">Jira Cloud (email and API token)</option>
+            <option value="datacenter">Jira Data Center or Server (personal access token)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="j-url">Jira address</label>
+          <input id="j-url" type="url" autocomplete="off" spellcheck="false" placeholder="https://example.atlassian.net">
+        </div>
+        <div class="field" id="j-email-field">
+          <label for="j-email">Account email (Cloud only)</label>
+          <input id="j-email" type="email" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="j-token">Token</label>
+          <input id="j-token" type="password" autocomplete="off" aria-describedby="j-token-hint">
+          <span id="j-token-hint" class="hint">Leave empty to keep the token that is already saved.</span>
+        </div>
+        <div class="field">
+          <label for="j-project">Default project key (optional)</label>
+          <input id="j-project" type="text" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="j-issue-type">Default issue type</label>
+          <input id="j-issue-type" type="text" autocomplete="off" spellcheck="false" value="Task">
+        </div>
+        <p id="j-state"></p>
+        <p><button type="submit">Save Jira settings</button> <button type="button" id="j-remove">Remove Jira settings</button></p>
+      </form>
+    </section>
+
+    <section aria-labelledby="problems-h">
+      <h2 id="problems-h">Skipped files and problems</h2>
+      <ul id="problems"></ul>
+      <p id="no-problems">None.</p>
+    </section>
+  </main>
+
+  <div id="live" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+  <div id="alert" class="sr-only" role="alert"></div>
+
+  <dialog id="rtf-dialog" aria-labelledby="rtf-title">
+    <h2 id="rtf-title">Convert .rtf files to .txt?</h2>
+    <p id="rtf-intro"></p>
+    <ul id="rtf-list"></ul>
+    <p>Each file is converted to plain text next to the original with the same name and a .txt ending. The original .rtf file is then moved to the Trash. Files that already have a .txt twin are skipped.</p>
+    <p id="rtf-result" role="status"></p>
+    <p><button type="button" id="rtf-yes">Convert these files</button> <button type="button" id="rtf-no">Not now</button></p>
+  </dialog>
+
+  <script src="/common.js"></script>
+  <script src="/setup.js"></script>
+</body>
+</html>

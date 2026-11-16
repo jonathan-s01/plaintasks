@@ -1,0 +1,22 @@
+{
+  "name": "plaintasks",
+  "version": "1.0.0",
+  "description": "Accessible, screen-reader-first to-do manager that indexes your plain-text notes",
+  "license": "MIT",
+  "private": true,
+  "type": "commonjs",
+  "bin": {
+    "plaintasks": "bin/plaintasks.js"
+  },
+  "scripts": {
+    "start": "node bin/plaintasks.js",
+    "test": "node --test --test-concurrency=1 \"test/**/*.test.js\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "axe-core": "^4.10.0",
+    "jsdom": "^26.0.0"
+  }
+}
