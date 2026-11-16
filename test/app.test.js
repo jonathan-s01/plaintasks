@@ -79,6 +79,20 @@ test('triage shows the whole file; marking a note attaches it to the task above 
   assert.equal(after.length, 0);
 });
 
+test('a task line can be converted to a note in any view, and undone', async () => {
+  const { notes, app } = setup({ 'a.txt': '@ call Sam\n@ http://example.com\n@ parent\n\t@ child\n' });
+  const open = () => items(app, 'open').map((i) => i.text);
+  const url = items(app, 'open').find((i) => /example/.test(i.text));
+  await app.action({ id: url.id, op: 'note' });
+  assert.deepEqual(open(), ['call Sam', 'parent', 'child']);
+  assert.deepEqual(app.task(items(app, 'open')[0].id).notes, ['http://example.com']);
+  assert.equal(fs.readFileSync(path.join(notes, 'a.txt'), 'utf8'), '@ call Sam\n@ http://example.com\n@ parent\n\t@ child\n');
+  const parent = items(app, 'open').find((i) => i.text === 'parent');
+  await assert.rejects(() => app.action({ id: parent.id, op: 'note' }), /subtasks/);
+  app.undo();
+  assert.deepEqual(open(), ['call Sam', 'http://example.com', 'parent', 'child']);
+});
+
 test('due dates accept friendly input and are written as ISO', async () => {
   const { notes, app } = setup({ 'a.txt': '@ ship it\n' });
   const t = items(app)[0];

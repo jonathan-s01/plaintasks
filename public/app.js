@@ -317,6 +317,7 @@
       add('Mark all remaining lines in this file as notes (shift and s)', () => act('dismissFile', null, { id: `f:${fileOf(item)}`, type: 'group' }));
       add('Mark this file as reviewed (shift and r)', () => act('reviewFile'));
     } else {
+      add('Convert to a note (s)', () => act('note'));
       add('Choose lists for this task (l)', () => listKey());
       if (curListId()) {
         add('Move up (alt and up)', () => act('listMove', 'up'));
@@ -665,7 +666,7 @@
     o: () => act('open'),
     u: () => undo(),
     a: () => (st.view === 'triage' ? act('todo') : announce('The a key marks unmarked lines as to-dos in the triage view. Press 0 to open triage.')),
-    s: () => (st.view === 'triage' ? act('note') : announce('The s key marks unmarked lines as notes in the triage view. Press 0 to open triage.')),
+    s: () => act('note'),
     S: () => (st.view === 'triage' ? skipFile() : announce('Shift and s marks every remaining line in a file as a note in the triage view. Press 0 to open triage.')),
   };
 

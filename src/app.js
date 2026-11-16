@@ -8,6 +8,7 @@ const cfgMod = require('./config');
 const { DEFAULT_LIST } = cfgMod;
 const { Index, walk, isExcluded, modeFor, TEXT_EXT } = require('./indexer');
 const { applyOp, OpError } = require('./ops');
+const { markerInfo } = require('./parser');
 const { replaceLine, ConflictError } = require('./writer');
 const { parseFriendly, formatDate, toISO } = require('./dates');
 const { allViews, buildView, viewCounts, untriaged, listTasks } = require('./views');
@@ -47,7 +48,7 @@ class App {
     this.secrets = secretApi;
     this.config = cfgMod.loadConfig(dir);
     this.stateData = cfgMod.loadState(dir);
-    this.index = new Index({ getConfig: () => this.config, getNoteLinks: (file) => this.stateData.noteOf[file] || {} });
+    this.index = new Index({ getConfig: () => this.config, getNoteLinks: (file) => this.stateData.noteOf[file] || {}, getDismissed: (file) => this.stateData.dismissed[file] || [] });
     this.undoStack = [];
     this.lastWriteAt = 0;
     this.index.refresh(this.now());
@@ -131,6 +132,16 @@ class App {
     cfgMod.saveState(this.dir, this.stateData);
   }
 
+  restoreTask(t) {
+    const parentKey = (this.stateData.noteOf[t.file] || {})[t.textHash] || null;
+    this.stateData.dismissed[t.file] = (this.stateData.dismissed[t.file] || []).filter((h) => h !== t.textHash);
+    if (this.stateData.noteOf[t.file]) delete this.stateData.noteOf[t.file][t.textHash];
+    this.saveState();
+    this.index.refresh(this.now());
+    this.undoStack.push({ type: 'restore', file: t.file, hash: t.textHash, parentKey });
+    this.index.emit('change', this.index.rev);
+  }
+
   /** The nearest task above an unmarked line in the same file, or null. */
   taskAbove(u) {
     let best = null;
@@ -186,7 +197,7 @@ class App {
     switch (op) {
       case 'dismiss':
       case 'note': {
-        if (t.kind !== 'unmarked') return { ok: true, message: `Already a task, no action needed: ${t.text}` };
+        if (t.kind === 'task' && t.childIds.length) throw new HttpError(400, 'This task has subtasks, so it cannot become a note.');
         const parent = this.taskAbove(t);
         this.dismiss([t]);
         return { ok: true, message: parent ? `Marked as a note, attached to: ${parent.text}` : `Marked as a note: ${t.text}`, undo: true };
@@ -206,6 +217,10 @@ class App {
         return done(this.lineWrite(t, reopen ? 'reopen' : 'done'), `${reopen ? 'Reopened' : 'Marked done'}: ${t.text}`);
       }
       case 'todo':
+        if (t.kind === 'unmarked' && (this.stateData.dismissed[t.file] || []).includes(t.textHash) && (markerInfo(t.raw) || t.unmarkedMode === 'tasks')) {
+          this.restoreTask(t);
+          return { ok: true, message: `Back to a task: ${t.text}`, undo: true };
+        }
         return done(this.lineWrite(t, 'todo'), `Marked as to-do: ${t.text}`);
       case 'due': {
         let iso = null;
@@ -375,6 +390,14 @@ class App {
       this.saveState();
       this.touchList();
       return { ok: true, message: 'Undid mark as reviewed' };
+    }
+    if (e.type === 'restore') {
+      (this.stateData.dismissed[e.file] = this.stateData.dismissed[e.file] || []).push(e.hash);
+      if (e.parentKey) (this.stateData.noteOf[e.file] = this.stateData.noteOf[e.file] || {})[e.hash] = e.parentKey;
+      this.saveState();
+      this.index.refresh(this.now());
+      this.index.emit('change', this.index.rev);
+      return { ok: true, message: 'Undid restore as task' };
     }
     if (e.type === 'dismiss') {
       for (const { file, hash } of e.items) {

@@ -62,10 +62,11 @@ function walk(folder, visit) {
 }
 
 class Index extends EventEmitter {
-  constructor({ getConfig, getNoteLinks }) {
+  constructor({ getConfig, getNoteLinks, getDismissed }) {
     super();
     this.getConfig = getConfig;
     this.getNoteLinks = getNoteLinks || (() => ({}));
+    this.getDismissed = getDismissed || (() => []);
     this.cache = new Map();
     this.files = [];
     this.tasks = [];
@@ -216,6 +217,16 @@ class Index extends EventEmitter {
         file.taskCount += 1;
       } else unmarked.push(base);
     });
+
+    // Task lines the user converted to notes (kept in state, the file is untouched) leave the task list.
+    const asNotes = new Set(this.getDismissed(file.file));
+    for (let k = tasks.length - 1; k >= 0; k -= 1) {
+      const t = tasks[k];
+      if (t.file !== file.file || !asNotes.has(t.textHash) || t.childIds.length) continue;
+      tasks.splice(k, 1);
+      file.taskCount -= 1;
+      unmarked.push({ ...t, kind: 'unmarked', childIds: [], parentId: null, flags: { ...t.flags, done: false } });
+    }
 
     // Lines the user marked as notes in triage attach to the task they chose.
     const links = this.getNoteLinks(file.file);
