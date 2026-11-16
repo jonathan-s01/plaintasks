@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="plaintasks-token" content="__TOKEN__">
+  <title>plaintasks</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <a class="skip" href="#list-heading">Skip to task list</a>
+  <header>
+    <h1>plaintasks</h1>
+    <div class="controls">
+      <div class="field">
+        <label for="view">View</label>
+        <select id="view"></select>
+      </div>
+      <div class="field">
+        <label for="search">Search</label>
+        <input id="search" type="search" autocomplete="off" spellcheck="false" aria-describedby="search-hint">
+        <span id="search-hint" class="hint">Press slash to jump here. Escape returns to the list.</span>
+      </div>
+      <button id="toggle-completed" type="button" aria-pressed="false">Show completed</button>
+      <button id="manage-btn" type="button">Manage lists</button>
+      <button id="help-btn" type="button">Keyboard shortcuts</button>
+      <a href="/setup">Settings</a>
+    </div>
+  </header>
+
+  <main>
+    <h2 id="list-heading" tabindex="-1">Loading</h2>
+    <p id="list-status"></p>
+    <p id="grab-status" class="grab-status" hidden></p>
+    <div id="tree-wrap">
+      <div id="tree"></div>
+      <p id="empty" tabindex="-1" hidden></p>
+    </div>
+  </main>
+
+  <div id="live" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+  <div id="alert" class="sr-only" role="alert"></div>
+
+  <dialog id="actions-dialog" aria-labelledby="actions-title">
+    <h2 id="actions-title"></h2>
+    <p id="actions-details"></p>
+    <div id="actions-notes"></div>
+    <div id="actions-buttons" role="group" aria-label="Actions"></div>
+    <p><button type="button" id="actions-close">Close</button></p>
+  </dialog>
+
+  <dialog id="lists-dialog" aria-labelledby="lists-title">
+    <form method="dialog" id="lists-form">
+      <h2 id="lists-title">Choose lists</h2>
+      <p id="lists-task"></p>
+      <fieldset>
+        <legend>This task is on</legend>
+        <div id="lists-choices"></div>
+      </fieldset>
+      <label for="lists-new">Or create a new list and add it</label>
+      <input id="lists-new" type="text" autocomplete="off" spellcheck="false">
+      <p id="lists-error" class="error" role="alert"></p>
+      <p><button type="submit">Save</button> <button type="button" id="lists-cancel">Cancel</button></p>
+    </form>
+  </dialog>
+
+  <dialog id="manage-dialog" aria-labelledby="manage-title">
+    <h2 id="manage-title">Manage lists</h2>
+    <p>Lists are personal and are kept outside your text files. Deleting a list never changes your files.</p>
+    <ul id="manage-lists" class="plain"></ul>
+    <form id="manage-form">
+      <label for="manage-new">New list name</label>
+      <input id="manage-new" type="text" autocomplete="off" spellcheck="false">
+      <button type="submit">Create list</button>
+    </form>
+    <p id="manage-error" class="error" role="alert"></p>
+    <p><button type="button" id="manage-close">Close</button></p>
+  </dialog>
+
+  <dialog id="due-dialog" aria-labelledby="due-title">
+    <form method="dialog" id="due-form">
+      <h2 id="due-title">Set due date</h2>
+      <p id="due-task"></p>
+      <label for="due-input">Due date</label>
+      <input id="due-input" type="text" autocomplete="off" spellcheck="false" aria-describedby="due-hint">
+      <p id="due-hint" class="hint">Examples: fri, nov 20, +3d, 2026-11-20. Leave empty to clear the date.</p>
+      <p id="due-error" class="error" role="alert"></p>
+      <p><button type="submit" id="due-save">Save due date</button> <button type="button" id="due-cancel">Cancel</button></p>
+    </form>
+  </dialog>
+
+  <dialog id="jira-dialog" aria-labelledby="jira-title">
+    <h2 id="jira-title">Jira</h2>
+    <p id="jira-task"></p>
+    <p id="jira-result" role="status"></p>
+    <label for="jira-key">Issue key</label>
+    <input id="jira-key" type="text" autocomplete="off" spellcheck="false" aria-describedby="jira-hint">
+    <p id="jira-hint" class="hint">Looks like ABC-123. Stored in the file as jira:ABC-123.</p>
+    <p>
+      <button type="button" id="jira-link">Link issue</button>
+      <button type="button" id="jira-status">Show issue status</button>
+      <button type="button" id="jira-unlink">Remove link</button>
+    </p>
+    <fieldset id="jira-create-group">
+      <legend>Create a new issue from this task</legend>
+      <label for="jira-project">Project key</label>
+      <input id="jira-project" type="text" autocomplete="off" spellcheck="false">
+      <label for="jira-type">Issue type</label>
+      <input id="jira-type" type="text" autocomplete="off" spellcheck="false" value="Task">
+      <p><button type="button" id="jira-create">Create issue and link it</button></p>
+    </fieldset>
+    <p id="jira-setup-hint" class="hint" hidden>Jira is not set up, so status and creation are unavailable. Linking a key still works. Open Settings to set it up.</p>
+    <p><button type="button" id="jira-close">Close</button></p>
+  </dialog>
+
+  <dialog id="help-dialog" aria-labelledby="help-title">
+    <h2 id="help-title">Keyboard shortcuts</h2>
+    <p>Use Up and Down to move through the list. Single-letter keys work while the list has focus.</p>
+    <table>
+      <caption>Shortcuts</caption>
+      <thead><tr><th scope="col">Key</th><th scope="col">What it does</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Up, Down</th><td>Previous or next item</td></tr>
+        <tr><th scope="row">Home, End</th><td>First or last item</td></tr>
+        <tr><th scope="row">Page Up, Page Down</th><td>Move ten items</td></tr>
+        <tr><th scope="row">Right</th><td>Expand subtasks, or move to the first subtask</td></tr>
+        <tr><th scope="row">Left</th><td>Collapse subtasks, or move to the parent</td></tr>
+        <tr><th scope="row">Enter</th><td>Open the actions menu for the item (or expand and collapse a group)</td></tr>
+        <tr><th scope="row">x</th><td>Mark done, or reopen if already done</td></tr>
+        <tr><th scope="row">m</th><td>Toggle waiting on me</td></tr>
+        <tr><th scope="row">w</th><td>Toggle waiting on someone else</td></tr>
+        <tr><th scope="row">i</th><td>Toggle important</td></tr>
+        <tr><th scope="row">p</th><td>Toggle in progress</td></tr>
+        <tr><th scope="row">b</th><td>Toggle ongoing or major outcome</td></tr>
+        <tr><th scope="row">d</th><td>Set or clear the due date</td></tr>
+        <tr><th scope="row">j</th><td>Jira: link, status, create</td></tr>
+        <tr><th scope="row">o</th><td>Open the source file in your text editor</td></tr>
+        <tr><th scope="row">u</th><td>Undo the last change</td></tr>
+        <tr><th scope="row">l</th><td>Choose which lists the task is on. With only My list, it adds or removes the task straight away</td></tr>
+        <tr><th scope="row">shift and l</th><td>Add the task to the list you are viewing, or the one you used last, or remove it from there</td></tr>
+        <tr><th scope="row">left bracket, right bracket</th><td>Previous or next list</td></tr>
+        <tr><th scope="row">shift and m</th><td>Manage lists: create, rename, delete</td></tr>
+        <tr><th scope="row">g</th><td>In a list: pick up the task to reorder. Then Up, Down, Home and End move it, Enter or Escape drops it</td></tr>
+        <tr><th scope="row">Option and Up, Option and Down</th><td>In a list: move the task up or down one place without picking it up</td></tr>
+        <tr><th scope="row">minus</th><td>Open My list</td></tr>
+        <tr><th scope="row">a</th><td>Triage view: mark the unmarked line as a to-do. x, m, w, i and p also work on unmarked lines</td></tr>
+        <tr><th scope="row">n, shift and n</th><td>Triage view: next or previous file</td></tr>
+        <tr><th scope="row">f</th><td>Triage view: show only files not yet reviewed or changed since review</td></tr>
+        <tr><th scope="row">shift and r</th><td>Triage view: mark the whole file as reviewed</td></tr>
+        <tr><th scope="row">s</th><td>Triage view: skip the line. Shift and s skips every line in the file</td></tr>
+        <tr><th scope="row">1 to 9, 0</th><td>Switch view: 1 all open, 2 by file, 3 by group, 4 due, 5 waiting on me, 6 waiting on others, 7 important, 8 in progress, 9 completed, 0 triage</td></tr>
+        <tr><th scope="row">v</th><td>Jump to the view menu</td></tr>
+        <tr><th scope="row">c</th><td>Show or hide completed tasks</td></tr>
+        <tr><th scope="row">slash</th><td>Jump to search</td></tr>
+        <tr><th scope="row">r</th><td>Rescan the files now</td></tr>
+        <tr><th scope="row">question mark</th><td>Open this help</td></tr>
+      </tbody>
+    </table>
+    <p><button type="button" id="help-close">Close</button></p>
+  </dialog>
+
+  <script src="/common.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
