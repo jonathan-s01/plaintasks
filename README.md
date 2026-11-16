@@ -116,6 +116,8 @@ The server binds to `127.0.0.1` only, checks the Host and Origin headers, requir
 
 Semantic HTML first. The list is an ARIA tree (flat, with `aria-level`, `aria-posinset`, `aria-setsize`, `aria-expanded`, roving tabindex) so arrow keys behave like moving through a text file. `?ui=list` loads the same list as a plain listbox in case the tree behaves badly with your VoiceOver setup. Text sizes use relative units and reflow down to 400 % zoom; the design honours dark mode, forced colours/high contrast, and reduced motion. See [docs/VOICEOVER.md](docs/VOICEOVER.md) for a manual test script.
 
+Background, design decisions and the roadmap are in [docs/PLAN.md](docs/PLAN.md).
+
 ## Development
 
 ```sh
