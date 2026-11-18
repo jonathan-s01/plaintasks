@@ -1,11 +1,12 @@
 'use strict';
 
-const { formatDate, relativeDue, daysBetween, toISO } = require('./dates');
+const { formatDate, formatTime, relativeDue, daysBetween, toISO } = require('./dates');
 
 const VIEWS = [
   { id: 'open', title: 'All open tasks', hierarchical: true },
   { id: 'file', title: 'By file', hierarchical: true },
   { id: 'group', title: 'By group or project', hierarchical: true },
+  { id: 'schedule', title: 'Schedule: overdue, today, this week', empty: 'Nothing has a due date or check-in date. Press d on a task to set one.' },
   { id: 'due', title: 'Due soon and overdue', empty: 'No open tasks are overdue or due within 7 days.' },
   { id: 'waitingMe', title: 'Waiting on me', empty: 'Nothing is waiting on you.' },
   { id: 'waitingOthers', title: 'Waiting on others', empty: 'Nothing is waiting on someone else.' },
@@ -18,13 +19,15 @@ const VIEWS = [
 const STATIC_IDS = VIEWS.map((v) => v.id);
 
 function listView(l) {
-  return { id: `list:${l.id}`, title: l.name, isList: true, empty: `${l.name} is empty. Press l on any task to add it, then reorder it here with g.` };
+  return { id: `list:${l.id}`, title: l.name, isList: true, empty: `${l.name} is empty. Press l on any task to add it, or n to find or create one here.` };
 }
 
-/** Built-in views plus one view per user list, placed before the due view. */
+const LISTS_VIEW = { id: 'lists', title: 'All lists', empty: 'No lists yet. Press M to manage lists.' };
+
+/** Built-in views plus the all-lists view and one view per user list, placed before the schedule view. */
 function allViews(state) {
-  const at = VIEWS.findIndex((v) => v.id === 'due');
-  return [...VIEWS.slice(0, at), ...(state.lists || []).map(listView), ...VIEWS.slice(at)];
+  const at = VIEWS.findIndex((v) => v.id === 'schedule');
+  return [...VIEWS.slice(0, at), LISTS_VIEW, ...(state.lists || []).map(listView), ...VIEWS.slice(at)];
 }
 const DUE_SOON_DAYS = 7;
 
@@ -32,7 +35,7 @@ function matcher(q) {
   const terms = String(q || '').toLowerCase().split(/\s+/).filter(Boolean);
   if (!terms.length) return () => true;
   return (t) => {
-    const hay = `${t.text} ${t.group} ${t.fileLabel} ${t.notes.join(' ')} ${t.jira || ''} ${t.due || ''}`.toLowerCase();
+    const hay = `${t.text} ${t.group} ${t.fileLabel} ${t.notes.join(' ')} ${t.jira || ''} ${t.due || ''} ${t.checkin || ''}`.toLowerCase();
     return terms.every((x) => hay.includes(x));
   };
 }
@@ -48,17 +51,29 @@ function statusWords(t) {
   return w;
 }
 
+function atTime(time) {
+  return time ? ` at ${formatTime(time)}` : '';
+}
+
 function dueInfo(t, today) {
   if (!t.due) return null;
   const rel = relativeDue(t.due, today);
   const tail = rel.text.replace(/^due /, '');
-  return { iso: t.due, state: t.flags.done ? 'none' : rel.state, text: `Due ${formatDate(t.due, today)}, ${tail}` };
+  return { iso: t.due, state: t.flags.done ? 'none' : rel.state, text: `Due ${formatDate(t.due, today)}${atTime(t.dueTime)}, ${tail}` };
+}
+
+function checkinText(t, today) {
+  if (!t.checkin) return null;
+  const rel = relativeDue(t.checkin, today);
+  return `Check in ${formatDate(t.checkin, today)}${atTime(t.checkinTime)}, ${rel.text.replace(/^due /, '')}`;
 }
 
 function describe(t, today, level, extra = {}) {
   const due = dueInfo(t, today);
   const meta = [];
-  if (due) meta.push(t.flags.done ? `Due ${formatDate(t.due, today)}` : due.text);
+  if (due) meta.push(t.flags.done ? `Due ${formatDate(t.due, today)}${atTime(t.dueTime)}` : due.text);
+  const checkin = !t.flags.done && checkinText(t, today);
+  if (checkin) meta.push(checkin);
   if (t.flags.done && t.doneDate) meta.push(`Completed ${formatDate(t.doneDate, today)}`);
   if (extra.parentText) meta.push(`Subtask of ${extra.parentText}`);
   if (t.group && !extra.hideGroup) meta.push(`Group ${t.group}`);
@@ -72,7 +87,8 @@ function describe(t, today, level, extra = {}) {
     text: t.text,
     words: t.kind === 'unmarked' ? ['Unmarked'] : statusWords(t),
     meta,
-    due: due ? { iso: due.iso, state: due.state } : null,
+    due: due ? { iso: due.iso, state: due.state, time: t.dueTime || null } : null,
+    checkin: t.checkin ? { iso: t.checkin, time: t.checkinTime || null } : null,
     flags: t.flags,
     hasChildren: !!extra.hasChildren,
     notes: t.notes,
@@ -102,10 +118,54 @@ function untriaged(index, state, { changedOnly = false } = {}) {
   return index.unmarked.filter((u) => !((state.dismissed || {})[u.file] || []).includes(u.textHash) && !(changedOnly && reviewed[u.file] === u.fileMtime));
 }
 
+/** Items on a list: tasks, and unmarked lines that were added as list notes. In the list's own order. */
 function listTasks(index, state, listId) {
   const list = (state.lists || []).find((l) => l.id === listId);
-  const byKey = new Map(index.tasks.map((t) => [t.listKey, t]));
+  const byKey = new Map(index.unmarked.map((u) => [u.listKey, u]));
+  for (const t of index.tasks) byKey.set(t.listKey, t);
   return list ? list.keys.map((k) => byKey.get(k)).filter(Boolean) : [];
+}
+
+function sortListItems(items, list, state) {
+  const mode = list.sort || 'manual';
+  if (mode === 'manual') return items;
+  const created = state.created || {};
+  const isNote = (t) => t.kind !== 'task';
+  const order = new Map(items.map((t, i) => [t, i]));
+  const when = (iso, time) => (iso ? `${iso} ${time || '99:99'}` : '9999');
+  const byDate = (key) => (a, b) => when(a[key], a[`${key}Time`]).localeCompare(when(b[key], b[`${key}Time`]));
+  const cmp = {
+    due: byDate('due'),
+    checkin: byDate('checkin'),
+    created: (a, b) => (created[a.listKey] || '9999').localeCompare(created[b.listKey] || '9999'),
+    type: () => 0,
+    name: (a, b) => a.text.localeCompare(b.text, undefined, { numeric: true, sensitivity: 'base' }),
+  }[mode];
+  const noteRank = (t) => (isNote(t) && mode !== 'name' && mode !== 'created' ? 1 : 0);
+  return [...items].sort((a, b) => noteRank(a) - noteRank(b) || cmp(a, b) || order.get(a) - order.get(b));
+}
+
+/** Events that put a task on the schedule: its earliest open due or check-in date. */
+function scheduled(index, today) {
+  const out = [];
+  for (const t of index.tasks) {
+    if (t.flags.done) continue;
+    const dates = [];
+    if (t.due) dates.push({ iso: t.due, time: t.dueTime });
+    if (t.checkin) dates.push({ iso: t.checkin, time: t.checkinTime });
+    if (!dates.length) continue;
+    dates.sort((a, b) => `${a.iso} ${a.time || '00:00'}`.localeCompare(`${b.iso} ${b.time || '00:00'}`));
+    out.push({ t, iso: dates[0].iso, time: dates[0].time });
+  }
+  return out.sort((a, b) => `${a.iso} ${a.time || '00:00'}`.localeCompare(`${b.iso} ${b.time || '00:00'}`) || a.t.fileLabel.localeCompare(b.t.fileLabel) || a.t.line - b.t.line);
+}
+
+function scheduleBucket(iso, today) {
+  const d = daysBetween(toISO(today), iso);
+  if (d < 0) return 'Overdue';
+  if (d === 0) return 'Today';
+  if (d <= 7) return 'This week';
+  return 'Later';
 }
 
 function viewCounts(index, state, today) {
@@ -113,11 +173,26 @@ function viewCounts(index, state, today) {
   const counts = {};
   for (const v of allViews(state)) {
     if (v.id === 'triage') counts.triage = untriaged(index, state).length;
+    else if (v.id === 'lists') counts.lists = (state.lists || []).length;
+    else if (v.id === 'schedule') counts.schedule = scheduled(index, today).length;
     else if (v.isList) counts[v.id] = listTasks(index, state, v.id.slice(5)).filter((t) => !t.flags.done).length;
     else if (v.id === 'completed') counts.completed = index.tasks.filter(preds.completed).length;
     else counts[v.id] = index.tasks.filter((t) => !t.flags.done && preds[v.id](t)).length;
   }
   return counts;
+}
+
+/** A task's own notes show as rows under it when it is expanded. */
+function withNoteRows(items) {
+  const out = [];
+  for (const it of items) {
+    out.push(it);
+    if (it.type !== 'task' || !it.notes || !it.notes.length) continue;
+    it.hasChildren = true;
+    it.noteCount = it.notes.length;
+    it.notes.forEach((text, i) => out.push({ id: `tn:${it.id}:${i}`, type: 'tasknote', level: it.level + 1, text, words: ['Note'], meta: [], hasChildren: false, flags: {}, notes: [] }));
+  }
+  return out;
 }
 
 function buildHierarchy(index, ctx, groupKeyOf) {
@@ -170,6 +245,7 @@ function buildHierarchy(index, ctx, groupKeyOf) {
 
 function buildView(index, state, opts = {}) {
   const today = opts.today || new Date();
+  let sortedBy = null;
   const views = allViews(state);
   const wanted = opts.view === 'mylist' ? 'list:mylist' : opts.view;
   const view = views.some((v) => v.id === wanted) ? wanted : 'open';
@@ -215,10 +291,41 @@ function buildView(index, state, opts = {}) {
         items.push(it);
       }
     }
+  } else if (view === 'lists') {
+    const lists = (state.lists || []).filter((l) => match({ text: l.name, group: l.folder || '', fileLabel: '', notes: [], jira: null, due: null, checkin: null }));
+    const folders = [...new Set(lists.map((l) => l.folder || ''))].sort((a, b) => (a === '' ? 1 : 0) - (b === '' ? 1 : 0) || a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    items = [];
+    for (const f of folders) {
+      const here = lists.filter((l) => (l.folder || '') === f);
+      items.push({ id: `g:${f}`, type: 'group', level: 1, text: f || 'No folder', words: [], meta: [here.length === 1 ? '1 list' : `${here.length} lists`], hasChildren: true });
+      for (const l of here) {
+        const n = listTasks(index, state, l.id).filter((x) => !x.flags.done).length;
+        const file = l.file ? index.files.find((x) => x.file === l.file) : null;
+        items.push({ id: `list:${l.id}`, type: 'list', listId: l.id, level: 2, text: l.name, words: [], meta: [n === 1 ? '1 open item' : `${n} open items`, file ? `Notes file ${file.label}` : 'No notes file'], hasChildren: false, flags: {}, notes: [] });
+      }
+    }
+  } else if (view === 'schedule') {
+    const byId = new Map(index.tasks.map((t) => [t.id, t]));
+    const all = scheduled(index, today).filter((e) => match(e.t));
+    items = [];
+    for (const label of ['Overdue', 'Today', 'This week', 'Later']) {
+      const here = all.filter((e) => scheduleBucket(e.iso, today) === label);
+      if (!here.length) continue;
+      items.push({ id: `g:${label}`, type: 'group', level: 1, text: label, words: [], meta: [here.length === 1 ? '1 task' : `${here.length} tasks`], hasChildren: true });
+      for (const e of here) {
+        const p = e.t.parentId ? byId.get(e.t.parentId) : null;
+        items.push(describe(e.t, today, 2, { parentText: p ? p.text : null }));
+      }
+    }
   } else if (def.isList) {
-    items = listTasks(index, state, view.slice(5))
+    const list = (state.lists || []).find((l) => l.id === view.slice(5));
+    items = sortListItems(listTasks(index, state, list.id), list, state)
       .filter((t) => (showCompleted || !t.flags.done) && match(t))
       .map((t) => {
+        if (t.kind !== 'task') {
+          const n = describe(t, today, 1, { hideGroup: true });
+          return { ...n, type: 'note', words: ['Note'], meta: n.meta.filter((m) => !/^File /.test(m)).concat(`File ${t.fileLabel}, line ${t.line}`) };
+        }
         const p = t.parentId ? index.get(t.parentId) : null;
         return describe(t, today, 1, { parentText: p ? p.text : null });
       });
@@ -253,8 +360,10 @@ function buildView(index, state, opts = {}) {
       }
     }
   }
+  if (view !== 'triage' && view !== 'lists') items = withNoteRows(items);
+  if (def.isList) sortedBy = (state.lists || []).find((l) => l.id === view.slice(5)).sort || 'manual';
   const count = view === 'triage' ? items.filter((i) => i.type === 'unmarked' && !i.known).length : items.filter((i) => i.type === 'task' || i.type === 'unmarked').length;
-  return { view, title: def.title, items, count, empty: def.empty || 'No open tasks.', rev: index.rev };
+  return { view, title: def.title, items, count: view === 'lists' ? (state.lists || []).length : count, empty: def.empty || 'No open tasks.', rev: index.rev, sortedBy, isList: !!def.isList };
 }
 
 module.exports = { listTasks, allViews, VIEWS, buildView, viewCounts, describe, matcher, untriaged, DUE_SOON_DAYS };

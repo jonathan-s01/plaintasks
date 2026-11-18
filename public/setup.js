@@ -12,6 +12,7 @@
     cfg = await api('/api/config');
     renderFolders();
     renderJira();
+    $('master-state').textContent = cfg.masterLabel ? `New tasks are saved to ${cfg.masterLabel}.` : 'No file chosen yet. The app asks the first time you create a task.';
     await renderProblems();
   }
 
@@ -44,7 +45,7 @@
         el('div', { class: 'field' },
           el('label', { for: `f-mode-${i}`, text: 'Unmarked lines are' }),
           mode,
-          el('span', { id: `f-mode-hint-${i}`, class: 'hint', text: 'A legend line in a file, such as "nothing = to do", overrides this for that file.' })),
+          el('span', { id: `f-mode-hint-${i}`, class: 'hint', text: 'Legend lines inside files, such as "nothing = to do", do not change this.' })),
         el('p', {},
           el('button', { type: 'button', text: 'Choose files and subfolders', onclick: () => showTree(i, treeBox) }), ' ',
           el('button', { type: 'button', text: 'Convert .rtf files', onclick: () => offerRtf(i, { silentIfNone: false }) }), ' ',

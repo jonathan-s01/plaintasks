@@ -20,7 +20,7 @@ Your settings live outside the repo, in `~/.config/plaintasks/` (override with `
 
 ## How tasks are recognised
 
-A marker is one or more of these symbols at the start of a line (after optional indentation). A space after it is normal, but `+Wayne thing` and `@call Sam` work too (not for `*` and `%` alone, and not when a digit follows, so `+1 for that` stays plain text). Markers combine, e.g. `+*` or `@%`.
+A marker is one or more of these symbols at the start of a line (after optional indentation). A space after it is normal, but `+Wayne thing` and `@call Sam` work too (not for `*` and `%` alone, and not when a digit follows, so `+1 for that` stays plain text). Markers combine, e.g. `+*` or `@%`. A `$` at the start of a line (`$ old thing`, always with a space, so `$5 lunch` stays plain text) means deleted: the app hides the line and everything nested under it, and leaves the text in your file.
 
 | Symbol | Meaning |
 | --- | --- |
@@ -46,10 +46,21 @@ Website relaunch
 - **Groups.** An unmarked line (or one ending in `:`) that is followed by tasks becomes a group or project name.
 - **Dates.** `due:2026-11-20` is the stored form. When you set a date in the app, friendly input such as `fri`, `nov 20`, `+3d` or `in 2 weeks` is converted to that form. Completing a task adds `+` and `done:YYYY-MM-DD`.
 - **Jira link.** `jira:ABC-123` ties a task to an issue.
-- **Per-file legends.** A file can define its own symbols with lines like `+ = done`, `nothing = to do`, or `• and indenting = subtasks`. `nothing = to do` makes unmarked lines tasks in that file; `nothing = notes` makes them notes. Legend lines are not tasks.
-- **Unmarked lines per folder.** Each watched folder has a setting: unmarked lines are *notes* (default) or *tasks*. Individual files can override it in the settings page. Precedence: file legend, then per-file setting, then folder setting.
-- **Triage (initial review).** The Triage view shows every file that still has unmarked lines, newest file first, with the whole file in order. Lines that already have a marker are shown as "Already a task" and need nothing from you; unmarked lines are read with their position ("3 of 12 to review in this file") and Enter shows the lines around it. `a` makes the line a `@` to-do, `x`, `m`, `w`, `i`, `p` mark it done, waiting or important straight away, `s` (which works in every view, on tasks too) marks it as a note: it is attached to the nearest task above it and the decision is kept in `~/.config/plaintasks/state.json`, never in your file. Shift+`s` marks every remaining line in the file as a note, `n` / Shift+`n` jump to the next / previous file, Shift+`r` marks a file as reviewed, and `f` shows only files that are new or changed since you reviewed them.
+- **Per-file legends.** A file can define its own symbols with lines like `+ = done`, `nothing = to do`, or `• and indenting = subtasks`. Lines such as `nothing = to do` are recognised and skipped (never shown as tasks) but do not change how unmarked lines are treated; that is decided only by the folder and per-file settings. Legend lines are not tasks.
+- **Unmarked lines per folder.** Each watched folder has a setting: unmarked lines are *notes* (default) or *tasks*. Individual files can override it in the settings page. Precedence: per-file setting, then folder setting. A file's own legend does not override either.
+- **Triage (initial review).** The Triage view shows every file that still has unmarked lines, newest file first, with the whole file in order. Lines that already have a marker are shown as "Already a task" and need nothing from you; unmarked lines are read with their position ("3 of 12 to review in this file") and Enter shows the lines around it. `a` makes the line a `@` to-do; `+`, `<`, `>`, `%` and `*` (or `x`, `w`, `i`, `p`) make it a to-do with that status straight away; `s` marks it as a note: it is attached to the nearest task above it and the decision is kept in `~/.config/plaintasks/state.json`, never in your file. Shift+`s` marks every remaining line in the file as a note, `n` / Shift+`n` jump to the next / previous file, Shift+`r` marks a file as reviewed, and `f` shows only files that are new or changed since you reviewed them.
 - **Lists (My list and your own).** Personal, reorderable working lists that are independent of which file a task lives in. You start with one, **My list**; make more in Manage lists (Shift+`m` or the Manage lists button) or from the chooser. A task can be on several lists. Press `l` on a task: with only My list it adds or removes straight away; with several lists a dialog shows a checkbox per list plus a field to create a new list and add the task to it. Shift+`l` adds or removes the task from the list you are viewing, or the one you used last. Press `-` for My list, `[` and `]` to step through lists, or use the View menu. Lists and their order are stored in `~/.config/plaintasks/state.json`, never in your text files, and tasks are matched by file and task text, so membership survives marking done or setting dates but resets if you reword the task. Deleting a list never touches your files (My list can be renamed, not deleted). Reorder with Option+Up / Option+Down, or press `g` to pick a task up, then Up, Down, Home and End move it and Enter or Escape drops it. Each move is announced ("Moved down to position 3 of 7"). `u` undoes list changes.
+
+- **Notes on tasks.** `s` on a task opens Add a note. The note is written into the file under the task, after its other notes, as `[2026-11-16, ListName] text` (the date stamp can be switched off). The task shows all its notes whichever list they were added from. To turn a task into a note, use Enter, then Convert to a note.
+- **Subtasks.** Tab makes the task a subtask of the task above it, with its notes and subtasks. Shift+Tab moves it up a level, and tasks right after it at the old level become its subtasks. On an unmarked line in triage Tab also marks it as a to-do. The file is re-indented.
+- **Delete.** Delete or Backspace on a task in a list takes it off that list. In any other view, including triage, it marks the line and its subtasks with `$` in the file and the app stops showing them; the text stays in the file. `u` undoes it. Option+`n` makes a new list.
+- **Notes under a task.** A task with notes can be expanded (Right arrow) to show them as rows under it. Tasks with notes start collapsed.
+- **Adding tasks.** `n` opens Add a task: type to search your tasks, Down to a match to put it on a list, or choose the last option to create a new task. `m` creates a task straight away without searching. New tasks are written as `@ text` at the end of the master file, which you choose the first time and can change in Settings. If a list is open the task goes on it.
+- **List sorting.** Shift+`o` in a list sorts it by manual order (remembered, the default), due date, check-in date, date added, type (notes last) or name. Reordering only works in manual order.
+- **List folders, notes files and list notes.** Manage lists lets a list have a folder (a label that groups lists in the All lists view, `=`) and a notes file. A notes file is created as `<List name>.txt` in a folder you pick inside a watched folder, and is skipped by triage. Shift+`n` in a list adds a note that is not a task to that file, stamped with the date.
+- **Due and check-in dates with times.** `d` sets the due date and a check-in date: `fri 2pm`, `nov 20 14:30`, `+3d 9am`. Stored as `due:2026-11-20 14:30` and `checkin:...`. `k` opens the same dialog on the check-in field. The Schedule view (`4`) groups tasks as Overdue, Today, This week and Later.
+
+The full design, including assumptions, is in [docs/SPEC-lists-notes.md](docs/SPEC-lists-notes.md).
 
 ## Safe writing
 
@@ -62,7 +73,7 @@ Website relaunch
 
 ## Views
 
-All open, by file, by group or project, due soon and overdue, waiting on me, waiting on others, important, in progress, completed, triage, and My list. Completed tasks are hidden everywhere except the Completed view; `c` shows them in the others. Search filters the current view.
+All open, by file, by group or project, schedule (overdue, today, this week, later), due soon and overdue, waiting on me, waiting on others, important, in progress, completed, triage, All lists, and each list. Completed tasks are hidden everywhere except the Completed view; `c` shows them in the others. Search filters the current view.
 
 ## Keyboard
 
@@ -73,21 +84,29 @@ Press `?` in the app for the list. The short version:
 | Up / Down, Home / End, PageUp / PageDown | move through the list |
 | Right / Left | expand / collapse subtasks, move to first child / parent |
 | Enter | actions menu for the item |
-| `x` | done / reopen |
-| `m` / `w` | toggle waiting on me / waiting on someone else |
-| `i` / `p` / `b` | toggle important / in progress / ongoing |
-| `d` | set or clear due date |
+| `+` (or `x`) | done / reopen |
+| `<` / `>` | toggle waiting on me / waiting on someone else |
+| `*` / `%` (or `i` / `p`), `b` | toggle important / in progress; ongoing |
+| (status symbols) | `+ > < % *` turning a status on opens a box for an optional note (who you are waiting on, why it matters). Enter with nothing typed skips it; Escape cancels. The note is saved dated under the task, for example `[2026-11-18] Waiting on others: Sam`, and one `u` undoes both. The letters `x w i p b` skip the box |
+| `s` | on a task: add a note; in triage, on an unmarked line: mark as a note |
+| Tab / Shift+Tab | make a subtask of the task above / move up a level |
+| `n`, `m` | add a task (search first) / create a task straight away |
+| Option+`n` | make a new list |
+| Delete / Backspace | in a list: off the list; elsewhere: delete the task (`$` in the file) |
+| Shift+`n` | in a list: add a note that is not a task |
+| Shift+`o` | in a list: sort |
+| `d`, `k` | due and check-in dates with times (`k` starts on check-in) |
 | `j` | Jira |
 | `o` | open the source file in your editor |
 | `u` | undo |
-| `a` / `s` / Shift+`s` | triage: mark as to-do / skip / skip the whole file |
-| `n` / Shift+`n`, Shift+`r`, `f` | triage: next / previous file, mark file reviewed, only new or changed files |
+| `a` / Shift+`s` | triage: mark as to-do / mark the whole file as notes |
+| `n` / Shift+`n`, Shift+`r`, `f` | triage (`n` elsewhere adds a task): next / previous file, mark file reviewed, only new or changed files |
 | `l` / Shift+`l` | choose lists for the task / quick add or remove on the current or last-used list |
 | `[` / `]`, Shift+`m` | previous / next list, manage lists |
 | `g`, Option+Up / Down | in a list: pick up and reorder with arrows, or move one place |
-| `1`–`9`, `0`, `-` | switch view (1 open, 2 file, 3 group, 4 due, 5 waiting on me, 6 waiting on others, 7 important, 8 in progress, 9 completed, 0 triage, minus My list; other lists via `[` `]` or the View menu) |
+| `1`–`9`, `0`, `-`, `=` | switch view (1 open, 2 file, 3 group, 4 schedule, 5 waiting on me, 6 waiting on others, 7 important, 8 in progress, 9 completed, 0 triage, minus My list, equals All lists; other lists via `[` `]` or the View menu) |
 | `v` | jump to the view menu |
-| `c` | show / hide completed |
+| `c` or `h` | show / hide completed |
 | `/` | search |
 | `r` | rescan now |
 

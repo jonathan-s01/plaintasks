@@ -5,7 +5,7 @@
   const $ = (id) => document.getElementById(id);
   const params = new URLSearchParams(location.search);
   const listMode = params.get('ui') === 'list';
-  const VIEW_KEYS = { 1: 'open', 2: 'file', 3: 'group', 4: 'due', 5: 'waitingMe', 6: 'waitingOthers', 7: 'important', 8: 'inProgress', 9: 'completed', 0: 'triage', '-': 'list:mylist' };
+  const VIEW_KEYS = { 1: 'open', 2: 'file', 3: 'group', 4: 'schedule', 5: 'waitingMe', 6: 'waitingOthers', 7: 'important', 8: 'inProgress', 9: 'completed', 0: 'triage', '-': 'list:mylist', '=': 'lists' };
   const store = {
     get: (k, d) => {
       try {
@@ -30,12 +30,15 @@
     model: null,
     summary: null,
     collapsed: new Set(),
+    seenNotes: new Set(),
     activeId: null,
     jira: null,
     pendingFocus: null,
     changedOnly: store.get('changed', '0') === '1',
     grab: null,
   };
+
+  const SORT_LABELS = { manual: 'manual order', due: 'due date', checkin: 'check-in date', created: 'date added', type: 'type, notes last', name: 'name' };
 
   const tree = $('tree');
   const itemRole = listMode ? 'option' : 'treeitem';
@@ -113,7 +116,7 @@
         id: `item-${it.id.replace(/[^\w-]/g, '_')}`,
         'data-id': it.id,
         tabindex: it.id === st.activeId ? '0' : '-1',
-        class: [it.type === 'group' ? 'group' : '', it.id === st.grab ? 'grabbed' : '', it.due && it.due.state === 'overdue' ? 'overdue' : ''].filter(Boolean).join(' '),
+        class: [it.type === 'group' ? 'group' : '', it.type === 'note' ? 'note' : '', it.type === 'list' ? 'listrow' : '', it.id === st.grab ? 'grabbed' : '', it.due && it.due.state === 'overdue' ? 'overdue' : ''].filter(Boolean).join(' '),
       });
       node.style.setProperty('--level', String(it.level));
       if (listMode) {
@@ -136,7 +139,9 @@
     $('grab-status').hidden = gi < 0;
     $('grab-status').textContent = gi < 0 ? '' : `Reordering "${vis[gi].text}", position ${gi + 1} of ${vis.length}. Up and Down move it. Home and End send it to the top or bottom. Enter or Escape drops it.`;
     const n = st.model.count;
-    $('list-status').textContent = `${n} ${st.model.view === 'triage' ? (n === 1 ? 'unmarked line' : 'unmarked lines') : n === 1 ? 'task' : 'tasks'}${st.q ? ` matching "${st.q}"` : ''}${st.showCompleted && st.model.view !== 'completed' ? ', including completed' : ''}${st.changedOnly && st.model.view === 'triage' ? ', new or changed files only' : ''}.`;
+    const noun = st.model.view === 'triage' ? (n === 1 ? 'unmarked line' : 'unmarked lines') : st.model.view === 'lists' ? (n === 1 ? 'list' : 'lists') : n === 1 ? 'task' : 'tasks';
+    const sorted = st.model.isList && st.model.sortedBy && st.model.sortedBy !== 'manual' ? `, sorted by ${SORT_LABELS[st.model.sortedBy] || st.model.sortedBy}` : '';
+    $('list-status').textContent = `${n} ${noun}${sorted}${st.q ? ` matching "${st.q}"` : ''}${st.showCompleted && st.model.view !== 'completed' ? ', including completed' : ''}${st.changedOnly && st.model.view === 'triage' ? ', new or changed files only' : ''}.`;
   }
 
   function nodeFor(id) {
@@ -169,6 +174,12 @@
     // Drop collapsed ids that no longer exist.
     const ids = new Set(model.items.map((i) => i.id));
     for (const id of [...st.collapsed]) if (!ids.has(id)) st.collapsed.delete(id);
+    // Tasks with notes start collapsed the first time they appear. After that the choice is yours.
+    for (const it of model.items) {
+      if (!it.noteCount || st.seenNotes.has(it.id)) continue;
+      st.seenNotes.add(it.id);
+      st.collapsed.add(it.id);
+    }
 
     const vis = visibleItems();
     let target = null;
@@ -206,15 +217,18 @@
     return enqueue(() => doAct(op, value, item, list));
   }
 
+  const NOTE_OPS = ['listToggle', 'listMove', 'open'];
+  const ADVANCE_OPS = ['todo', 'note', 'exclude', 'done', 'toggleDone', 'waitingOnMe', 'waitingOnOthers', 'important', 'inProgress', 'ongoing', 'indent'];
+
   async function doAct(op, value, item, list) {
     const isTask = item.type === 'task' || item.type === 'unmarked';
-    if (!isTask && op !== 'dismissFile') {
-      announce('That is a heading, not a task.');
+    if (!isTask && op !== 'dismissFile' && !(item.type === 'note' && NOTE_OPS.includes(op))) {
+      announce(item.type === 'tasknote' ? 'That is a note under a task. Select the task to change it or add another note.' : item.type === 'note' ? 'That is a note, not a task. You can remove it from the list, move it, or open its file.' : item.type === 'list' ? 'That is a list. Press Enter to open it.' : 'That is a heading, not a task.');
       return;
     }
     const idx = activeIndex();
     let nextId = null;
-    if (st.view === 'triage' && (op === 'todo' || op === 'note') && item.type === 'unmarked') {
+    if (st.view === 'triage' && ADVANCE_OPS.includes(op) && item.type === 'unmarked') {
       const vis = visibleItems();
       const nxt = vis.slice(idx + 1).find((i) => i.type === 'unmarked' && !i.known) || vis.find((i) => i.type === 'unmarked' && !i.known && i.id !== item.id);
       nextId = nxt ? nxt.id : null;
@@ -223,6 +237,13 @@
       const res = await api('/api/action', { method: 'POST', body: { id: item.id, op, value, list } });
       announce(res.message);
       if (op === 'open') return;
+      if (op === 'addNote' || (value && value.note)) {
+        // Show the note you just added.
+        for (const id of [item.id, res.focusId]) if (id) {
+          st.seenNotes.add(id);
+          st.collapsed.delete(id);
+        }
+      }
       await loadView({ focusId: nextId || res.focusId, keepIndex: idx });
     } catch (err) {
       alertMessage(err.message);
@@ -245,6 +266,7 @@
     st.view = id;
     store.set('view', id);
     st.collapsed.clear();
+    st.seenNotes.clear();
     st.grab = null;
     st.activeId = null;
     const model = await loadView({ focus: !fromSelect });
@@ -282,10 +304,10 @@
   }
 
   const FLAG_LABELS = [
-    ['waitingOnMe', 'Mark waiting on me', 'Clear waiting on me', 'm'],
-    ['waitingOnOthers', 'Mark waiting on someone else', 'Clear waiting on someone else', 'w'],
-    ['important', 'Mark important', 'Clear important', 'i'],
-    ['inProgress', 'Mark in progress', 'Clear in progress', 'p'],
+    ['waitingOnMe', 'Mark waiting on me', 'Clear waiting on me', 'less than'],
+    ['waitingOnOthers', 'Mark waiting on someone else', 'Clear waiting on someone else', 'greater than'],
+    ['important', 'Mark important', 'Clear important', 'asterisk'],
+    ['inProgress', 'Mark in progress', 'Clear in progress', 'percent'],
     ['ongoing', 'Mark ongoing', 'Clear ongoing', 'b'],
   ];
 
@@ -294,6 +316,14 @@
     if (!item) return;
     if (item.type === 'group') {
       toggleExpand(item);
+      return;
+    }
+    if (item.type === 'tasknote') {
+      announce('That is a note under a task. Select the task to change it or add another note.');
+      return;
+    }
+    if (item.type === 'list') {
+      switchView(`list:${item.listId}`);
       return;
     }
     const dlg = $('actions-dialog');
@@ -307,6 +337,17 @@
     const box = $('actions-buttons');
     box.replaceChildren();
     const add = (label, fn) => box.append(el('button', { type: 'button', text: label, onclick: async () => { closeDialog(dlg); await fn(); } }));
+    if (item.type === 'note') {
+      add('Remove from this list', () => act('listToggle', null, item, curListId()));
+      if (curListId()) {
+        add('Move up (alt and up)', () => act('listMove', 'up', item, curListId()));
+        add('Move down (alt and down)', () => act('listMove', 'down', item, curListId()));
+      }
+      add('Open source file (o)', () => act('open', null, item));
+      openDialog(dlg, item.id);
+      box.querySelector('button').focus();
+      return;
+    }
     if (item.type === 'unmarked') {
       const ctx = item.context || { before: [], after: [] };
       if (ctx.before.length || ctx.after.length) {
@@ -314,10 +355,14 @@
       }
       add('Mark as to-do (a)', () => act('todo'));
       add('Mark as a note (s)', () => act('note'));
+      add('Make a subtask of the task above (tab)', () => act('indent'));
       add('Mark all remaining lines in this file as notes (shift and s)', () => act('dismissFile', null, { id: `f:${fileOf(item)}`, type: 'group' }));
       add('Mark this file as reviewed (shift and r)', () => act('reviewFile'));
     } else {
-      add('Convert to a note (s)', () => act('note'));
+      add('Add a note to this task (s)', () => openNote());
+      add('Make a subtask of the task above (tab)', () => act('indent'));
+      add('Move up a level (shift and tab)', () => act('outdent'));
+      add('Convert to a note', () => act('note'));
       add('Choose lists for this task (l)', () => listKey());
       if (curListId()) {
         add('Move up (alt and up)', () => act('listMove', 'up'));
@@ -327,9 +372,9 @@
         add('Reorder with arrow keys (g)', () => startGrab());
       }
     }
-    add(item.flags.done ? 'Reopen (x)' : 'Mark done (x)', () => act('toggleDone'));
+    add(item.flags.done ? 'Reopen (plus)' : 'Mark done (plus)', () => act('toggleDone'));
     for (const [flag, on, off, key] of FLAG_LABELS) add(`${item.flags[flag] ? off : on} (${key})`, () => act(flag));
-    add('Set or clear due date (d)', () => openDue());
+    add('Due date and check-in (d)', () => openDue());
     add('Open source file (o)', () => act('open'));
     add('Jira (j)', () => openJira());
     add('Undo last change (u)', () => undo());
@@ -344,23 +389,37 @@
 
   $('actions-close').addEventListener('click', () => closeDialog($('actions-dialog')));
 
-  function openDue() {
+  const whenText = (d) => (d ? `${d.iso}${d.time ? ` ${d.time}` : ''}` : '');
+  let dueInitial = { due: '', checkin: '' };
+
+  function openDue(focusCheckin = false) {
     const item = currentItem();
-    if (!item || item.type === 'group') return;
+    if (!item || item.type === 'group' || item.type === 'list' || item.type === 'note') return;
     $('due-task').textContent = item.text;
-    $('due-input').value = item.due ? item.due.iso : '';
+    dueInitial = { due: whenText(item.due), checkin: whenText(item.checkin) };
+    $('due-input').value = dueInitial.due;
+    $('checkin-input').value = dueInitial.checkin;
     $('due-error').textContent = '';
     openDialog($('due-dialog'), item.id);
-    $('due-input').focus();
-    $('due-input').select();
+    const f = $(focusCheckin ? 'checkin-input' : 'due-input');
+    f.focus();
+    f.select();
   }
 
   $('due-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const item = currentItem();
     const idx = activeIndex();
+    const value = {};
+    if ($('due-input').value.trim() !== dueInitial.due) value.due = $('due-input').value;
+    if ($('checkin-input').value.trim() !== dueInitial.checkin) value.checkin = $('checkin-input').value;
+    if (!Object.keys(value).length) {
+      closeDialog($('due-dialog'));
+      announce('No change.');
+      return;
+    }
     try {
-      const res = await api('/api/action', { method: 'POST', body: { id: item.id, op: 'due', value: $('due-input').value } });
+      const res = await api('/api/action', { method: 'POST', body: { id: item.id, op: 'dates', value } });
       closeDialog($('due-dialog'));
       announce(res.message);
       await loadView({ focusId: res.focusId, keepIndex: idx });
@@ -439,6 +498,260 @@
 
   $('help-btn').addEventListener('click', () => openDialog($('help-dialog'), null));
   $('help-close').addEventListener('click', () => closeDialog($('help-dialog')));
+
+  // ---------- notes, new tasks, sorting, master file ----------
+
+  const post = (body) => api('/api/action', { method: 'POST', body });
+
+  async function finish(res, idx) {
+    announce(res.message);
+    await loadView({ focusId: res.focusId, keepIndex: idx });
+  }
+
+  let noteCtx = null;
+
+  function openNote() {
+    const item = currentItem();
+    if (!item || item.type !== 'task') {
+      announce('Select a task to add a note to it.');
+      return;
+    }
+    noteCtx = { mode: 'task', item };
+    $('note-title').textContent = 'Add a note to this task';
+    $('note-task').textContent = item.text;
+    $('note-hint').textContent = 'The note is written into the file under the task, after any notes it already has.';
+    $('note-stamp').parentElement.hidden = false;
+    showNote(item.id);
+  }
+
+  function openListNote() {
+    const id = curListId();
+    if (!id) {
+      announce('Shift and n adds a note to a list. Open a list first, for example with minus.');
+      return;
+    }
+    noteCtx = { mode: 'list', id };
+    $('note-title').textContent = `Add a note to ${listName(id)}`;
+    $('note-task').textContent = '';
+    $('note-hint').textContent = 'This is a note, not a task. It is saved with today\'s date in the list\'s notes file.';
+    $('note-stamp').parentElement.hidden = true;
+    showNote(st.activeId);
+  }
+
+  function showNote(returnId) {
+    $('note-input').value = '';
+    $('note-error').textContent = '';
+    $('note-stamp').checked = true;
+    if (noteCtx.mode !== 'status') $('note-save').textContent = 'Add note';
+    openDialog($('note-dialog'), returnId);
+    $('note-input').focus();
+  }
+
+  $('note-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const idx = activeIndex();
+    const text = $('note-input').value;
+    if (noteCtx.mode === 'status') {
+      const { item, op } = noteCtx;
+      closeDialog($('note-dialog'));
+      await act(op, text.trim() ? { note: text } : undefined, item, curListId() || undefined);
+      return;
+    }
+    try {
+      const body = noteCtx.mode === 'list'
+        ? { op: 'listNote', value: { text }, list: noteCtx.id }
+        : { id: noteCtx.item.id, op: 'addNote', value: { text, stamp: $('note-stamp').checked }, list: curListId() || undefined };
+      const res = await post(body);
+      closeDialog($('note-dialog'));
+      await finish(res, idx);
+    } catch (err) {
+      $('note-error').textContent = err.message;
+      $('note-input').focus();
+    }
+  });
+  $('note-cancel').addEventListener('click', () => closeDialog($('note-dialog')));
+
+  const nt = { search: true, seq: 0, timer: null };
+
+  function ntOptions(results, text) {
+    const sel = $('nt-results');
+    const opts = results.map((r) => el('option', { value: `t:${r.id}`, text: `${r.text} (${r.fileLabel})` }));
+    opts.push(el('option', { value: 'create', text: text ? `Create new task: ${text}` : 'Create new task' }));
+    sel.replaceChildren(...opts);
+    sel.selectedIndex = 0;
+  }
+
+  async function ntSearch() {
+    const text = $('nt-text').value.trim();
+    const mine = ++nt.seq;
+    if (!text) {
+      ntOptions([], '');
+      return;
+    }
+    try {
+      const { results } = await api(`/api/search?q=${encodeURIComponent(text)}`);
+      if (mine !== nt.seq) return;
+      ntOptions(results, text);
+      announce(results.length ? `${results.length} matching ${results.length === 1 ? 'task' : 'tasks'}. Press Down to choose. The last choice creates a new task.` : 'No matching tasks. Enter creates a new task.');
+    } catch (err) {
+      $('nt-error').textContent = err.message;
+    }
+  }
+
+  function openNewTask(search) {
+    nt.search = search;
+    nt.seq += 1;
+    $('newtask-title').textContent = search ? 'Add a task' : 'Create a new task';
+    $('nt-hint').textContent = search
+      ? 'Type to search your tasks. Press Down to choose a match to add to a list, or the last choice to create a new task. Enter confirms.'
+      : 'The task is added to the end of the master list file with the to-do symbol.';
+    $('nt-results-wrap').hidden = !search;
+    $('nt-go').textContent = search ? 'Add' : 'Create task';
+    $('nt-text').value = '';
+    $('nt-error').textContent = '';
+    ntOptions([], '');
+    const cur = curListId();
+    $('nt-list').replaceChildren(el('option', { value: '', text: 'No list' }), ...st.summary.lists.map((l) => el('option', { value: l.id, text: l.name })));
+    $('nt-list').value = cur || '';
+    openDialog($('newtask-dialog'), st.activeId);
+    $('nt-text').focus();
+  }
+
+  $('nt-text').addEventListener('input', () => {
+    if (!nt.search) return;
+    clearTimeout(nt.timer);
+    nt.timer = setTimeout(ntSearch, 150);
+  });
+  $('nt-text').addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' && nt.search) {
+      e.preventDefault();
+      clearTimeout(nt.timer);
+      $('nt-results').focus();
+    }
+  });
+  $('nt-results').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      $('newtask-form').requestSubmit();
+    } else if (e.key === 'ArrowUp' && $('nt-results').selectedIndex === 0) {
+      e.preventDefault();
+      $('nt-text').focus();
+    }
+  });
+  $('nt-cancel').addEventListener('click', () => closeDialog($('newtask-dialog')));
+
+  $('newtask-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    clearTimeout(nt.timer);
+    const idx = activeIndex();
+    const text = $('nt-text').value.trim();
+    const list = $('nt-list').value || undefined;
+    let choice = nt.search ? $('nt-results').value : 'create';
+    if (nt.search && !text) choice = 'create';
+    try {
+      if (choice.startsWith('t:')) {
+        if (!list) {
+          $('nt-error').textContent = 'Choose a list to add the task to, or choose Create new task.';
+          $('nt-list').focus();
+          return;
+        }
+        const res = await post({ id: choice.slice(2), op: 'listAdd', list });
+        closeDialog($('newtask-dialog'));
+        await finish(res, idx);
+        return;
+      }
+      if (!text) {
+        $('nt-error').textContent = 'Type the new task first.';
+        $('nt-text').focus();
+        return;
+      }
+      const res = await post({ op: 'newTask', value: { text }, list });
+      closeDialog($('newtask-dialog'));
+      await finish(res, idx);
+    } catch (err) {
+      if (err.code === 'no-master') {
+        closeDialog($('newtask-dialog'));
+        openMaster(() => openNewTask(nt.search), err.message);
+        return;
+      }
+      $('nt-error').textContent = err.message;
+      $('nt-text').focus();
+    }
+  });
+
+  function openSort() {
+    const id = curListId();
+    if (!id) {
+      announce('Sorting works in a list. Open a list first, for example with minus.');
+      return;
+    }
+    const cur = (st.model && st.model.sortedBy) || 'manual';
+    for (const r of $('sort-form').querySelectorAll('input[name=sort]')) r.checked = r.value === cur;
+    $('sort-title').textContent = `Sort ${listName(id)}`;
+    openDialog($('sort-dialog'), st.activeId);
+    $('sort-form').querySelector('input:checked').focus();
+  }
+
+  $('sort-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const mode = $('sort-form').querySelector('input:checked').value;
+    closeDialog($('sort-dialog'));
+    const idx = activeIndex();
+    try {
+      await finish(await post({ op: 'listSort', value: mode, list: curListId() }), idx);
+    } catch (err) {
+      alertMessage(err.message);
+    }
+  });
+  $('sort-cancel').addEventListener('click', () => closeDialog($('sort-dialog')));
+
+  let masterDone = null;
+
+  async function openMaster(onDone, why) {
+    masterDone = onDone || null;
+    $('master-error').textContent = '';
+    let cfg;
+    try {
+      cfg = await api('/api/config');
+    } catch (err) {
+      alertMessage(err.message);
+      return;
+    }
+    $('master-current').textContent = why || (cfg.masterLabel ? `Currently: ${cfg.masterLabel}.` : 'No file chosen yet.');
+    $('master-file').replaceChildren(...cfg.files.map((f) => el('option', { value: f.file, text: f.label })));
+    $('master-folder').replaceChildren(...cfg.folders.map((f) => el('option', { value: f.path, text: f.path })));
+    if (cfg.masterFile) $('master-file').value = cfg.masterFile;
+    openDialog($('master-dialog'), st.activeId);
+    $('master-file').focus();
+  }
+
+  async function masterSave(body) {
+    try {
+      const res = await api('/api/master', { method: 'POST', body });
+      closeDialog($('master-dialog'));
+      announce(res.message);
+      await loadSummary();
+      if (masterDone) {
+        const fn = masterDone;
+        masterDone = null;
+        fn();
+      }
+    } catch (err) {
+      $('master-error').textContent = err.message;
+    }
+  }
+  $('master-use').addEventListener('click', () => {
+    if ($('master-file').value) masterSave({ path: $('master-file').value });
+    else $('master-error').textContent = 'There are no files to choose from. Create a new one instead.';
+  });
+  $('master-create').addEventListener('click', () => {
+    if ($('master-folder').value) masterSave({ create: { folder: $('master-folder').value, name: $('master-name').value } });
+    else $('master-error').textContent = 'Add a folder in Settings first.';
+  });
+  $('master-close').addEventListener('click', () => {
+    masterDone = null;
+    closeDialog($('master-dialog'));
+  });
 
   // ---------- keyboard ----------
 
@@ -548,35 +861,62 @@
     }
   }
 
+  const notesPlace = () => {
+    const where = $('manage-where').value;
+    const sub = $('manage-sub').value.trim().replace(/^[\\/]+|[\\/]+$/g, '');
+    return where && sub ? `${where}/${sub}` : where;
+  };
+
   function renderManage() {
     const box = $('manage-lists');
     box.replaceChildren(...st.summary.lists.map((l, i) => {
-      const input = el('input', { type: 'text', id: `ml-${i}`, value: l.name, autocomplete: 'off', spellcheck: 'false' });
-      const row = el('li', { class: 'row' },
-        el('label', { for: `ml-${i}`, text: `Name of list ${i + 1}, ${l.count} open ${l.count === 1 ? 'task' : 'tasks'}` }), input,
-        el('button', { type: 'button', text: `Rename ${l.name}`, onclick: () => manageCall({ op: 'listRename', list: l.id, value: input.value }, `#ml-${i}`) }));
+      const nameIn = el('input', { type: 'text', id: `ml-${i}`, value: l.name, autocomplete: 'off', spellcheck: 'false' });
+      const folderIn = el('input', { type: 'text', id: `mf-${i}`, value: l.folder || '', autocomplete: 'off', spellcheck: 'false' });
+      const fs = el('fieldset', {},
+        el('legend', { text: `${l.name}, ${l.count} open ${l.count === 1 ? 'task' : 'tasks'}` }),
+        el('div', { class: 'row' }, el('label', { for: `ml-${i}`, text: 'Name' }), nameIn,
+          el('button', { type: 'button', text: `Rename ${l.name}`, onclick: () => manageCall({ op: 'listRename', list: l.id, value: nameIn.value }, `#ml-${i}`) })),
+        el('div', { class: 'row' }, el('label', { for: `mf-${i}`, text: 'Folder' }), folderIn,
+          el('button', { type: 'button', text: `Set folder of ${l.name}`, onclick: () => manageCall({ op: 'listEdit', list: l.id, value: { folder: folderIn.value } }, `#mf-${i}`) })),
+        el('div', { class: 'row' }, el('span', { text: l.notesFile ? `Notes file: ${l.notesFile}.` : 'No notes file.' }),
+          el('button', { type: 'button', text: `Create a notes file for ${l.name} in the notes location below`, onclick: () => manageCall({ op: 'listEdit', list: l.id, value: { notesFolder: notesPlace() } }, null) })));
       if (l.id !== 'mylist') {
-        row.append(el('button', { type: 'button', text: `Delete ${l.name}`, onclick: () => {
+        fs.append(el('button', { type: 'button', text: `Delete ${l.name}`, onclick: () => {
           if (window.confirm(`Delete the list ${l.name}? Your tasks and text files are not changed.`)) manageCall({ op: 'listDelete', list: l.id }, null);
         } }));
       }
-      return row;
+      return el('li', {}, fs);
     }));
   }
 
-  function openManage() {
+  async function openManage(focusNew) {
     $('manage-error').textContent = '';
     $('manage-new').value = '';
+    $('manage-folder').value = '';
+    $('manage-sub').value = '';
+    $('manage-makefile').checked = false;
+    try {
+      const cfg = await api('/api/config');
+      $('manage-where').replaceChildren(...cfg.folders.map((f) => el('option', { value: f.path, text: f.path })));
+    } catch (err) {
+      alertMessage(err.message);
+    }
     renderManage();
     openDialog($('manage-dialog'), st.activeId);
-    $('manage-lists').querySelector('input').focus();
+    if (focusNew === true) $('manage-new').focus();
+    else $('manage-lists').querySelector('input').focus();
   }
-  $('manage-btn').addEventListener('click', openManage);
+  $('manage-btn').addEventListener('click', () => openManage());
   $('manage-close').addEventListener('click', () => closeDialog($('manage-dialog')));
   $('manage-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const res = await manageCall({ op: 'listCreate', value: $('manage-new').value }, '#manage-new');
-    if (res) $('manage-new').value = '';
+    const value = { name: $('manage-new').value, folder: $('manage-folder').value };
+    if ($('manage-makefile').checked) value.notesFolder = notesPlace();
+    const res = await manageCall({ op: 'listCreate', value }, '#manage-new');
+    if (res) {
+      $('manage-new').value = '';
+      $('manage-folder').value = '';
+    }
   });
 
   function cycleList(dir) {
@@ -592,7 +932,11 @@
       announce('Reordering works in a list. Press minus to open My list, or open a list from the view menu.');
       return;
     }
-    if (!item || item.type !== 'task') return;
+    if (!item || (item.type !== 'task' && item.type !== 'note')) return;
+    if (st.model.sortedBy && st.model.sortedBy !== 'manual') {
+      announce(`This list is sorted by ${SORT_LABELS[st.model.sortedBy]}. Press shift and o and choose manual order to reorder it yourself.`);
+      return;
+    }
     st.grab = item.id;
     render();
     setActive(item.id, true);
@@ -615,7 +959,11 @@
       announce('Moving works in a list. Press minus to open My list, or open a list from the view menu.');
       return;
     }
-    if (!item || item.type !== 'task') return;
+    if (!item || (item.type !== 'task' && item.type !== 'note')) return;
+    if (st.model.sortedBy && st.model.sortedBy !== 'manual') {
+      announce(`This list is sorted by ${SORT_LABELS[st.model.sortedBy]}. Press shift and o and choose manual order to reorder it yourself.`);
+      return;
+    }
     await act('listMove', how, item, curListId());
     if (st.grab) {
       st.grab = st.activeId;
@@ -651,24 +999,65 @@
     l: () => listKey(),
     L: () => quickList(),
     g: () => startGrab(),
-    n: () => nextFile(1),
-    N: () => nextFile(-1),
+    n: () => (st.view === 'triage' ? nextFile(1) : openNewTask(true)),
     f: () => (st.view === 'triage' ? toggleChanged() : announce('The f key filters the triage view to new or changed files. Press 0 to open triage.')),
     R: () => reviewFile(),
     x: () => act('toggleDone'),
-    m: () => act('waitingOnMe'),
+    '+': () => statusKey('toggleDone', 'done', 'Done'),
+    '<': () => statusKey('waitingOnMe', 'waitingOnMe', 'Waiting on me'),
+    '>': () => statusKey('waitingOnOthers', 'waitingOnOthers', 'Waiting on others'),
+    '%': () => statusKey('inProgress', 'inProgress', 'In progress'),
+    '*': () => statusKey('important', 'important', 'Important'),
     w: () => act('waitingOnOthers'),
     i: () => act('important'),
     p: () => act('inProgress'),
+    m: () => openNewTask(false),
+    N: () => (st.view === 'triage' ? nextFile(-1) : openListNote()),
+    O: () => openSort(),
+    k: () => openDue(true),
     b: () => act('ongoing'),
     d: () => openDue(),
     j: () => openJira(),
     o: () => act('open'),
     u: () => undo(),
     a: () => (st.view === 'triage' ? act('todo') : announce('The a key marks unmarked lines as to-dos in the triage view. Press 0 to open triage.')),
-    s: () => act('note'),
+    s: () => noteKey(),
     S: () => (st.view === 'triage' ? skipFile() : announce('Shift and s marks every remaining line in a file as a note in the triage view. Press 0 to open triage.')),
   };
+
+  function statusKey(op, flag, label) {
+    const item = currentItem();
+    if (!item) return;
+    const turningOn = (item.type === 'task' || item.type === 'unmarked') && !(item.flags && item.flags[flag]);
+    if (!turningOn) {
+      act(op);
+      return;
+    }
+    noteCtx = { mode: 'status', item, op, label };
+    $('note-title').textContent = `${label}: add a note?`;
+    $('note-task').textContent = item.text;
+    $('note-hint').textContent = 'Optional. Type who or why, then Enter. Enter with nothing typed sets the status without a note. Escape cancels and changes nothing. The note is saved under the task.';
+    $('note-stamp').parentElement.hidden = true;
+    $('note-save').textContent = 'Set status';
+    showNote(item.id);
+  }
+
+  // In a list, Delete takes the item off that list. Anywhere else it deletes the task: the text stays in the file, marked with $.
+  function deleteKey() {
+    const item = currentItem();
+    if (!item) return undefined;
+    const listId = curListId();
+    if (listId && (item.type === 'task' || item.type === 'note')) return act('listToggle', null, item, listId);
+    return act('exclude');
+  }
+
+  function noteKey() {
+    const item = currentItem();
+    if (!item) return;
+    if (item.type === 'unmarked') act('note');
+    else if (item.type === 'task') openNote();
+    else announce('Select a task to add a note to it, or an unmarked line in triage to mark it as a note.');
+  }
 
   function reviewFile() {
     if (st.view !== 'triage') {
@@ -700,7 +1089,7 @@
       $('view').focus();
       return true;
     }
-    if (e.key === 'c') {
+    if (e.key === 'c' || e.key === 'h') {
       toggleCompleted();
       return true;
     }
@@ -720,7 +1109,7 @@
       api('/api/action', { method: 'POST', body: { op: 'refresh' } }).then(() => loadView({ focus: false })).then(() => announce('List refreshed.'));
       return true;
     }
-    if (/^[0-9-]$/.test(e.key) && VIEW_KEYS[e.key]) {
+    if (/^[0-9=-]$/.test(e.key) && VIEW_KEYS[e.key]) {
       switchView(VIEW_KEYS[e.key]);
       return true;
     }
@@ -786,9 +1175,19 @@
         }
         return undefined;
       }
+      case 'Tab':
+        if (item && (item.type === 'task' || item.type === 'unmarked')) {
+          e.preventDefault();
+          act(e.shiftKey ? 'outdent' : 'indent');
+        }
+        return undefined;
       case 'Enter':
         e.preventDefault();
         return openActions();
+      case 'Delete':
+      case 'Backspace':
+        e.preventDefault();
+        return deleteKey();
       case ' ':
         e.preventDefault();
         if (item && item.type === 'group') toggleExpand(item);
@@ -813,6 +1212,13 @@
     if (node) setActive(node.dataset.id, true);
   });
   tree.addEventListener('dblclick', () => openActions());
+
+  document.addEventListener('keydown', (e) => {
+    if (e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyN' && st.model && !document.querySelector('dialog[open]')) {
+      e.preventDefault();
+      openManage(true);
+    }
+  });
 
   document.addEventListener('keydown', (e) => {
     if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -888,6 +1294,7 @@
       await loadView({ focus: !location.hash.includes('nofocus') });
       if (problems) announce(`${problems} ${problems === 1 ? 'file was' : 'files were'} skipped. See settings for details.`);
       connectEvents();
+      if (params.get('master')) openMaster();
     } catch (err) {
       alertMessage(err.message);
     }

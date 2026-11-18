@@ -62,31 +62,22 @@ function readTextFile(file) {
   return { encoding, text, stat, hash: crypto.createHash('sha1').update(buf).digest('hex') };
 }
 
-/**
- * Replace exactly one line in a file.
- *
- * The file is re-read first. `expected` must still be present: at `lineIndex` if unchanged, or at a
- * unique shifted position if the file was edited elsewhere. Otherwise a ConflictError is thrown and
- * nothing is written. All other bytes (line endings, BOM, encoding, other lines) are preserved.
- */
-function replaceLine(file, { lineIndex, expected, replacement }) {
-  if (/[\r\n]/.test(replacement)) throw new Error('Replacement must be a single line');
+function locate(lines, lineIndex, expected) {
+  if (lines[lineIndex] === expected) return lineIndex;
+  const matches = [];
+  lines.forEach((l, i) => {
+    if (l === expected) matches.push(i);
+  });
+  return matches.length === 1 ? matches[0] : -1;
+}
+
+/** Re-reads the file, lets `edit(lines, eols)` change it in place, and writes it back atomically with the same encoding. */
+function editFile(file, edit) {
   const before = readTextFile(file);
   const { lines, eols } = splitLines(before.text);
-
-  let idx = -1;
-  if (lines[lineIndex] === expected) idx = lineIndex;
-  else {
-    const matches = [];
-    lines.forEach((l, i) => {
-      if (l === expected) matches.push(i);
-    });
-    if (matches.length === 1) idx = matches[0];
-  }
-  if (idx < 0) throw new ConflictError('That line changed in the file. Nothing was written. The list has been refreshed.');
-  if (lines[idx] === replacement) return { lineIndex: idx, changed: false };
-
-  lines[idx] = replacement;
+  const original = lines.join('\u0000');
+  const result = edit(lines, eols);
+  if (lines.join('\u0000') === original) return { ...result, changed: false };
   let out = '';
   for (let i = 0; i < lines.length; i += 1) out += lines[i] + eols[i];
 
@@ -118,7 +109,106 @@ function replaceLine(file, { lineIndex, expected, replacement }) {
       /* already renamed or never created */
     }
   }
-  return { lineIndex: idx, changed: true };
+  return { ...result, changed: true };
 }
 
-module.exports = { replaceLine, readTextFile, decode, encode, ConflictError, UnsupportedFileError };
+const CHANGED = 'That line changed in the file. Nothing was written. The list has been refreshed.';
+
+/**
+ * Replace exactly one line in a file.
+ *
+ * The file is re-read first. `expected` must still be present: at `lineIndex` if unchanged, or at a
+ * unique shifted position if the file was edited elsewhere. Otherwise a ConflictError is thrown and
+ * nothing is written. All other bytes (line endings, BOM, encoding, other lines) are preserved.
+ */
+function replaceLine(file, { lineIndex, expected, replacement }) {
+  if (/[\r\n]/.test(replacement)) throw new Error('Replacement must be a single line');
+  return editFile(file, (lines) => {
+    const idx = locate(lines, lineIndex, expected);
+    if (idx < 0) throw new ConflictError(CHANGED);
+    lines[idx] = replacement;
+    return { lineIndex: idx };
+  });
+}
+
+/** Replace several lines at once. Every line must still be exactly where it was, or nothing is written. */
+function replaceLines(file, changes) {
+  for (const c of changes) if (/[\r\n]/.test(c.replacement)) throw new Error('Replacement must be a single line');
+  return editFile(file, (lines) => {
+    for (const c of changes) if (lines[c.lineIndex] !== c.expected) throw new ConflictError(CHANGED);
+    for (const c of changes) lines[c.lineIndex] = c.replacement;
+    return {};
+  });
+}
+
+function defaultEol(eols) {
+  return eols.find((e) => e) || '\n';
+}
+
+/** Insert new lines directly after the line at `afterIndex` (which must still read `expected`). */
+function insertLinesAfter(file, { afterIndex, expected, newLines }) {
+  if (newLines.some((l) => /[\r\n]/.test(l))) throw new Error('Inserted lines must be single lines');
+  return editFile(file, (lines, eols) => {
+    const idx = locate(lines, afterIndex, expected);
+    if (idx < 0) throw new ConflictError(CHANGED);
+    const eol = eols[idx] || defaultEol(eols);
+    const last = eols[idx] === '';
+    if (last) eols[idx] = eol;
+    lines.splice(idx + 1, 0, ...newLines);
+    eols.splice(idx + 1, 0, ...newLines.map((_, i) => (last && i === newLines.length - 1 ? '' : eol)));
+    return { lineIndex: idx + 1 };
+  });
+}
+
+/** Add lines at the end of a file, keeping its line endings. */
+function appendLines(file, newLines) {
+  if (newLines.some((l) => /[\r\n]/.test(l))) throw new Error('Appended lines must be single lines');
+  return editFile(file, (lines, eols) => {
+    const eol = defaultEol(eols);
+    const endsWithNewline = lines.length > 1 && lines[lines.length - 1] === '';
+    const empty = lines.length === 1 && lines[0] === '';
+    if (empty) {
+      lines.splice(0, 1, ...newLines, '');
+      eols.splice(0, 1, ...newLines.map(() => eol), '');
+      return { lineIndex: 0 };
+    }
+    if (endsWithNewline) {
+      const at = lines.length - 1;
+      lines.splice(at, 0, ...newLines);
+      eols.splice(at, 0, ...newLines.map(() => eol));
+      return { lineIndex: at };
+    }
+    const at = lines.length;
+    eols[at - 1] = eol;
+    lines.push(...newLines);
+    eols.push(...newLines.map((_, i) => (i === newLines.length - 1 ? '' : eol)));
+    return { lineIndex: at };
+  });
+}
+
+/** Remove a block of lines that must still read exactly `expected` (used to undo insertions). */
+function removeLines(file, { lineIndex, expected }) {
+  return editFile(file, (lines, eols) => {
+    const fits = (at) => at >= 0 && expected.every((l, i) => lines[at + i] === l);
+    let at = fits(lineIndex) ? lineIndex : -1;
+    if (at < 0) {
+      const hits = [];
+      for (let i = 0; i < lines.length; i += 1) if (fits(i)) hits.push(i);
+      if (hits.length === 1) [at] = hits;
+    }
+    if (at < 0) throw new ConflictError(CHANGED);
+    const lastEol = eols[at + expected.length - 1];
+    lines.splice(at, expected.length);
+    eols.splice(at, expected.length);
+    if (lastEol === '' && at > 0) eols[at - 1] = '';
+    return { lineIndex: at };
+  });
+}
+
+/** Create a new text file. Never overwrites. */
+function createTextFile(file, lines) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, lines.length ? `${lines.join('\n')}\n` : '', { flag: 'wx' });
+}
+
+module.exports = { replaceLine, replaceLines, insertLinesAfter, appendLines, removeLines, createTextFile, readTextFile, decode, encode, ConflictError, UnsupportedFileError };

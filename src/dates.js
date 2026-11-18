@@ -118,15 +118,22 @@ const WORD = '[A-Za-z]+\\.?';
 const VALUE = [
   '\\d{4}-\\d{2}-\\d{2}',
   '\\+\\d{1,3}[dw]',
-  `${WORD}\\s+\\d{1,2}(?:st|nd|rd|th)?(?:,?\\s+\\d{4})?(?![\\w-])`,
-  `\\d{1,2}(?:st|nd|rd|th)?\\s+${WORD}(?:\\s+\\d{4})?(?![\\w-])`,
+  `${WORD}\\s+\\d{1,2}(?:st|nd|rd|th)?(?:,?\\s+\\d{4})?(?![\\w:-])`,
+  `\\d{1,2}(?:st|nd|rd|th)?\\s+${WORD}(?:\\s+\\d{4})?(?![\\w:-])`,
   '[A-Za-z]+(?![\\w-])',
 ].join('|');
-const TOKEN_RE = new RegExp(`(^|\\s)(due|done):(${VALUE})`, 'gi');
+const TOKEN_RE = new RegExp(`(^|\\s)(due|done|checkin):(${VALUE})(?:\\s+(\\d{1,2}:\\d{2}))?`, 'gi');
+
+function validTime(t) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(t || '');
+  if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) return null;
+  return `${pad(Number(m[1]))}:${m[2]}`;
+}
 
 /**
- * Find `due:` / `done:` tokens. Returns [{kind, start, end, raw, iso}] where start/end span the
- * token only (not the leading whitespace). Tokens whose value cannot be parsed are ignored.
+ * Find `due:` / `done:` / `checkin:` tokens. Returns [{kind, start, end, raw, iso, time}] where
+ * start/end span the token only (not the leading whitespace). Tokens whose value cannot be parsed
+ * are ignored. A time (14:30) may follow the date.
  */
 function findDateTokens(text, ref = new Date()) {
   const out = [];
@@ -139,12 +146,49 @@ function findDateTokens(text, ref = new Date()) {
     for (const raw of candidates) {
       const iso = parseFriendly(raw, ref);
       if (iso) {
-        out.push({ kind: m[2].toLowerCase(), start, end: start + m[2].length + 1 + raw.length, raw, iso });
+        const time = raw === m[3] ? validTime(m[4]) : null;
+        let end = start + m[2].length + 1 + raw.length;
+        if (time) end = m.index + m[0].length;
+        out.push({ kind: m[2].toLowerCase(), start, end, raw, iso, time });
         break;
       }
     }
   }
   return out;
+}
+
+/**
+ * Parse a date with an optional time of day: "fri 2pm", "nov 20 14:30", "tomorrow", "9am".
+ * Returns { iso, time } (time is "HH:MM" or null), or null when it cannot be understood.
+ */
+function parseWhen(input, ref = new Date()) {
+  const s = String(input == null ? '' : input).trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!s) return null;
+  let rest = s;
+  let time = null;
+  const m = /(?:^|\s)(?:at\s+)?(?:(\d{1,2}):(\d{2})\s*(am|pm)?|(\d{1,2})\s*(am|pm))$/.exec(s);
+  if (m) {
+    let h = Number(m[1] != null ? m[1] : m[4]);
+    const min = Number(m[2] != null ? m[2] : 0);
+    const mer = m[3] || m[5];
+    if (mer) {
+      if (h < 1 || h > 12) return null;
+      h = (h % 12) + (mer === 'pm' ? 12 : 0);
+    }
+    if (h > 23 || min > 59) return null;
+    time = `${pad(h)}:${pad(min)}`;
+    rest = s.slice(0, m.index).trim();
+  }
+  if (!rest) return time ? { iso: toISO(startOfDay(ref)), time } : null;
+  const iso = parseFriendly(rest, ref);
+  return iso ? { iso, time } : null;
+}
+
+function formatTime(hhmm) {
+  const m = /^(\d{2}):(\d{2})$/.exec(hhmm || '');
+  if (!m) return '';
+  const h = Number(m[1]);
+  return `${h % 12 || 12}${m[2] === '00' ? '' : `:${m[2]}`} ${h < 12 ? 'am' : 'pm'}`;
 }
 
 function daysBetween(fromIso, toIso) {
@@ -170,4 +214,4 @@ function relativeDue(iso, ref = new Date()) {
   return { state: 'later', text: `due in ${n} days`, days: n };
 }
 
-module.exports = { parseFriendly, findDateTokens, toISO, fromISO, addDays, daysBetween, formatDate, relativeDue, startOfDay };
+module.exports = { parseFriendly, parseWhen, formatTime, findDateTokens, toISO, fromISO, addDays, daysBetween, formatDate, relativeDue, startOfDay };

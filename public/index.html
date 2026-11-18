@@ -67,12 +67,20 @@
 
   <dialog id="manage-dialog" aria-labelledby="manage-title">
     <h2 id="manage-title">Manage lists</h2>
-    <p>Lists are personal and are kept outside your text files. Deleting a list never changes your files.</p>
+    <p>Lists are personal and are kept outside your text files. Deleting a list never changes your files. A list can have a folder to group it, and a notes file for notes that are not tasks, such as meeting notes.</p>
     <ul id="manage-lists" class="plain"></ul>
     <form id="manage-form">
-      <label for="manage-new">New list name</label>
+      <h3>New list</h3>
+      <label for="manage-new">Name</label>
       <input id="manage-new" type="text" autocomplete="off" spellcheck="false">
-      <button type="submit">Create list</button>
+      <label for="manage-folder">Folder (optional, groups lists in the All lists view)</label>
+      <input id="manage-folder" type="text" autocomplete="off" spellcheck="false">
+      <div class="row"><input type="checkbox" id="manage-makefile"><label for="manage-makefile">Also create a notes file for this list</label></div>
+      <label for="manage-where">Folder for the notes file</label>
+      <select id="manage-where"></select>
+      <label for="manage-sub">Subfolder for the notes file (optional, created if needed)</label>
+      <input id="manage-sub" type="text" autocomplete="off" spellcheck="false">
+      <p><button type="submit">Create list</button></p>
     </form>
     <p id="manage-error" class="error" role="alert"></p>
     <p><button type="button" id="manage-close">Close</button></p>
@@ -80,14 +88,84 @@
 
   <dialog id="due-dialog" aria-labelledby="due-title">
     <form method="dialog" id="due-form">
-      <h2 id="due-title">Set due date</h2>
+      <h2 id="due-title">Due date and check-in</h2>
       <p id="due-task"></p>
       <label for="due-input">Due date</label>
       <input id="due-input" type="text" autocomplete="off" spellcheck="false" aria-describedby="due-hint">
-      <p id="due-hint" class="hint">Examples: fri, nov 20, +3d, 2026-11-20. Leave empty to clear the date.</p>
+      <label for="checkin-input">Check-in date</label>
+      <input id="checkin-input" type="text" autocomplete="off" spellcheck="false" aria-describedby="due-hint">
+      <p id="due-hint" class="hint">Examples: fri, nov 20, +3d, 2026-11-20. Add a time after it: fri 2pm, nov 20 14:30. Leave a field empty to clear it.</p>
       <p id="due-error" class="error" role="alert"></p>
-      <p><button type="submit" id="due-save">Save due date</button> <button type="button" id="due-cancel">Cancel</button></p>
+      <p><button type="submit" id="due-save">Save dates</button> <button type="button" id="due-cancel">Cancel</button></p>
     </form>
+  </dialog>
+
+  <dialog id="note-dialog" aria-labelledby="note-title">
+    <form method="dialog" id="note-form">
+      <h2 id="note-title">Add a note</h2>
+      <p id="note-task"></p>
+      <label for="note-input">Note</label>
+      <input id="note-input" type="text" autocomplete="off" aria-describedby="note-hint">
+      <p id="note-hint" class="hint"></p>
+      <div class="row"><input type="checkbox" id="note-stamp" checked><label for="note-stamp">Start the note with today's date</label></div>
+      <p id="note-error" class="error" role="alert"></p>
+      <p><button type="submit" id="note-save">Add note</button> <button type="button" id="note-cancel">Cancel</button></p>
+    </form>
+  </dialog>
+
+  <dialog id="newtask-dialog" aria-labelledby="newtask-title">
+    <form method="dialog" id="newtask-form">
+      <h2 id="newtask-title">Add a task</h2>
+      <label for="nt-text">Task</label>
+      <input id="nt-text" type="text" autocomplete="off" spellcheck="false" aria-describedby="nt-hint">
+      <p id="nt-hint" class="hint"></p>
+      <div id="nt-results-wrap">
+        <label for="nt-results">Matching tasks</label>
+        <select id="nt-results" size="6"></select>
+      </div>
+      <label for="nt-list">Put it on list</label>
+      <select id="nt-list"></select>
+      <p id="nt-error" class="error" role="alert"></p>
+      <p><button type="submit" id="nt-go">Add</button> <button type="button" id="nt-cancel">Cancel</button></p>
+    </form>
+  </dialog>
+
+  <dialog id="sort-dialog" aria-labelledby="sort-title">
+    <form method="dialog" id="sort-form">
+      <h2 id="sort-title">Sort this list</h2>
+      <fieldset>
+        <legend>Sort by</legend>
+        <div class="row"><input type="radio" name="sort" id="sort-manual" value="manual"><label for="sort-manual">Manual order (your own, remembered)</label></div>
+        <div class="row"><input type="radio" name="sort" id="sort-due" value="due"><label for="sort-due">Due date</label></div>
+        <div class="row"><input type="radio" name="sort" id="sort-checkin" value="checkin"><label for="sort-checkin">Check-in date</label></div>
+        <div class="row"><input type="radio" name="sort" id="sort-created" value="created"><label for="sort-created">Date added to the list</label></div>
+        <div class="row"><input type="radio" name="sort" id="sort-type" value="type"><label for="sort-type">Type: tasks first, notes last</label></div>
+        <div class="row"><input type="radio" name="sort" id="sort-name" value="name"><label for="sort-name">Name</label></div>
+      </fieldset>
+      <p><button type="submit">Sort</button> <button type="button" id="sort-cancel">Cancel</button></p>
+    </form>
+  </dialog>
+
+  <dialog id="master-dialog" aria-labelledby="master-title">
+    <h2 id="master-title">Where should new tasks be saved?</h2>
+    <p id="master-current"></p>
+    <p>New tasks are added to the end of one file, called the master list. It must be in a folder the app watches.</p>
+    <fieldset>
+      <legend>Use an existing file</legend>
+      <label for="master-file">File</label>
+      <select id="master-file"></select>
+      <p><button type="button" id="master-use">Use this file</button></p>
+    </fieldset>
+    <fieldset>
+      <legend>Or create a new file</legend>
+      <label for="master-folder">Folder</label>
+      <select id="master-folder"></select>
+      <label for="master-name">File name</label>
+      <input id="master-name" type="text" autocomplete="off" spellcheck="false" value="Tasks">
+      <p><button type="button" id="master-create">Create file and use it</button></p>
+    </fieldset>
+    <p id="master-error" class="error" role="alert"></p>
+    <p><button type="button" id="master-close">Close</button></p>
   </dialog>
 
   <dialog id="jira-dialog" aria-labelledby="jira-title">
@@ -127,31 +205,42 @@
         <tr><th scope="row">Right</th><td>Expand subtasks, or move to the first subtask</td></tr>
         <tr><th scope="row">Left</th><td>Collapse subtasks, or move to the parent</td></tr>
         <tr><th scope="row">Enter</th><td>Open the actions menu for the item (or expand and collapse a group)</td></tr>
-        <tr><th scope="row">x</th><td>Mark done, or reopen if already done</td></tr>
-        <tr><th scope="row">m</th><td>Toggle waiting on me</td></tr>
-        <tr><th scope="row">w</th><td>Toggle waiting on someone else</td></tr>
-        <tr><th scope="row">i</th><td>Toggle important</td></tr>
-        <tr><th scope="row">p</th><td>Toggle in progress</td></tr>
+        <tr><th scope="row">plus, x</th><td>Toggle done (a done task gets done: and today's date)</td></tr>
+        <tr><th scope="row">plus, greater than, less than, percent, asterisk</th><td>When these turn a status on, a box asks for an optional note, for example who you are waiting on. Enter with nothing typed sets the status without a note. The note is saved under the task and shows when it is expanded. The letters x, w, p, i and b set the status straight away</td></tr>
+        <tr><th scope="row">greater than, w</th><td>Toggle waiting on someone else</td></tr>
+        <tr><th scope="row">less than</th><td>Toggle waiting on me</td></tr>
+        <tr><th scope="row">percent, p</th><td>Toggle in progress</td></tr>
+        <tr><th scope="row">asterisk, i</th><td>Toggle important</td></tr>
         <tr><th scope="row">b</th><td>Toggle ongoing or major outcome</td></tr>
-        <tr><th scope="row">d</th><td>Set or clear the due date</td></tr>
+        <tr><th scope="row">Tab</th><td>Make the task a subtask of the task above it, with its notes and subtasks. On an unmarked line it also marks it as a to-do</td></tr>
+        <tr><th scope="row">Shift and Tab</th><td>Move a subtask up a level. Tasks right after it at the old level become its subtasks</td></tr>
+        <tr><th scope="row">d</th><td>Set or clear the due date and the check-in date. A time works too: fri 2pm</td></tr>
         <tr><th scope="row">j</th><td>Jira: link, status, create</td></tr>
         <tr><th scope="row">o</th><td>Open the source file in your text editor</td></tr>
         <tr><th scope="row">u</th><td>Undo the last change</td></tr>
-        <tr><th scope="row">l</th><td>Choose which lists the task is on. With only My list, it adds or removes the task straight away</td></tr>
-        <tr><th scope="row">shift and l</th><td>Add the task to the list you are viewing, or the one you used last, or remove it from there</td></tr>
+        <tr><th scope="row">s</th><td>On a task: add a note to it, below its other notes in the file. On an unmarked line in triage: mark it as a note, attached to the task above. Shift and s marks every remaining line in the file as a note</td></tr>
+        <tr><th scope="row">Enter</th><td>Menu with every action, including converting a task to a note</td></tr>
+        <tr><th scope="row">n</th><td>Add a task: type to search the tasks you have, pick one to add to a list, or choose Create new task. In triage, n goes to the next file</td></tr>
+        <tr><th scope="row">Option and n</th><td>Make a new list</td></tr>
+        <tr><th scope="row">Delete or Backspace</th><td>In a list: take the item off that list. In any other view, including triage: delete the task and its subtasks. The text stays in the file with a dollar sign at the start, and the app stops showing it. u undoes it</td></tr>
+        <tr><th scope="row">Right arrow, Left arrow</th><td>Expand or collapse a task to show its notes and subtasks. Tasks with notes start collapsed</td></tr>
+        <tr><th scope="row">m</th><td>Create a new task straight away, without searching</td></tr>
+        <tr><th scope="row">shift and n</th><td>In a list: add a note that is not a task, to the list's notes file. In triage: previous file</td></tr>
+        <tr><th scope="row">l</th><td>Choose which lists the task is on. With only My list, it adds or removes straight away</td></tr>
+        <tr><th scope="row">shift and l</th><td>Add the task to the list you are viewing or used last, or remove it</td></tr>
         <tr><th scope="row">left bracket, right bracket</th><td>Previous or next list</td></tr>
-        <tr><th scope="row">shift and m</th><td>Manage lists: create, rename, delete</td></tr>
-        <tr><th scope="row">g</th><td>In a list: pick up the task to reorder. Then Up, Down, Home and End move it, Enter or Escape drops it</td></tr>
-        <tr><th scope="row">Option and Up, Option and Down</th><td>In a list: move the task up or down one place without picking it up</td></tr>
+        <tr><th scope="row">shift and m</th><td>Manage lists: create, rename, delete, folders, notes files</td></tr>
+        <tr><th scope="row">shift and o</th><td>In a list: sort by manual order, due, check-in, date added, type or name</td></tr>
+        <tr><th scope="row">g</th><td>In a list with manual order: pick up the item to reorder. Then Up, Down, Home and End move it, Enter or Escape drops it</td></tr>
+        <tr><th scope="row">Option and Up, Option and Down</th><td>In a list with manual order: move the item up or down one place</td></tr>
         <tr><th scope="row">minus</th><td>Open My list</td></tr>
-        <tr><th scope="row">a</th><td>Triage view: mark the unmarked line as a to-do. x, m, w, i and p also work on unmarked lines</td></tr>
-        <tr><th scope="row">n, shift and n</th><td>Triage view: next or previous file</td></tr>
-        <tr><th scope="row">f</th><td>Triage view: show only files not yet reviewed or changed since review</td></tr>
-        <tr><th scope="row">shift and r</th><td>Triage view: mark the whole file as reviewed</td></tr>
-        <tr><th scope="row">s</th><td>Mark the line as a note, in any view (it attaches to the task above it, and your file is not changed). Shift and s marks every remaining line in the file as a note</td></tr>
-        <tr><th scope="row">1 to 9, 0</th><td>Switch view: 1 all open, 2 by file, 3 by group, 4 due, 5 waiting on me, 6 waiting on others, 7 important, 8 in progress, 9 completed, 0 triage</td></tr>
+        <tr><th scope="row">equals</th><td>Open All lists</td></tr>
+        <tr><th scope="row">a</th><td>Triage: mark the unmarked line as a to-do. The symbol keys also work on unmarked lines</td></tr>
+        <tr><th scope="row">f</th><td>Triage: show only files not yet reviewed or changed since review</td></tr>
+        <tr><th scope="row">shift and r</th><td>Triage: mark the whole file as reviewed</td></tr>
+        <tr><th scope="row">1 to 9, 0</th><td>Switch view: 1 all open, 2 by file, 3 by group, 4 schedule, 5 waiting on me, 6 waiting on others, 7 important, 8 in progress, 9 completed, 0 triage</td></tr>
         <tr><th scope="row">v</th><td>Jump to the view menu</td></tr>
-        <tr><th scope="row">c</th><td>Show or hide completed tasks</td></tr>
+        <tr><th scope="row">c or h</th><td>Show or hide completed tasks</td></tr>
         <tr><th scope="row">slash</th><td>Jump to search</td></tr>
         <tr><th scope="row">r</th><td>Rescan the files now</td></tr>
         <tr><th scope="row">question mark</th><td>Open this help</td></tr>

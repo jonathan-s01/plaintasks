@@ -81,7 +81,7 @@ test('triage shows the whole file; marking a note attaches it to the task above 
 
 test('a task line can be converted to a note in any view, and undone', async () => {
   const { notes, app } = setup({ 'a.txt': '@ call Sam\n@ http://example.com\n@ parent\n\t@ child\n' });
-  const open = () => items(app, 'open').map((i) => i.text);
+  const open = () => items(app, 'open').filter((i) => i.type === 'task').map((i) => i.text);
   const url = items(app, 'open').find((i) => /example/.test(i.text));
   await app.action({ id: url.id, op: 'note' });
   assert.deepEqual(open(), ['call Sam', 'parent', 'child']);
@@ -268,4 +268,11 @@ test('state from the single-list version is migrated into My list', () => {
   fs.writeFileSync(path.join(cfg, 'state.json'), JSON.stringify({ dismissed: {}, mylist: [key] }));
   const app2 = new App({ dir: cfg, now: NOW, opener() {}, secretApi: { getJiraToken: () => null } });
   assert.deepEqual(app2.view({ view: 'list:mylist', q: '' }).items.map((i) => i.text), ['one']);
+});
+
+test('the session token survives restarts so open pages keep saving', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pt-token-'));
+  const first = require('../src/config').sessionToken(dir);
+  assert.match(first, /^[0-9a-f]{48}$/);
+  assert.equal(require('../src/config').sessionToken(dir), first);
 });

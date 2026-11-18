@@ -4,7 +4,7 @@
 const { execFile } = require('node:child_process');
 const { App } = require('../src/app');
 const { createServer } = require('../src/server');
-const { configDir } = require('../src/config');
+const { configDir, sessionToken } = require('../src/config');
 
 const args = process.argv.slice(2);
 const flag = (n) => args.includes(`--${n}`);
@@ -25,7 +25,7 @@ Env:    PLAINTASKS_CONFIG_DIR, PLAINTASKS_PORT, PLAINTASKS_JIRA_TOKEN`);
 
 const port = Number(opt('port') || process.env.PLAINTASKS_PORT || 4747);
 const app = new App();
-const server = createServer(app);
+const server = createServer(app, { token: sessionToken(configDir()) });
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') console.error(`Port ${port} is already in use. Is plaintasks already running? Try --port ${port + 1}.`);

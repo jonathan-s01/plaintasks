@@ -283,3 +283,22 @@ ul.plain {
   list-style: none;
   padding: 0;
 }
+
+[role="treeitem"].note,
+[role="option"].note {
+  font-style: italic;
+}
+
+[role="treeitem"].listrow,
+[role="option"].listrow {
+  font-weight: bold;
+}
+
+#nt-results {
+  width: 100%;
+}
+
+dialog fieldset .row input[type="text"] {
+  width: auto;
+  flex: 1 1 12rem;
+}

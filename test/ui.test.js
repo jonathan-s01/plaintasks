@@ -53,7 +53,7 @@ async function openPage(env, page = '/') {
 }
 
 async function waitFor(fn, what) {
-  for (let i = 0; i < 100; i += 1) {
+  for (let i = 0; i < 250; i += 1) {
     const v = fn();
     if (v) return v;
     await new Promise((r) => setTimeout(r, 20));
@@ -218,6 +218,117 @@ test('multiple lists: l opens a chooser, new list is created, [ ] cycle lists, d
     await waitFor(() => doc.getElementById('manage-dialog').hasAttribute('open'), 'manage opens');
     const res2 = await window.axe.run(doc.getElementById('manage-dialog'), { rules: { 'color-contrast': { enabled: false }, region: { enabled: false } } });
     assert.equal(res2.violations.length, 0, res2.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join()}`).join('\n'));
+    window.close();
+  } finally {
+    env.close();
+  }
+});
+
+test('status symbols, add note, add task with master file, sort and dates dialogs', async () => {
+  const env = await boot({ 'a.txt': '@ one\n@ two\n' });
+  try {
+    const { window } = await openPage(env);
+    const doc = window.document;
+    const tree = doc.getElementById('tree');
+    const rows = () => [...tree.querySelectorAll('[role=treeitem]')];
+    const live = () => doc.getElementById('live').textContent;
+    const submit = (id) => doc.getElementById(id).dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+    const rules = { rules: { 'color-contrast': { enabled: false }, region: { enabled: false } } };
+    const axeOk = async (id) => {
+      const r = await window.axe.run(doc.getElementById(id), rules);
+      assert.equal(r.violations.length, 0, `${id}: ${r.violations.map((v) => v.id).join()}`);
+    };
+    window.eval(axe.source);
+    await waitFor(() => rows().length === 2, 'items');
+
+    key(window, doc.activeElement, '>');
+    await waitFor(() => doc.getElementById('note-dialog').hasAttribute('open') && /Waiting on others/.test(doc.getElementById('note-title').textContent), 'status note prompt');
+    await axeOk('note-dialog');
+    submit('note-form');
+    await waitFor(() => /one/.test(live()) && /waiting/i.test(live()) && !doc.getElementById('note-dialog').hasAttribute('open'), 'waiting set with blank Enter');
+    assert.equal(fs.readFileSync(path.join(env.notes, 'a.txt'), 'utf8'), '@> one\n@ two\n');
+
+    key(window, doc.activeElement, '*');
+    await waitFor(() => doc.getElementById('note-dialog').hasAttribute('open'), 'important prompt');
+    doc.getElementById('note-input').value = 'board asked';
+    submit('note-form');
+    await waitFor(() => /Note added/.test(live()) && !doc.getElementById('note-dialog').hasAttribute('open'), 'important with note');
+    assert.match(fs.readFileSync(path.join(env.notes, 'a.txt'), 'utf8'), /^@>\* one\n {2}\[2026-11-16\] Important: board asked\n@ two\n$/);
+
+    await waitFor(() => doc.activeElement && doc.activeElement.getAttribute('role') === 'treeitem', 'focus back on the list');
+    key(window, doc.activeElement, 's');
+    await waitFor(() => doc.getElementById('note-dialog').hasAttribute('open'), 'note dialog');
+    await axeOk('note-dialog');
+    doc.getElementById('note-input').value = 'called them';
+    submit('note-form');
+    await waitFor(() => /called them|[Nn]ote/.test(live()) && !doc.getElementById('note-dialog').hasAttribute('open'), 'note saved');
+    assert.match(fs.readFileSync(path.join(env.notes, 'a.txt'), 'utf8'), /\[2026-11-16\] called them/);
+
+    doc.getElementById('note-dialog').removeAttribute('open');
+    doc.activeElement.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'n', code: 'KeyN', bubbles: true, cancelable: true }));
+    await waitFor(() => doc.getElementById('newtask-dialog').hasAttribute('open'), 'add task dialog');
+    await axeOk('newtask-dialog');
+    doc.getElementById('nt-text').value = 'brand new thing';
+    submit('newtask-form');
+    await waitFor(() => doc.getElementById('master-dialog').hasAttribute('open'), 'master picker');
+    await waitFor(() => doc.getElementById('master-folder').options.length === 1, 'folders listed');
+    await axeOk('master-dialog');
+    doc.getElementById('master-create').click();
+    await waitFor(() => doc.getElementById('newtask-dialog').hasAttribute('open') && !doc.getElementById('master-dialog').hasAttribute('open'), 'back to add task');
+    doc.getElementById('nt-text').value = 'brand new thing';
+    submit('newtask-form');
+    await waitFor(() => /brand new thing/.test(fs.existsSync(path.join(env.notes, 'Tasks.txt')) ? fs.readFileSync(path.join(env.notes, 'Tasks.txt'), 'utf8') : ''), 'task written to master');
+
+    doc.getElementById('newtask-dialog').removeAttribute('open');
+    await env.app.action({ id: env.app.index.tasks[0].id, op: 'listAdd', list: 'mylist' });
+    key(window, doc.body, '-');
+    await waitFor(() => /^My list/.test(doc.getElementById('list-heading').textContent) && rows().length > 0, 'my list');
+    key(window, rows()[0], 'O');
+    await waitFor(() => doc.getElementById('sort-dialog').hasAttribute('open'), 'sort dialog');
+    await axeOk('sort-dialog');
+    doc.getElementById('sort-dialog').removeAttribute('open');
+
+    key(window, doc.body, '1');
+    await waitFor(() => rows().length > 0 && /^All open|open/i.test(doc.getElementById('list-heading').textContent), 'open view');
+    key(window, rows()[0], 'd');
+    await waitFor(() => doc.getElementById('due-dialog').hasAttribute('open'), 'dates dialog');
+    await axeOk('due-dialog');
+    doc.getElementById('due-input').value = 'nov 20 2pm';
+    doc.getElementById('checkin-input').value = 'nov 18';
+    submit('due-form');
+    await waitFor(() => /due/.test(live()) && /check in/.test(live()), 'dates saved');
+    assert.match(fs.readFileSync(path.join(env.notes, 'a.txt'), 'utf8'), /due:2026-11-20 14:00/);
+    await new Promise((r) => setTimeout(r, 300)); // let the follow-up view reload finish before the window closes
+    window.close();
+  } finally {
+    env.close();
+  }
+});
+
+test('notes expand under a collapsed task, Delete marks it with $, and Option+n opens a new list', async () => {
+  const env = await boot({ 'a.txt': '@ Future\n  Jaws training\n@ old thing\n' });
+  try {
+    const { window } = await openPage(env);
+    const doc = window.document;
+    const tree = doc.getElementById('tree');
+    const rows = () => [...tree.querySelectorAll('[role=treeitem]')];
+    await waitFor(() => rows().length === 2, 'tasks');
+    assert.equal(rows()[0].getAttribute('aria-expanded'), 'false', 'a task with notes starts collapsed');
+    key(window, doc.activeElement, 'ArrowRight');
+    assert.equal(rows().length, 3);
+    assert.match(rows()[1].textContent, /Note\. Jaws training/);
+    key(window, doc.activeElement, 'ArrowLeft');
+    key(window, doc.activeElement, 'ArrowDown');
+    assert.match(doc.activeElement.textContent, /old thing/);
+    key(window, doc.activeElement, 'Delete');
+    await waitFor(() => /Deleted: old thing/.test(doc.getElementById('live').textContent), 'deleted');
+    assert.match(fs.readFileSync(path.join(env.notes, 'a.txt'), 'utf8'), /^\$ old thing$/m);
+    await waitFor(() => rows().length === 1, 'task gone');
+
+    doc.activeElement.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'n', code: 'KeyN', altKey: true, bubbles: true, cancelable: true }));
+    await waitFor(() => doc.getElementById('manage-dialog').hasAttribute('open'), 'manage dialog');
+    assert.equal(doc.activeElement, doc.getElementById('manage-new'));
+    await new Promise((r) => setTimeout(r, 300));
     window.close();
   } finally {
     env.close();

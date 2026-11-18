@@ -98,6 +98,8 @@ function createServer(app, { token = crypto.randomBytes(24).toString('hex') } = 
           return send(res, 200, app.summary());
         case '/api/view':
           return send(res, 200, app.view({ view: q.get('view'), q: q.get('q') || '', showCompleted: q.get('completed') === '1', changedOnly: q.get('changed') === '1' }));
+        case '/api/search':
+          return send(res, 200, app.searchTasks(q.get('q') || ''));
         case '/api/detail':
           return send(res, 200, app.detail(q.get('id')));
         case '/api/config':
@@ -123,6 +125,8 @@ function createServer(app, { token = crypto.randomBytes(24).toString('hex') } = 
           return send(res, 200, await app.action(body));
         case '/api/undo':
           return send(res, 200, app.undo());
+        case '/api/master':
+          return send(res, 200, app.setMaster(body));
         case '/api/folders':
           return send(res, 200, app.setFolders(body.folders));
         case '/api/rtf/convert':

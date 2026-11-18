@@ -10,11 +10,12 @@ const DEFAULT_SYMBOLS = {
   '•': 'ongoing',
   '*': 'important',
   '%': 'inProgress',
+  $: 'excluded',
 };
 
-const MARKER_CHARS = '+@<>•*%';
-const MARK_RE = /^([ \t]*)([+@<>•*%]+)([ \t]*)(.*)$/;
-// Without a space after the marker, only these symbols count, so "**bold**" and "%" stay plain text.
+const MARKER_CHARS = '+@<>•*%$';
+const MARK_RE = /^([ \t]*)([+@<>•*%$]+)([ \t]*)(.*)$/;
+// Without a space after the marker, only these symbols count, so "**bold**", "%" and "$5" stay plain text.
 const STRONG_MARKERS = /[+@<>•]/;
 const JIRA_RE = /(^|\s)jira:([A-Za-z][A-Za-z0-9_]*-\d+)(?![\w-])/;
 const HAS_WORD_RE = /[\p{L}\p{N}]/u;
@@ -60,7 +61,7 @@ function classifyMeaning(right) {
   if (/\b(done|complete|completed|finished)\b/.test(r)) return 'done';
   if (/waiting (on|for) me|my turn|on me\b|for me\b/.test(r)) return 'waitingOnMe';
   if (/someone else|other people|others|them\b|waiting/.test(r)) return 'waitingOnOthers';
-  if (/in progress|started|doing/.test(r)) return 'inProgress';
+  if (/in ?progress|started|doing/.test(r)) return 'inProgress';
   if (/important|priority|urgent/.test(r)) return 'important';
   if (/ongoing|major|outcome|project|big\b/.test(r)) return 'ongoing';
   if (/to[- ]?do|task|open|action/.test(r)) return 'todo';
@@ -112,6 +113,7 @@ function emptyFlags() {
     important: false,
     inProgress: false,
     subtask: false,
+    excluded: false,
   };
 }
 
@@ -126,13 +128,22 @@ function stripTokens(body, ref) {
   // Earliest token wins when duplicated.
   const due = toks.find((t) => t.kind === 'due');
   const done = toks.find((t) => t.kind === 'done');
+  const checkin = toks.find((t) => t.kind === 'checkin');
   let jira = null;
   const jm = JIRA_RE.exec(out);
   if (jm) {
     jira = jm[2].toUpperCase();
     out = out.slice(0, jm.index) + out.slice(jm.index + jm[0].length);
   }
-  return { text: out.replace(/\s+/g, ' ').trim(), due: due ? due.iso : null, doneDate: done ? done.iso : null, jira };
+  return {
+    text: out.replace(/\s+/g, ' ').trim(),
+    due: due ? due.iso : null,
+    dueTime: due ? due.time : null,
+    checkin: checkin ? checkin.iso : null,
+    checkinTime: checkin ? checkin.time : null,
+    doneDate: done ? done.iso : null,
+    jira,
+  };
 }
 
 /**
@@ -144,7 +155,8 @@ function parseText(text, options = {}) {
   const ref = options.today || new Date();
   const { lines, eols } = splitLines(text);
   const legend = parseLegend(lines);
-  const unmarkedMode = legend.unmarked || options.unmarked || 'notes';
+  // A legend's "nothing = to do" is recognised (and its line skipped) but never decides the mode: the folder and per-file settings do.
+  const unmarkedMode = options.unmarked || 'notes';
   const symbols = { ...DEFAULT_SYMBOLS, ...legend.symbols };
 
   const info = lines.map((l, i) => (legend.legendLines.has(i) ? null : markerInfo(l)));
@@ -238,6 +250,13 @@ function parseText(text, options = {}) {
     });
   }
 
+  // A line marked $ is deleted from the app but kept in the file; so is everything nested under it.
+  const exclude = (it) => {
+    it.kind = 'excluded';
+    for (const c of it.children) exclude(items[c]);
+  };
+  for (const it of items) if (it.kind === 'task' && it.flags.excluded) exclude(it);
+
   return { lines, eols, items, legend: { symbols, unmarked: legend.unmarked, hasLegend: legend.hasLegend, lines: [...legend.legendLines] }, unmarkedMode, symbols };
 }
 
@@ -254,6 +273,9 @@ function makeTask(lineIndex, raw, indent, flags, parsed, groups, implicit) {
     text: parsed.text,
     flags,
     due: parsed.due,
+    dueTime: parsed.dueTime,
+    checkin: parsed.checkin,
+    checkinTime: parsed.checkinTime,
     doneDate: parsed.doneDate,
     jira: parsed.jira,
     implicit,

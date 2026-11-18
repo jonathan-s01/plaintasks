@@ -68,8 +68,12 @@ test('inline dates are extracted and stripped from text', () => {
   assert.equal(b.doneDate, '2026-11-01');
 });
 
-test('legend: "nothing = to do" makes unmarked lines tasks, and legend lines are not tasks', () => {
-  const r = parse('Legend\n+ = done\nnothing = to do\n• and indenting = subtasks\n\nBuy milk\n• sub of milk\n\t• deeper\n+ Done thing\n');
+test('legend: symbols apply, legend lines are not tasks, and "nothing = to do" does not override the folder setting', () => {
+  const text = 'Legend\n+ = done\nnothing = to do\n• and indenting = subtasks\n\nBuy milk\n• sub of milk\n\t• deeper\n+ Done thing\n';
+  const plain = parse(text);
+  assert.equal(plain.unmarkedMode, 'notes');
+  assert.ok(!tasks(plain).some((x) => x.text === 'Buy milk'));
+  const r = parse(text, { unmarked: 'tasks' });
   assert.equal(r.unmarkedMode, 'tasks');
   assert.equal(r.legend.hasLegend, true);
   const t = tasks(r);
@@ -80,7 +84,9 @@ test('legend: "nothing = to do" makes unmarked lines tasks, and legend lines are
   assert.equal(t[3].parent, -1);
 });
 
-test('legend: unmarked = notes and • = ongoing', () => {
+test('legend: • = ongoing and "% = inprogress" lines are skipped', () => {
+  const r0 = parse('% = inprogress\n@ real\n');
+  assert.deepEqual(tasks(r0).map((x) => x.text), ['real']);
   const r = parse('+ = done\n• = ongoing, major outcome\nnothing = notes\n\n• Big outcome\n\t@ step\n');
   assert.equal(r.unmarkedMode, 'notes');
   const t = tasks(r);

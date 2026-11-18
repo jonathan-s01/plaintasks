@@ -174,8 +174,9 @@ class Index extends EventEmitter {
       textOcc.set(it.text, n);
       return sha(`${file.file}\0${it.text}\0${n}`);
     });
-    const unmarkedItems = parsed.items.filter((it) => it.kind !== 'task');
+    const unmarkedItems = parsed.items.filter((it) => it.kind === 'unmarked');
     parsed.items.forEach((it, i) => {
+      if (it.kind === 'excluded') return;
       const nearby = (from, step) => {
         const out = [];
         for (let j = from; j >= 0 && j < parsed.lines.length && out.length < 2; j += step) {
@@ -204,8 +205,12 @@ class Index extends EventEmitter {
         notes: it.notes.map((n) => n.text),
         depth: it.depth || 0,
         parentId: it.parent >= 0 ? ids[it.parent] : null,
-        childIds: (it.children || []).map((c) => ids[c]),
+        childIds: (it.children || []).filter((c) => parsed.items[c].kind !== 'excluded').map((c) => ids[c]),
         due: it.due || null,
+        dueTime: it.dueTime || null,
+        checkin: it.checkin || null,
+        checkinTime: it.checkinTime || null,
+        noteLines: it.notes.map((n) => n.lineIndex),
         doneDate: it.doneDate || null,
         jira: it.jira || null,
         symbols: parsed.symbols,

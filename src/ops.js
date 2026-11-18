@@ -80,14 +80,21 @@ function applyOp(raw, op, arg, ctx) {
       fixEmptyRun();
       return compose(d);
     }
+    case 'exclude': {
+      const ch = symbolFor('excluded', symbols);
+      if (runHas(d.run, 'excluded', symbols)) return raw;
+      d.run = ch;
+      return compose(d);
+    }
     case 'todo': {
       if (d.run) return raw;
       d.run = todoChar;
       return compose(d);
     }
-    case 'due': {
-      d.body = removeTokens(d.body, 'due', today);
-      if (arg) d.body = appendToken(d.body, `due:${arg}`);
+    case 'due':
+    case 'checkin': {
+      d.body = removeTokens(d.body, op, today);
+      if (arg) d.body = appendToken(d.body, `${op}:${arg}`);
       return compose(d);
     }
     case 'jira': {

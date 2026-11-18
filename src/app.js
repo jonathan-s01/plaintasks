@@ -9,8 +9,8 @@ const { DEFAULT_LIST } = cfgMod;
 const { Index, walk, isExcluded, modeFor, TEXT_EXT } = require('./indexer');
 const { applyOp, OpError } = require('./ops');
 const { markerInfo } = require('./parser');
-const { replaceLine, ConflictError } = require('./writer');
-const { parseFriendly, formatDate, toISO } = require('./dates');
+const { replaceLine, replaceLines, removeLines, ConflictError } = require('./writer');
+const { formatDate, toISO } = require('./dates');
 const { allViews, buildView, viewCounts, untriaged, listTasks } = require('./views');
 const { convertRtfFiles } = require('./rtf');
 const { JiraClient, JiraError, KEY_RE } = require('./jira');
@@ -23,6 +23,14 @@ class HttpError extends Error {
     this.code = code;
   }
 }
+
+const FLAG_LABELS = {
+  waitingOnMe: 'Waiting on me',
+  waitingOnOthers: 'Waiting on others',
+  important: 'Important',
+  inProgress: 'In progress',
+  ongoing: 'Ongoing',
+};
 
 const FLAG_MESSAGES = {
   waitingOnMe: ['Marked waiting on me', 'No longer waiting on me'],
@@ -66,22 +74,25 @@ class App {
 
   summary() {
     const today = this.now();
+    this.stampCreated();
     const counts = viewCounts(this.index, this.stateData, today);
     return {
       rev: this.index.rev,
       views: allViews(this.stateData).map((v) => ({ id: v.id, title: v.title, count: counts[v.id] })),
-      lists: this.stateData.lists.map((l) => ({ id: l.id, name: l.name, count: counts[`list:${l.id}`] })),
+      lists: this.stateData.lists.map((l) => ({ id: l.id, name: l.name, count: counts[`list:${l.id}`], folder: l.folder, sort: l.sort, notesFile: l.file ? (this.fileEntry(l.file) || {}).label || null : null })),
       lastList: this.stateData.lastList,
       folders: this.config.folders.length,
       files: this.index.files.length,
       problems: this.index.problems,
       rtfPending: this.index.rtf.length,
       jiraConfigured: !!this.jiraClientOrNull(),
+      masterFile: this.config.masterFile ? this.masterLabel() : null,
       recentlyWrote: Date.now() - this.lastWriteAt < 3000,
     };
   }
 
   view(opts) {
+    this.stampCreated();
     return buildView(this.index, this.stateData, { ...opts, today: this.now() });
   }
 
@@ -100,9 +111,10 @@ class App {
 
   lineWrite(t, op, arg) {
     const today = this.now();
-    let next;
+    const steps = Array.isArray(op) ? op : [[op, arg]];
+    let next = t.raw;
     try {
-      next = applyOp(t.raw, op, arg, { symbols: t.symbols, unmarkedMode: t.unmarkedMode, today });
+      for (const [o, a] of steps) next = applyOp(next, o, a, { symbols: t.symbols, unmarkedMode: t.unmarkedMode, today });
     } catch (err) {
       if (err instanceof OpError) throw new HttpError(400, err.message);
       throw err;
@@ -169,6 +181,10 @@ class App {
   async action({ id, op, value, list }) {
     const today = this.now();
     if (op === 'listCreate' || op === 'listRename' || op === 'listDelete') return this.listManage(op, list, value);
+    if (op === 'listSort') return this.listSort(list, value);
+    if (op === 'listEdit') return this.listEdit(list, value);
+    if (op === 'listNote') return this.listNote(value, list);
+    if (op === 'newTask') return this.newTask(value, list);
     if (op === 'dismissFile') {
       const file = String(id).replace(/^f:/, '');
       const list = untriaged(this.index, this.stateData).filter((u) => u.file === file);
@@ -214,7 +230,8 @@ class App {
       case 'done':
       case 'toggleDone': {
         const reopen = t.flags.done && op === 'toggleDone';
-        return done(this.lineWrite(t, reopen ? 'reopen' : 'done'), `${reopen ? 'Reopened' : 'Marked done'}: ${t.text}`);
+        const res = done(this.lineWrite(t, reopen ? 'reopen' : 'done'), `${reopen ? 'Reopened' : 'Marked done'}: ${t.text}`);
+        return reopen ? res : this.withStatusNote(t, res, value, 'Done', list);
       }
       case 'todo':
         if (t.kind === 'unmarked' && (this.stateData.dismissed[t.file] || []).includes(t.textHash) && (markerInfo(t.raw) || t.unmarkedMode === 'tasks')) {
@@ -222,14 +239,22 @@ class App {
           return { ok: true, message: `Back to a task: ${t.text}`, undo: true };
         }
         return done(this.lineWrite(t, 'todo'), `Marked as to-do: ${t.text}`);
-      case 'due': {
-        let iso = null;
-        if (value && String(value).trim()) {
-          iso = parseFriendly(value, today);
-          if (!iso) throw new HttpError(400, `Could not understand "${value}" as a date. Try fri, nov 20, +3d, or 2026-11-20.`, 'bad-date');
-        }
-        return done(this.lineWrite(t, 'due', iso), iso ? `Due date set to ${formatDate(iso, today)}: ${t.text}` : `Due date cleared: ${t.text}`);
-      }
+      case 'due':
+        return this.setDates(t, { due: value == null ? '' : value });
+      case 'checkin':
+        return this.setDates(t, { checkin: value == null ? '' : value });
+      case 'dates':
+        return this.setDates(t, value);
+      case 'addNote':
+        return this.addNote(t, value, list);
+      case 'exclude':
+        return this.exclude(t);
+      case 'indent':
+        return this.reindent(t, 'in');
+      case 'outdent':
+        return this.reindent(t, 'out');
+      case 'listAdd':
+        return this.listAdd(t, list);
       case 'jira': {
         const key = value ? String(value).trim() : '';
         if (key && !KEY_RE.test(key)) throw new HttpError(400, 'Jira keys look like ABC-123');
@@ -238,9 +263,26 @@ class App {
       default:
         if (FLAG_MESSAGES[op]) {
           const had = t.flags[op];
-          return done(this.lineWrite(t, op), `${FLAG_MESSAGES[op][had ? 1 : 0]}: ${t.text}`);
+          const res = done(this.lineWrite(t, op), `${FLAG_MESSAGES[op][had ? 1 : 0]}: ${t.text}`);
+          return had ? res : this.withStatusNote(t, res, value, FLAG_LABELS[op], list);
         }
         throw new HttpError(400, `Unknown action: ${op}`);
+    }
+  }
+
+  /** Adds the optional note typed with a status key, so one undo reverses both writes. */
+  withStatusNote(t, res, value, label, listId) {
+    const text = value && typeof value.note === 'string' ? value.note.trim() : '';
+    if (!text || !res.focusId) return res;
+    const before = this.undoStack.length;
+    try {
+      const noted = this.addNote(this.task(res.focusId), { text: `${label}: ${text}` }, listId);
+      const steps = this.undoStack.splice(before - 1);
+      this.pushUndo({ type: 'multi', steps, text: t.text });
+      return { ...res, message: `${res.message}. Note added`, focusId: noted.focusId || res.focusId };
+    } catch (err) {
+      if (this.undoStack.length === before && res.undo) this.undo();
+      throw err;
     }
   }
 
@@ -254,13 +296,14 @@ class App {
   }
 
   /** Applies a change to the lists, saves it, and records one undo step. */
-  mutateLists(fn, text, id) {
+  mutateLists(fn, text, id, { silent = false } = {}) {
     const before = this.snapshot();
     fn(this.stateData.lists);
     this.saveState();
-    this.undoStack.push({ type: 'lists', before, id, text });
-    if (this.undoStack.length > 100) this.undoStack.shift();
+    const entry = { type: 'lists', before, id, text };
+    if (!silent) this.pushUndo(entry);
     this.touchList();
+    return entry;
   }
 
   getList(listId) {
@@ -294,9 +337,9 @@ class App {
   }
 
   listToggle(t, listId) {
-    this.requireTask(t);
     const target = this.getList(listId);
     const had = target.keys.includes(t.listKey);
+    if (!had) this.requireTask(t);
     this.mutateLists((lists) => {
       const l = lists.find((x) => x.id === target.id);
       if (had) l.keys = l.keys.filter((k) => k !== t.listKey);
@@ -317,7 +360,7 @@ class App {
     this.mutateLists((lists) => {
       if (newName) {
         createdId = this.newListId();
-        lists.push({ id: createdId, name: newName, keys: [] });
+        lists.push({ id: createdId, name: newName, keys: [], folder: '', file: '', sort: 'manual' });
         wanted.add(createdId);
       }
       for (const l of lists) {
@@ -334,6 +377,7 @@ class App {
 
   listMove(t, how, listId) {
     const target = this.getList(listId);
+    if (target.sort !== 'manual') throw new HttpError(400, `${target.name} is sorted automatically. Press Shift+O and choose manual order to move things by hand.`);
     const open = listTasks(this.index, this.stateData, target.id).filter((x) => !x.flags.done);
     const cur = open.findIndex((x) => x.listKey === t.listKey);
     if (cur < 0) throw new HttpError(400, `That task is not on ${target.name}. Press l to add it.`);
@@ -355,10 +399,15 @@ class App {
 
   listManage(op, listId, value) {
     if (op === 'listCreate') {
-      const name = this.cleanName(value);
+      const v = value && typeof value === 'object' ? value : { name: value };
+      const name = this.cleanName(v.name);
+      const folder = this.cleanFolder(v.folder);
       const id = this.newListId();
-      this.mutateLists((lists) => lists.push({ id, name, keys: [] }), name);
-      return { ok: true, message: `Created list ${name}`, undo: true, listId: id };
+      const entry = { id, name, keys: [], folder, file: '', sort: 'manual' };
+      if (v.notesFolder) entry.file = this.makeListFile(entry, v.notesFolder);
+      this.mutateLists((lists) => lists.push(entry), name);
+      const f = entry.file ? this.fileEntry(entry.file) : null;
+      return { ok: true, message: `Created list ${name}${f ? ` with notes file ${f.label}` : ''}`, undo: true, listId: id };
     }
     const target = this.getList(listId);
     if (op === 'listRename') {
@@ -377,6 +426,39 @@ class App {
   undo() {
     const e = this.undoStack.pop();
     if (!e) throw new HttpError(400, 'Nothing to undo');
+    return this.undoEntry(e);
+  }
+
+  undoEntry(e) {
+    if (e.type === 'multi') {
+      let last = { ok: true, message: `Undid: ${e.text}` };
+      for (const step of [...e.steps].reverse()) last = this.undoEntry(step);
+      return { ...last, message: `Undid: ${e.text}` };
+    }
+    if (e.type === 'insert') {
+      try {
+        removeLines(e.file, { lineIndex: e.lineIndex, expected: e.lines });
+      } catch (err) {
+        this.index.refresh(this.now());
+        if (err instanceof ConflictError) throw new HttpError(409, 'Cannot undo: those lines have changed since. Nothing was written.', 'conflict');
+        throw new HttpError(500, err.message);
+      }
+      this.lastWriteAt = Date.now();
+      this.index.refresh(this.now());
+      return { ok: true, message: `Removed: ${e.text}` };
+    }
+    if (e.type === 'lines') {
+      try {
+        replaceLines(e.file, e.changes.map((c) => ({ lineIndex: c.lineIndex, expected: c.after, replacement: c.before })));
+      } catch (err) {
+        this.index.refresh(this.now());
+        if (err instanceof ConflictError) throw new HttpError(409, 'Cannot undo: those lines have changed since. Nothing was written.', 'conflict');
+        throw new HttpError(500, err.message);
+      }
+      this.lastWriteAt = Date.now();
+      this.index.refresh(this.now());
+      return { ok: true, message: `Undid change: ${e.text}`, focusId: this.idAt(e.file, e.changes[0].lineIndex) };
+    }
     if (e.type === 'lists') {
       this.stateData.lists = e.before.lists;
       this.stateData.lastList = e.before.lastList;
@@ -428,6 +510,9 @@ class App {
     const j = this.config.jira;
     return {
       folders: this.config.folders,
+      masterFile: this.config.masterFile,
+      masterLabel: this.config.masterFile ? this.masterLabel() : null,
+      files: this.index.files.map((f) => ({ file: f.file, label: f.label })),
       jira: j ? { baseUrl: j.baseUrl, type: j.type, email: j.email || '', project: j.project || '', issueType: j.issueType || 'Task', hasToken: !!this.secrets.getJiraToken() } : null,
       today: toISO(this.now()),
     };
@@ -590,5 +675,7 @@ class App {
     return { ok: true, message: `Created Jira ${issue.key} and linked it: ${t.text}`, key: issue.key, url: issue.url, undo: true, focusId: linked && linked.focusId };
   }
 }
+
+require('./features').install(App, HttpError);
 
 module.exports = { App, HttpError };
