@@ -205,10 +205,25 @@ function removeLines(file, { lineIndex, expected }) {
   });
 }
 
+/**
+ * Move one line to a new position, rewriting it on the way, in a single atomic write. The line at `from` must still read
+ * `expected` (and, when given, the line it lands after must read `anchorExpected`). Line endings stay with their positions.
+ */
+function moveLine(file, { from, expected, toIndex, replacement, anchorExpected }) {
+  if (/[\r\n]/.test(replacement)) throw new Error('Replacement must be a single line');
+  return editFile(file, (lines) => {
+    if (lines[from] !== expected) throw new ConflictError(CHANGED);
+    lines.splice(from, 1);
+    if (anchorExpected !== undefined && lines[toIndex - 1] !== anchorExpected) throw new ConflictError(CHANGED);
+    lines.splice(toIndex, 0, replacement);
+    return { lineIndex: toIndex };
+  });
+}
+
 /** Create a new text file. Never overwrites. */
 function createTextFile(file, lines) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, lines.length ? `${lines.join('\n')}\n` : '', { flag: 'wx' });
 }
 
-module.exports = { replaceLine, replaceLines, insertLinesAfter, appendLines, removeLines, createTextFile, readTextFile, decode, encode, ConflictError, UnsupportedFileError };
+module.exports = { replaceLine, replaceLines, moveLine, insertLinesAfter, appendLines, removeLines, createTextFile, readTextFile, decode, encode, ConflictError, UnsupportedFileError };

@@ -8,8 +8,8 @@ const cfgMod = require('./config');
 const { DEFAULT_LIST } = cfgMod;
 const { Index, walk, isExcluded, modeFor, TEXT_EXT } = require('./indexer');
 const { applyOp, OpError } = require('./ops');
-const { markerInfo } = require('./parser');
-const { replaceLine, replaceLines, removeLines, ConflictError } = require('./writer');
+const { markerInfo, ampNote, parseText } = require('./parser');
+const { replaceLine, replaceLines, removeLines, moveLine, ConflictError } = require('./writer');
 const { formatDate, toISO } = require('./dates');
 const { allViews, buildView, viewCounts, untriaged, listTasks } = require('./views');
 const { convertRtfFiles } = require('./rtf');
@@ -162,7 +162,7 @@ class App {
   }
 
   /** Mark unmarked lines as notes (stored in state, never in the file). Each attaches to the task above it, if any. */
-  dismiss(items) {
+  dismiss(items, { silent = false } = {}) {
     for (const t of items) {
       const list = (this.stateData.dismissed[t.file] = this.stateData.dismissed[t.file] || []);
       if (!list.includes(t.textHash)) list.push(t.textHash);
@@ -173,9 +173,57 @@ class App {
       }
     }
     this.saveState();
-    this.undoStack.push({ type: 'dismiss', items: items.map((t) => ({ file: t.file, hash: t.textHash })) });
+    const entry = { type: 'dismiss', items: items.map((t) => ({ file: t.file, hash: t.textHash })) };
+    if (!silent) this.undoStack.push(entry);
     this.index.refresh(this.now());
     this.index.emit('change', this.index.rev);
+    return entry;
+  }
+
+  /**
+   * Marks unmarked lines as notes. A line with a task above it gets "& " written into the file, so it is a note of that
+   * task for good; any other line is remembered as a note in state. Returns how many lines were written to files.
+   */
+  markNotes(items, what) {
+    const byFile = new Map();
+    for (const t of items) byFile.set(t.file, [...(byFile.get(t.file) || []), t]);
+    const steps = [];
+    const rest = [];
+    let written = 0;
+    for (const [file, list] of byFile) {
+      const parsed = this.parsedFor(file);
+      const changes = [];
+      for (const t of list) {
+        const me = parsed.items.find((i) => i.lineIndex === t.lineIndex);
+        const hasHost = parsed.items.some((i) => i.kind === 'task' && i.lineIndex < t.lineIndex);
+        if (!me || me.kind !== 'unmarked' || !hasHost || !ampNote(`& ${t.text}`) || /^\s*&/.test(me.raw)) {
+          rest.push(t);
+          continue;
+        }
+        changes.push({ lineIndex: me.lineIndex, expected: me.raw, replacement: `${/^[ \t]*/.exec(me.raw)[0]}& ${me.raw.trim()}`, item: t });
+      }
+      const lines = [...parsed.lines];
+      for (const c of changes) lines[c.lineIndex] = c.replacement;
+      const after = parseText(lines.join('\n'), { unmarked: list[0].unmarkedMode, today: this.now() });
+      const attached = new Set();
+      for (const it of after.items) for (const n of it.notes) if (n.amp) attached.add(n.lineIndex);
+      const ok = changes.filter((c) => attached.has(c.lineIndex));
+      for (const c of changes) if (!attached.has(c.lineIndex)) rest.push(c.item);
+      if (!ok.length) continue;
+      try {
+        replaceLines(file, ok.map(({ lineIndex, expected, replacement }) => ({ lineIndex, expected, replacement })));
+      } catch (err) {
+        this.writeFailed(err, 'mark these lines as notes');
+      }
+      this.lastWriteAt = Date.now();
+      written += ok.length;
+      steps.push({ type: 'lines', file, changes: ok.map((c) => ({ lineIndex: c.lineIndex, before: c.expected, after: c.replacement })), text: what });
+    }
+    if (rest.length) steps.push(this.dismiss(rest, { silent: true }));
+    else this.index.refresh(this.now());
+    if (steps.length === 1) this.undoStack.push(steps[0]);
+    else if (steps.length) this.undoStack.push({ type: 'multi', steps, text: what });
+    return written;
   }
 
   async action({ id, op, value, list }) {
@@ -189,8 +237,10 @@ class App {
       const file = String(id).replace(/^f:/, '');
       const list = untriaged(this.index, this.stateData).filter((u) => u.file === file);
       if (!list.length) throw new HttpError(404, 'Nothing left to skip in that file');
-      this.stateData.reviewed[file] = list[0].fileMtime;
-      this.dismiss(list);
+      this.markNotes(list, `${list.length} notes`);
+      const entry = this.index.files.find((x) => x.file === file);
+      this.stateData.reviewed[file] = entry ? entry.mtimeMs : list[0].fileMtime;
+      this.saveState();
       return { ok: true, message: `Marked ${list.length} ${list.length === 1 ? 'line' : 'lines'} as notes in ${list[0].fileLabel}`, undo: true };
     }
     if (op === 'reviewFile') {
@@ -215,13 +265,16 @@ class App {
       case 'note': {
         if (t.kind === 'task' && t.childIds.length) throw new HttpError(400, 'This task has subtasks, so it cannot become a note.');
         const parent = this.taskAbove(t);
-        this.dismiss([t]);
+        if (t.kind === 'unmarked') this.markNotes([t], t.text);
+        else this.dismiss([t]);
         return { ok: true, message: parent ? `Marked as a note, attached to: ${parent.text}` : `Marked as a note: ${t.text}`, undo: true };
       }
       case 'listToggle':
         return this.listToggle(t, list);
       case 'listSet':
         return this.listSet(t, value);
+      case 'todoList':
+        return this.todoList(t, value);
       case 'listMove':
         return this.listMove(t, value, list);
       case 'open':
@@ -375,6 +428,31 @@ class App {
     return { ok: true, message: names.length ? `${t.text} is on ${names.join(' and ')}` : `${t.text} is on no lists`, undo: true, focusId: t.id, listId: createdId };
   }
 
+  /** Triage: marks an unmarked line as a to-do and puts it on the chosen lists, as one undoable step. */
+  todoList(t, value) {
+    if (t.kind !== 'unmarked') return this.listSet(t, value);
+    for (const id of Array.isArray(value && value.ids) ? value.ids : []) this.getList(id);
+    const before = this.undoStack.length;
+    let id;
+    if ((this.stateData.dismissed[t.file] || []).includes(t.textHash) && (markerInfo(t.raw) || t.unmarkedMode === 'tasks')) {
+      this.restoreTask(t);
+      id = this.idAt(t.file, t.lineIndex);
+    } else {
+      const r = this.lineWrite(t, 'todo');
+      if (!r) throw new HttpError(400, `Could not mark as to-do: ${t.text}`);
+      id = r.focusId;
+    }
+    try {
+      const res = this.listSet(this.task(id), value);
+      const steps = this.undoStack.splice(before);
+      this.pushUndo({ type: 'multi', steps, text: t.text });
+      return { ...res, message: `Marked as to-do. ${res.message}` };
+    } catch (err) {
+      if (this.undoStack.length === before + 1) this.undo();
+      throw err;
+    }
+  }
+
   listMove(t, how, listId) {
     const target = this.getList(listId);
     if (target.sort !== 'manual') throw new HttpError(400, `${target.name} is sorted automatically. Press Shift+O and choose manual order to move things by hand.`);
@@ -446,6 +524,18 @@ class App {
       this.lastWriteAt = Date.now();
       this.index.refresh(this.now());
       return { ok: true, message: `Removed: ${e.text}` };
+    }
+    if (e.type === 'move') {
+      try {
+        moveLine(e.file, { from: e.to, expected: e.after, toIndex: e.from, replacement: e.before });
+      } catch (err) {
+        this.index.refresh(this.now());
+        if (err instanceof ConflictError) throw new HttpError(409, 'Cannot undo: those lines have changed since. Nothing was written.', 'conflict');
+        throw new HttpError(500, err.message);
+      }
+      this.lastWriteAt = Date.now();
+      this.index.refresh(this.now());
+      return { ok: true, message: `Undid move: ${e.text}`, focusId: this.idAt(e.file, e.from) };
     }
     if (e.type === 'lines') {
       try {

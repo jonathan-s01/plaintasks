@@ -212,13 +212,13 @@
         <tr><th scope="row">percent, p</th><td>Toggle in progress</td></tr>
         <tr><th scope="row">asterisk, i</th><td>Toggle important</td></tr>
         <tr><th scope="row">b</th><td>Toggle ongoing or major outcome</td></tr>
-        <tr><th scope="row">Tab</th><td>Make the task a subtask of the task above it, with its notes and subtasks. On an unmarked line it also marks it as a to-do</td></tr>
+        <tr><th scope="row">Tab</th><td>Make the task a subtask of the task above it, with its notes and subtasks. On an unmarked line it also marks it as a to-do, and if other lines sit between them it moves the line to the end of that task's block</td></tr>
         <tr><th scope="row">Shift and Tab</th><td>Move a subtask up a level. Tasks right after it at the old level become its subtasks</td></tr>
         <tr><th scope="row">d</th><td>Set or clear the due date and the check-in date. A time works too: fri 2pm</td></tr>
         <tr><th scope="row">j</th><td>Jira: link, status, create</td></tr>
         <tr><th scope="row">o</th><td>Open the source file in your text editor</td></tr>
         <tr><th scope="row">u</th><td>Undo the last change</td></tr>
-        <tr><th scope="row">s</th><td>On a task: add a note to it, below its other notes in the file. On an unmarked line in triage: mark it as a note, attached to the task above. Shift and s marks every remaining line in the file as a note</td></tr>
+        <tr><th scope="row">s or &amp;</th><td>On a task: add a note to it, below its other notes in the file. On an unmarked line in triage: mark it as a note by writing "&amp; " in front of it in the file; it attaches to the task above. In a file, any line starting with &amp; is a note of the nearest task above it. Shift and s marks every remaining line in the file as a note</td></tr>
         <tr><th scope="row">Enter</th><td>Menu with every action, including converting a task to a note</td></tr>
         <tr><th scope="row">n</th><td>Add a task: type to search the tasks you have, pick one to add to a list, or choose Create new task. In triage, n goes to the next file</td></tr>
         <tr><th scope="row">Option and n</th><td>Make a new list</td></tr>
@@ -226,7 +226,7 @@
         <tr><th scope="row">Right arrow, Left arrow</th><td>Expand or collapse a task to show its notes and subtasks. Tasks with notes start collapsed</td></tr>
         <tr><th scope="row">m</th><td>Create a new task straight away, without searching</td></tr>
         <tr><th scope="row">shift and n</th><td>In a list: add a note that is not a task, to the list's notes file. In triage: previous file</td></tr>
-        <tr><th scope="row">l</th><td>Choose which lists the task is on. With only My list, it adds or removes straight away</td></tr>
+        <tr><th scope="row">l</th><td>Choose which lists the task is on. With only My list, it adds or removes straight away. In triage, it marks the line as a to-do first, then opens the list picker: Up and Down move through the lists, Space ticks one, Enter saves and moves on to the next line</td></tr>
         <tr><th scope="row">shift and l</th><td>Add the task to the list you are viewing or used last, or remove it</td></tr>
         <tr><th scope="row">left bracket, right bracket</th><td>Previous or next list</td></tr>
         <tr><th scope="row">shift and m</th><td>Manage lists: create, rename, delete, folders, notes files</td></tr>
@@ -235,7 +235,7 @@
         <tr><th scope="row">Option and Up, Option and Down</th><td>In a list with manual order: move the item up or down one place</td></tr>
         <tr><th scope="row">minus</th><td>Open My list</td></tr>
         <tr><th scope="row">equals</th><td>Open All lists</td></tr>
-        <tr><th scope="row">a</th><td>Triage: mark the unmarked line as a to-do. The symbol keys also work on unmarked lines</td></tr>
+        <tr><th scope="row">a or @</th><td>Triage: mark the unmarked line as a to-do. The symbol keys also work on unmarked lines</td></tr>
         <tr><th scope="row">f</th><td>Triage: show only files not yet reviewed or changed since review</td></tr>
         <tr><th scope="row">shift and r</th><td>Triage: mark the whole file as reviewed</td></tr>
         <tr><th scope="row">1 to 9, 0</th><td>Switch view: 1 all open, 2 by file, 3 by group, 4 schedule, 5 waiting on me, 6 waiting on others, 7 important, 8 in progress, 9 completed, 0 triage</td></tr>

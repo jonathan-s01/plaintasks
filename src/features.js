@@ -8,7 +8,7 @@ const path = require('node:path');
 const cfgMod = require('./config');
 const { applyOp, OpError } = require('./ops');
 const { parseText, markerInfo } = require('./parser');
-const { insertLinesAfter, appendLines, replaceLines, createTextFile, ConflictError } = require('./writer');
+const { insertLinesAfter, appendLines, replaceLines, moveLine, createTextFile, ConflictError } = require('./writer');
 const { parseWhen, formatDate, formatTime, toISO } = require('./dates');
 const { modeFor, TEXT_EXT } = require('./indexer');
 const { matcher } = require('./views');
@@ -72,7 +72,8 @@ function install(App, HttpError) {
     const parsed = this.parsedFor(t.file);
     const item = parsed.items.find((i) => i.lineIndex === t.lineIndex);
     if (!item) throw new HttpError(404, 'That task is no longer in the file. The list has been refreshed.', 'gone');
-    const lastNote = item.notes.length ? item.notes[item.notes.length - 1] : null;
+    const own_ = item.notes.filter((n) => !n.amp);
+    const lastNote = own_.length ? own_[own_.length - 1] : null;
     const afterIndex = lastNote ? lastNote.lineIndex : item.lineIndex;
     const taskIndent = own(item.raw);
     const indent = lastNote ? own(parsed.lines[lastNote.lineIndex]) : taskIndent + (taskIndent.includes('\t') ? '\t' : '  ');
@@ -169,7 +170,7 @@ function install(App, HttpError) {
 
     const subtree = [];
     const walkItem = (it) => {
-      subtree.push(it.lineIndex, ...it.notes.map((n) => n.lineIndex));
+      subtree.push(it.lineIndex, ...it.notes.filter((n) => !n.amp).map((n) => n.lineIndex));
       for (const c of it.children) walkItem(parsed.items[c]);
     };
     walkItem(me);
@@ -196,6 +197,9 @@ function install(App, HttpError) {
     const after = simulate(lines, t.unmarkedMode, this.now());
     const moved = after.items.find((i) => i.lineIndex === me.lineIndex);
     const gotParent = moved && moved.parent >= 0 ? after.items[moved.parent].lineIndex : -1;
+    if ((!moved || moved.kind !== 'task' || gotParent !== expectParent) && dir === 'in' && me.kind === 'unmarked') {
+      return this.moveUnder(t, parsed, me, prev, newIndent, myIndent);
+    }
     if (!moved || moved.kind !== 'task' || gotParent !== expectParent) {
       throw new HttpError(400, dir === 'in' ? 'That would not make it a subtask of the task above. Check there is no blank line between them.' : 'That would not move it up a level. Check the indentation in the file.');
     }
@@ -214,6 +218,46 @@ function install(App, HttpError) {
         ? `Now a subtask of ${prev.text}: ${t.text}`
         : `Moved up a level: ${t.text}${adopted > 0 ? `. The ${adopted === 1 ? 'task' : `${adopted} tasks`} right after it at the old level ${adopted === 1 ? 'is' : 'are'} now ${adopted === 1 ? 'its subtask' : 'its subtasks'}` : ''}`;
     return { ok: true, message, undo: true, focusId: this.idAt(t.file, t.lineIndex) };
+  };
+
+  /** A plain line with other lines between it and the task above: moves it to the end of that task's block as a subtask. */
+  proto.moveUnder = function moveUnder(t, parsed, me, prev, newIndent, myIndent) {
+    let end = prev.lineIndex;
+    const walkItem = (it) => {
+      end = Math.max(end, it.lineIndex, ...it.notes.filter((n) => !n.amp).map((n) => n.lineIndex));
+      for (const c of it.children) walkItem(parsed.items[c]);
+    };
+    walkItem(prev);
+    if (end >= me.lineIndex) throw new HttpError(400, 'That would not make it a subtask of the task above.');
+
+    let raw;
+    try {
+      raw = applyOp(me.raw, 'todo', null, { symbols: t.symbols, unmarkedMode: t.unmarkedMode, today: this.now() });
+    } catch (err) {
+      if (err instanceof OpError) throw new HttpError(400, err.message);
+      throw err;
+    }
+    if (!raw.startsWith(myIndent)) throw new HttpError(400, 'The indentation here mixes tabs and spaces, so it cannot be changed safely. Fix it in the file first.');
+    const next = newIndent + raw.slice(myIndent.length);
+
+    const lines = [...parsed.lines];
+    lines.splice(me.lineIndex, 1);
+    lines.splice(end + 1, 0, next);
+    const after = simulate(lines, t.unmarkedMode, this.now());
+    const moved = after.items.find((i) => i.lineIndex === end + 1);
+    if (!moved || moved.kind !== 'task' || moved.parent < 0 || after.items[moved.parent].lineIndex !== prev.lineIndex) {
+      throw new HttpError(400, 'That would not make it a subtask of the task above. Check the indentation in the file.');
+    }
+
+    try {
+      moveLine(t.file, { from: me.lineIndex, expected: me.raw, toIndex: end + 1, replacement: next, anchorExpected: parsed.lines[end] });
+    } catch (err) {
+      this.writeFailed(err, 'move this line');
+    }
+    this.pushUndo({ type: 'move', file: t.file, from: me.lineIndex, to: end + 1, before: me.raw, after: next, text: t.text });
+    this.lastWriteAt = Date.now();
+    this.index.refresh(this.now());
+    return { ok: true, message: `Moved under ${prev.text} as a subtask: ${t.text}. Press u to undo`, undo: true, focusId: this.idAt(t.file, end + 1) };
   };
 
   // ---- adding tasks ----

@@ -272,6 +272,7 @@ function buildView(index, state, opts = {}) {
       let pos = 0;
       for (const u of lines) {
         const known = u.kind === 'task';
+        if (known && u.flags.done && !showCompleted) continue;
         const reviewed = !known && (dismissed[u.file] || []).includes(u.textHash);
         const it = describe(u, today, 2, { hideFile: true, hideGroup: false });
         it.meta = it.meta.filter((m) => !/^\d+ notes?$/.test(m));

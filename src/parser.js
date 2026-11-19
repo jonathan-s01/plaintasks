@@ -17,6 +17,8 @@ const MARKER_CHARS = '+@<>•*%$';
 const MARK_RE = /^([ \t]*)([+@<>•*%$]+)([ \t]*)(.*)$/;
 // Without a space after the marker, only these symbols count, so "**bold**", "%" and "$5" stay plain text.
 const STRONG_MARKERS = /[+@<>•]/;
+// A line starting with & is a note of the nearest task above it, however many lines lie between.
+const NOTE_RE = /^[ \t]*&[ \t]*(.*)$/;
 const JIRA_RE = /(^|\s)jira:([A-Za-z][A-Za-z0-9_]*-\d+)(?![\w-])/;
 const HAS_WORD_RE = /[\p{L}\p{N}]/u;
 
@@ -40,6 +42,14 @@ function indentWidth(str) {
   let w = 0;
   for (const ch of str) w += ch === '\t' ? 4 : 1;
   return w;
+}
+
+/** The note text of an "& note" line, or null. Without a space, "&&" and entities like "&amp;" stay plain text. */
+function ampNote(line) {
+  const m = NOTE_RE.exec(line);
+  if (!m || !HAS_WORD_RE.test(m[1])) return null;
+  if (!/^[ \t]/.test(line.replace(/^[ \t]*&/, '')) && /^(&|[a-z]+;)/i.test(m[1])) return null;
+  return m[1].trim();
 }
 
 /** Split a line into indent / marker run / gap / body, or null when it has no marker run. */
@@ -179,6 +189,20 @@ function parseText(text, options = {}) {
       prevWasGroup = false;
       continue;
     }
+    const ampBody = ampNote(line);
+    if (ampBody) {
+      let host = null;
+      for (let k = items.length - 1; k >= 0; k -= 1) {
+        if (items[k].kind === 'task') {
+          host = items[k];
+          break;
+        }
+      }
+      if (host) {
+        host.notes.push({ lineIndex: i, text: ampBody, amp: true });
+        continue;
+      }
+    }
     const mi = info[i];
     const indentStr = /^[ \t]*/.exec(line)[0];
     const indent = indentWidth(indentStr);
@@ -196,7 +220,9 @@ function parseText(text, options = {}) {
       continue;
     }
 
-    // Unmarked line.
+    // Unmarked line. A deleted ($) line only keeps what is indented under it; later lines are no longer its notes.
+    const cut = stack.findIndex((s) => s.flags.excluded && s.indent >= indent);
+    if (cut >= 0) stack = stack.slice(0, cut);
     const trimmed = line.trim();
     const nn = nextNonBlank(i);
     const nextIsMarked = nn >= 0 && info[nn] !== null;
@@ -304,4 +330,4 @@ function attach(item, stack, items) {
   stack.push(item);
 }
 
-module.exports = { parseText, splitLines, markerInfo, indentWidth, DEFAULT_SYMBOLS, MARKER_CHARS, stripTokens, JIRA_RE };
+module.exports = { ampNote, parseText, splitLines, markerInfo, indentWidth, DEFAULT_SYMBOLS, MARKER_CHARS, stripTokens, JIRA_RE };

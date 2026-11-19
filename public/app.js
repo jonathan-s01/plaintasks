@@ -38,6 +38,25 @@
     grab: null,
   };
 
+  // Each view remembers which rows you collapsed, across view switches and reloads.
+  const viewMemo = (() => {
+    try {
+      return JSON.parse(store.get('viewstate', '{}')) || {};
+    } catch {
+      return {};
+    }
+  })();
+  function saveViewState() {
+    viewMemo[st.view] = { c: [...st.collapsed], s: [...st.seenNotes] };
+    store.set('viewstate', JSON.stringify(viewMemo));
+  }
+  function restoreViewState() {
+    const m = viewMemo[st.view];
+    st.collapsed = new Set(m ? m.c : []);
+    st.seenNotes = new Set(m ? m.s : []);
+  }
+  restoreViewState();
+
   const SORT_LABELS = { manual: 'manual order', due: 'due date', checkin: 'check-in date', created: 'date added', type: 'type, notes last', name: 'name' };
 
   const tree = $('tree');
@@ -173,13 +192,14 @@
     }
     // Drop collapsed ids that no longer exist.
     const ids = new Set(model.items.map((i) => i.id));
-    for (const id of [...st.collapsed]) if (!ids.has(id)) st.collapsed.delete(id);
+    if (!st.q) for (const id of [...st.collapsed]) if (!ids.has(id)) st.collapsed.delete(id);
     // Tasks with notes start collapsed the first time they appear. After that the choice is yours.
     for (const it of model.items) {
       if (!it.noteCount || st.seenNotes.has(it.id)) continue;
       st.seenNotes.add(it.id);
       st.collapsed.add(it.id);
     }
+    saveViewState();
 
     const vis = visibleItems();
     let target = null;
@@ -220,6 +240,13 @@
   const NOTE_OPS = ['listToggle', 'listMove', 'open'];
   const ADVANCE_OPS = ['todo', 'note', 'exclude', 'done', 'toggleDone', 'waitingOnMe', 'waitingOnOthers', 'important', 'inProgress', 'ongoing', 'indent'];
 
+  function nextTriageId(item, idx) {
+    if (item.type !== 'unmarked') return null;
+    const vis = visibleItems();
+    const nxt = vis.slice(idx + 1).find((i) => i.type === 'unmarked' && !i.known) || vis.find((i) => i.type === 'unmarked' && !i.known && i.id !== item.id);
+    return nxt ? nxt.id : null;
+  }
+
   async function doAct(op, value, item, list) {
     const isTask = item.type === 'task' || item.type === 'unmarked';
     if (!isTask && op !== 'dismissFile' && !(item.type === 'note' && NOTE_OPS.includes(op))) {
@@ -227,12 +254,7 @@
       return;
     }
     const idx = activeIndex();
-    let nextId = null;
-    if (st.view === 'triage' && ADVANCE_OPS.includes(op) && item.type === 'unmarked') {
-      const vis = visibleItems();
-      const nxt = vis.slice(idx + 1).find((i) => i.type === 'unmarked' && !i.known) || vis.find((i) => i.type === 'unmarked' && !i.known && i.id !== item.id);
-      nextId = nxt ? nxt.id : null;
-    }
+    const nextId = st.view === 'triage' && ADVANCE_OPS.includes(op) ? nextTriageId(item, idx) : null;
     try {
       const res = await api('/api/action', { method: 'POST', body: { id: item.id, op, value, list } });
       announce(res.message);
@@ -263,10 +285,10 @@
   }
 
   async function switchView(id, { fromSelect = false } = {}) {
+    saveViewState();
     st.view = id;
     store.set('view', id);
-    st.collapsed.clear();
-    st.seenNotes.clear();
+    restoreViewState();
     st.grab = null;
     st.activeId = null;
     const model = await loadView({ focus: !fromSelect });
@@ -354,6 +376,7 @@
         notes.append(el('h3', { text: 'Nearby lines' }), el('ul', {}, ...ctx.before.map((n) => el('li', { text: `Before: ${n}` })), el('li', { text: `This line: ${item.text}` }), ...ctx.after.map((n) => el('li', { text: `After: ${n}` }))));
       }
       add('Mark as to-do (a)', () => act('todo'));
+      add('Mark as to-do and choose lists (l)', () => listKey());
       add('Mark as a note (s)', () => act('note'));
       add('Make a subtask of the task above (tab)', () => act('indent'));
       add('Mark all remaining lines in this file as notes (shift and s)', () => act('dismissFile', null, { id: `f:${fileOf(item)}`, type: 'group' }));
@@ -762,6 +785,7 @@
     if (want === !collapsed) return false;
     if (want) st.collapsed.delete(item.id);
     else st.collapsed.add(item.id);
+    saveViewState();
     render();
     setActive(item.id, true);
     return true;
@@ -790,10 +814,12 @@
   // One list: l toggles straight away. Several lists: l asks which ones.
   function listKey() {
     const item = currentItem();
-    if (!item || item.type !== 'task') {
-      announce('Select a task first. Lines in triage need to be marked as to-dos before they can go on a list.');
+    const triageLine = st.view === 'triage' && item && item.type === 'unmarked';
+    if (!item || (item.type !== 'task' && !triageLine)) {
+      announce('Select a task first.');
       return undefined;
     }
+    if (triageLine) return openLists();
     if (st.summary.lists.length === 1) return act('listToggle', null, item, st.summary.lists[0].id);
     return openLists();
   }
@@ -813,8 +839,8 @@
 
   function openLists() {
     const item = currentItem();
-    if (!item || item.type !== 'task') return;
-    $('lists-task').textContent = item.text;
+    if (!item || (item.type !== 'task' && item.type !== 'unmarked')) return;
+    $('lists-task').textContent = item.type === 'unmarked' ? `${item.text}. It will be marked as a to-do.` : item.text;
     $('lists-new').value = '';
     $('lists-error').textContent = '';
     renderListChoices($('lists-choices'), item, item.lists || []);
@@ -828,17 +854,33 @@
     const item = currentItem();
     const idx = activeIndex();
     const ids = [...$('lists-choices').querySelectorAll('input:checked')].map((c) => c.value);
+    const triage = item.type === 'unmarked';
+    const nextId = triage ? nextTriageId(item, idx) : null;
     try {
-      const res = await api('/api/action', { method: 'POST', body: { id: item.id, op: 'listSet', value: { ids, newName: $('lists-new').value } } });
+      const res = await api('/api/action', { method: 'POST', body: { id: item.id, op: triage ? 'todoList' : 'listSet', value: { ids, newName: $('lists-new').value } } });
       closeDialog($('lists-dialog'));
       announce(res.message);
-      await loadView({ focusId: res.focusId, keepIndex: idx });
+      await loadView({ focusId: nextId || res.focusId, keepIndex: idx });
     } catch (err) {
       $('lists-error').textContent = err.message;
       $('lists-new').focus();
     }
   }
   $('lists-form').addEventListener('submit', saveLists);
+  // Up and Down move through the lists, Space ticks one, Enter saves.
+  $('lists-form').addEventListener('keydown', (e) => {
+    const stops = [...$('lists-choices').querySelectorAll('input'), $('lists-new')];
+    const i = stops.indexOf(document.activeElement);
+    if (i < 0) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      const to = stops[i + (e.key === 'ArrowDown' ? 1 : -1)];
+      e.preventDefault();
+      if (to) to.focus();
+    } else if (e.key === 'Enter' && document.activeElement.type === 'checkbox') {
+      e.preventDefault();
+      $('lists-form').requestSubmit();
+    }
+  });
   $('lists-cancel').addEventListener('click', () => closeDialog($('lists-dialog')));
 
   // ---------- manage lists ----------
@@ -1020,10 +1062,17 @@
     j: () => openJira(),
     o: () => act('open'),
     u: () => undo(),
-    a: () => (st.view === 'triage' ? act('todo') : announce('The a key marks unmarked lines as to-dos in the triage view. Press 0 to open triage.')),
+    a: () => markTodo(),
+    '@': () => markTodo(),
     s: () => noteKey(),
+    '&': () => noteKey(),
     S: () => (st.view === 'triage' ? skipFile() : announce('Shift and s marks every remaining line in a file as a note in the triage view. Press 0 to open triage.')),
   };
+
+  function markTodo() {
+    if (st.view === 'triage') act('todo');
+    else announce('The at sign or a key marks unmarked lines as to-dos in the triage view. Press 0 to open triage.');
+  }
 
   function statusKey(op, flag, label) {
     const item = currentItem();

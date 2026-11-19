@@ -73,8 +73,9 @@ test('triage shows the whole file; marking a note attaches it to the task above 
   const after = tri();
   assert.equal(app.view({ view: 'triage' }).items.length, 0, 'file leaves triage once everything is reviewed');
   assert.deepEqual(app.task(items(app, 'open')[0].id).notes, ['ask about budget']);
-  assert.equal(fs.readFileSync(path.join(notes, 'a.txt'), 'utf8'), '@ call Sam\n\nask about budget\n');
+  assert.equal(fs.readFileSync(path.join(notes, 'a.txt'), 'utf8'), '@ call Sam\n\n& ask about budget\n');
   app.undo();
+  assert.equal(fs.readFileSync(path.join(notes, 'a.txt'), 'utf8'), '@ call Sam\n\nask about budget\n');
   assert.equal(app.view({ view: 'triage' }).count, 1);
   assert.equal(after.length, 0);
 });

@@ -203,3 +203,73 @@ test('a task with notes gets note rows under it, before its subtasks', async () 
   assert.deepEqual(rows, [['task', 'Future', true], ['tasknote', 'Jaws training', false], ['task', 'sub', false]]);
   assert.equal(items(app)[0].noteCount, 1);
 });
+
+test('deleting a line leaves the plain lines after it in triage', async () => {
+  const { notes, app } = setup({ 'a.txt': '@ parent\n\nx\ny\nz\n' });
+  const unmarked = () => items(app, 'triage').filter((i) => i.type === 'unmarked').map((i) => i.text);
+  await app.action({ id: items(app, 'triage').find((i) => i.text === 'x').id, op: 'exclude' });
+  assert.equal(read(notes, 'a.txt'), '@ parent\n\n$ x\ny\nz\n');
+  assert.deepEqual(unmarked(), ['y', 'z']);
+});
+
+test('Tab on a plain line with other lines above it moves it under the task, and undo puts it back', async () => {
+  const text = '@ parent\n  a note\n\njunk\nmore junk\nsub\nlast\n';
+  const { notes, app } = setup({ 'a.txt': text });
+  const sub = items(app, 'triage').find((i) => i.type === 'unmarked' && i.text === 'sub');
+  await app.action({ id: sub.id, op: 'indent' });
+  assert.equal(read(notes, 'a.txt'), '@ parent\n  a note\n  @ sub\n\njunk\nmore junk\nlast\n');
+  assert.ok(find(app, 'sub'));
+  app.undo();
+  assert.equal(read(notes, 'a.txt'), text);
+});
+
+test('a line starting with & is a note of the nearest task above, across blank lines', async () => {
+  const { app } = setup({ 'a.txt': '@ call Sam\n  first note\n\njunk\n& asked about budget\n&no space\n@ other\n\n&& not a note\n' });
+  assert.deepEqual(find(app, 'call Sam').notes, ['first note', 'asked about budget', 'no space']);
+  assert.deepEqual(find(app, 'other').notes, []);
+  assert.deepEqual(items(app, 'triage').filter((i) => i.type === 'unmarked').map((i) => i.text), ['junk', '&& not a note']);
+  const { app: none } = setup({ 'a.txt': '& first\nx\ny\n@ task\n' });
+  assert.deepEqual(items(none, 'triage').filter((i) => i.type === 'unmarked').map((i) => i.text), ['& first', 'x']);
+});
+
+test('marking a triage line as a note writes & into the file, and undo restores it', async () => {
+  const text = '@ task\n\njunk line\n  indented junk\nlast\n';
+  const { notes, app } = setup({ 'a.txt': text, 'b.txt': 'alpha\nbeta\n' });
+  const unmarked = (t) => items(app, 'triage').find((i) => i.type === 'unmarked' && i.text === t);
+  await app.action({ id: unmarked('junk line').id, op: 'note' });
+  assert.equal(read(notes, 'a.txt'), '@ task\n\n& junk line\n  indented junk\nlast\n');
+  assert.deepEqual(find(app, 'task').notes, ['junk line']);
+  app.undo();
+  assert.equal(read(notes, 'a.txt'), text);
+  await app.action({ id: unmarked('alpha').id, op: 'note' });
+  assert.equal(read(notes, 'b.txt'), 'alpha\nbeta\n');
+  assert.ok(unmarked('alpha').known);
+  await app.action({ id: `f:${path.join(notes, 'a.txt')}`, op: 'dismissFile' });
+  assert.equal(read(notes, 'a.txt'), '@ task\n\n& junk line\n  & indented junk\n& last\n');
+  assert.deepEqual(find(app, 'task').notes, ['junk line', 'indented junk', 'last']);
+  app.undo();
+  assert.equal(read(notes, 'a.txt'), text);
+});
+
+test('triage todoList marks a line as a to-do and puts it on lists in one undoable step', async () => {
+  const text = '@ task\n\njunk line\nlast\n';
+  const { notes, app } = setup({ 'a.txt': text });
+  const unmarked = (t) => items(app, 'triage').find((i) => i.type === 'unmarked' && i.text === t);
+  const res = await app.action({ id: unmarked('junk line').id, op: 'todoList', value: { ids: ['mylist'], newName: 'Work' } });
+  assert.equal(read(notes, 'a.txt'), '@ task\n\n@ junk line\nlast\n');
+  const t = find(app, 'junk line');
+  assert.equal(t.lists.length, 2);
+  assert.ok(!unmarked('junk line'));
+  assert.match(res.message, /Marked as to-do/);
+  app.undo();
+  assert.equal(read(notes, 'a.txt'), text);
+  assert.equal(app.stateData.lists.some((l) => l.name === 'Work'), false);
+});
+
+test('triage hides completed tasks unless show completed is on', () => {
+  const { app } = setup({ 'a.txt': '+ finished\n@ open one\n\n\nstray line\n' });
+  const texts = (showCompleted) => items(app, 'triage', { showCompleted }).map((i) => i.text);
+  assert.ok(!texts(false).includes('finished'));
+  assert.ok(texts(false).includes('open one'));
+  assert.ok(texts(true).includes('finished'));
+});
