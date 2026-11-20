@@ -29,8 +29,8 @@ Automated tests (jsdom and axe-core) cover structure and keyboard logic, but the
 - Tab from the page start: skip link, View, Search, Show completed, Keyboard shortcuts, Settings, then the list.
 
 **The list (the main test)**
-- Tab into the list. Does VoiceOver say it is a list and read the first item as just its status and name (for example "Open. Call Sam.")?
-  - Expected: "Open. write spec." plus "Expanded" only if it has subtasks or notes, and its position, e.g. "1 of 3". Rows with nothing to open must not say collapsed.
+- Tab into the list. Does VoiceOver say it is a list and read the first item as just its status and name (for example "Call Sam. Open.")?
+  - Expected: "write spec." then "Expanded" only if it has subtasks or notes, then "Open.", and its position, e.g. "1 of 3". Rows with nothing to open must not say collapsed.
 - If VoiceOver says the list is empty or does not read items, try **VO+Shift+Down** to interact with the list first.
 - Up/Down arrows: one item per press, status and name read each time, with no dates, file or notes? Does it ever read twice or skip?
 - Right/Left on a task with a subtask: says Expanded or Collapsed? Subtasks say Level 2? Left on a subtask goes to its parent?
@@ -52,7 +52,7 @@ Automated tests (jsdom and axe-core) cover structure and keyboard logic, but the
 - `?` opens the shortcuts table.
 
 **Triage (initial review)**
-- `0`, then Down: each unmarked line is read as "Unmarked" and its text. Enter shows its line, position and the nearby lines.
+- `0`, then Down: each unmarked line is read as its text then "Unmarked"; lines that are already tasks are not listed. Enter shows its line, position and the nearby lines.
 - `a` marks it as a to-do and focus lands on the next line. `s` skips. `n` jumps to the next file heading, Shift+`n` back. Shift+`r` marks the file reviewed. `f` toggles "new or changed files only"; confirm it is announced.
 
 **My list and reordering**

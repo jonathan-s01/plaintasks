@@ -291,30 +291,22 @@ function buildView(index, state, opts = {}) {
       const todo = list.filter((x) => x.file === first.file);
       const total = todo.length;
       items.push({ id: `f:${first.file}`, type: 'group', level: 1, text: first.fileLabel, words: [], meta: [total === 1 ? '1 line to review' : `${total} lines to review`], hasChildren: true, file: first.file });
-      // The whole file in order: tasks and reviewed notes are shown for context, only the unmarked lines need a decision.
-      const lines = [
-        ...index.tasks.filter((t) => t.file === first.file),
-        ...index.unmarked.filter((u) => u.file === first.file),
-      ].sort((a, b) => a.lineIndex - b.lineIndex);
+      // Lines that are already tasks are not listed: they need nothing here. Reviewed notes stay, in file order.
+      const lines = index.unmarked.filter((u) => u.file === first.file).sort((a, b) => a.lineIndex - b.lineIndex);
       let pos = 0;
       for (const u of lines) {
-        const known = u.kind === 'task';
-        if (known && u.flags.done && !showCompleted) continue;
-        const reviewed = !known && (dismissed[u.file] || []).includes(u.textHash);
+        const reviewed = (dismissed[u.file] || []).includes(u.textHash);
         const it = describe(u, today, 2, { hideFile: true, hideGroup: false });
         it.meta = it.meta.filter((m) => !/^\d+ notes?$/.test(m));
         it.meta.push(`Line ${u.line}`);
-        if (known) {
-          it.meta.unshift('Already a task');
-        } else if (reviewed) {
+        if (reviewed) {
           it.words = ['Note', 'Reviewed'];
           if (u.attachedTo) it.meta.push(`Attached to ${u.attachedTo}`);
         } else {
           pos += 1;
           it.meta.push(`${pos} of ${total} to review in this file`);
         }
-        it.known = known || reviewed;
-        if (known) it.meta.push('No action needed');
+        it.known = reviewed;
         it.file = u.file;
         items.push(it);
       }

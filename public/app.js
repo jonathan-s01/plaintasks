@@ -140,13 +140,14 @@
         node.setAttribute('aria-setsize', String(setsize.get(pos.key)));
         if (it.hasChildren) node.setAttribute('aria-expanded', st.collapsed.has(it.id) ? 'false' : 'true');
       }
-      if (it.words.length) node.append(el('span', { class: 'words', text: `${it.words.join(', ')}. ` }));
       node.append(el('span', { class: 'text', text: `${it.text}. ` }));
       if (listMode) {
         // Only rows that can open say so.
         const state = [it.level > 1 ? `Level ${it.level}.` : '', it.hasChildren ? (st.collapsed.has(it.id) ? 'Collapsed.' : 'Expanded.') : ''].filter(Boolean).join(' ');
         if (state) node.append(el('span', { class: 'sr-only', text: ` ${state} ` }));
       }
+      // Status comes last: name first, then level and whether it opens, then Open, Done and so on.
+      if (it.words.length) node.append(el('span', { class: 'words', text: `${it.words.join(', ')}. ` }));
       if (it.meta.length) {
         const meta = el('span', { class: 'meta', text: `${it.meta.join('. ')}.` });
         // Rows speak only status and name; the details are in the Enter dialog. Group and list rows keep their counts.
@@ -298,6 +299,9 @@
     restoreViewState();
     st.grab = null;
     st.activeId = null;
+    // Say which view this is straight away, before the list loads and focus lands on its first item.
+    const known = st.summary && st.summary.views.find((v) => v.id === id);
+    if (!fromSelect && known) announce(`${known.title}.`);
     const model = await loadView({ focus: !fromSelect });
     $('view').value = id;
     announce(`${model.title}. ${$('list-status').textContent}`);

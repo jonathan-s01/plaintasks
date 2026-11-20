@@ -278,12 +278,12 @@ test('triage todoList marks a line as a to-do and puts it on lists in one undoab
   assert.equal(app.stateData.lists.some((l) => l.name === 'Work'), false);
 });
 
-test('triage hides completed tasks unless show completed is on', () => {
+test('triage lists only lines that are not tasks yet', () => {
   const { app } = setup({ 'a.txt': '+ finished\n@ open one\n\n\nstray line\n' });
-  const texts = (showCompleted) => items(app, 'triage', { showCompleted }).map((i) => i.text);
-  assert.ok(!texts(false).includes('finished'));
-  assert.ok(texts(false).includes('open one'));
-  assert.ok(texts(true).includes('finished'));
+  for (const showCompleted of [false, true]) {
+    const texts = items(app, 'triage', { showCompleted }).filter((i) => i.type !== 'group').map((i) => i.text);
+    assert.deepEqual(texts, ['stray line']);
+  }
 });
 
 async function fileLists(app, notes) {

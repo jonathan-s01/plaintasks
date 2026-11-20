@@ -1,7 +1,7 @@
 plaintasks keyboard commands
 
 Single-letter keys work while the task list has focus. Press question mark in the app for the same help; Escape closes it.
-Each task row reads only its status and name. Press Enter on a task to hear its full details.
+Each task row reads its name, then its status (for example "Call Sam. Open."). Press Enter on a task to hear its full details.
 
 
 MOVING AROUND
@@ -26,7 +26,8 @@ VIEWS
 7: important.
 8: in progress.
 9: completed.
-0: triage, for reviewing unmarked lines.
+0: triage, for reviewing unmarked lines. Lines that are already tasks are not listed.
+Pressing a view key says the view name straight away, before the first item is read.
 Minus: My list.
 Equals: all lists.
 Shift and g: Goals, each goal followed by its linked tasks.

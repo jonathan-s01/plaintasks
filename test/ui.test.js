@@ -93,12 +93,29 @@ test('default list says collapsed or expanded only on rows that can open', async
     assert.equal(tree.getAttribute('role'), 'listbox');
     assert.ok(rows().every((r) => !r.hasAttribute('aria-expanded')));
     const said = (r) => r.textContent.replace(r.querySelector('.meta') ? r.querySelector('.meta').textContent : '', '').replace(/\s+/g, ' ').trim();
-    assert.equal(said(rows()[0]), 'Open. parent task. Expanded.');
-    assert.equal(said(rows()[1]), 'Open. child task. Level 2.');
-    assert.equal(said(rows()[2]), 'Open. lone task.');
+    assert.equal(said(rows()[0]), 'parent task. Expanded. Open.');
+    assert.equal(said(rows()[1]), 'child task. Level 2. Open.');
+    assert.equal(said(rows()[2]), 'lone task. Open.');
     key(window, rows()[0], 'ArrowLeft');
     await waitFor(() => rows().length === 2, 'collapsed');
-    assert.equal(said(rows()[0]), 'Open. parent task. Collapsed.');
+    assert.equal(said(rows()[0]), 'parent task. Collapsed. Open.');
+  } finally {
+    await env.close();
+  }
+});
+
+test('pressing a view key announces the view name before anything else', async () => {
+  const env = await boot({ 'a.txt': '@ call Sam\n\nstray line\n' });
+  try {
+    const { window } = await openPage(env);
+    const doc = window.document;
+    await waitFor(() => doc.querySelectorAll('[role=option]').length > 0, 'items');
+    const heard = [];
+    new window.MutationObserver(() => heard.push(doc.getElementById('live').textContent)).observe(doc.getElementById('live'), { childList: true, characterData: true, subtree: true });
+    key(window, doc.querySelector('[role=option]'), '0');
+    await waitFor(() => heard.length >= 2, 'announcements');
+    assert.equal(heard[0], "Triage unmarked lines.");
+    assert.notEqual(heard[heard.length - 1], heard[0]);
   } finally {
     await env.close();
   }
@@ -117,7 +134,7 @@ test('?ui=tree is a tree with roving tabindex; keyboard moves, collapses and com
     const rows = () => [...tree.querySelectorAll('[role=treeitem]')];
     assert.equal(rows().filter((r) => r.tabIndex === 0).length, 1, 'exactly one tab stop');
     assert.equal(doc.activeElement, rows()[0]);
-    assert.match(rows()[0].textContent, /Open\. parent task\. .*Due .*Nov 20/);
+    assert.match(rows()[0].textContent, /parent task\. .*Open\. .*Due .*Nov 20/);
     const meta = rows()[0].querySelector('.meta');
     assert.match(meta.textContent, /Due .*File .*a\.txt/);
     assert.equal(meta.getAttribute('aria-hidden'), 'true', 'rows speak only status and name');
@@ -349,7 +366,7 @@ test('notes expand under a collapsed task, Delete marks it with $, and Option+n 
     assert.match(rows()[0].textContent, /Collapsed\./, 'a task with notes starts collapsed');
     key(window, doc.activeElement, 'ArrowRight');
     assert.equal(rows().length, 3);
-    assert.match(rows()[1].textContent, /Note\. Jaws training/);
+    assert.match(rows()[1].textContent, /Jaws training\. .*Note\./);
     key(window, doc.activeElement, 'ArrowLeft');
     key(window, doc.activeElement, 'ArrowDown');
     assert.match(doc.activeElement.textContent, /old thing/);
