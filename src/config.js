@@ -109,6 +109,7 @@ function loadState(dir) {
       folder: typeof l.folder === 'string' ? l.folder : '',
       file: typeof l.file === 'string' ? l.file : '',
       sort: SORT_MODES.includes(l.sort) ? l.sort : 'manual',
+      ...(l.fileTasks === true ? { fileTasks: true } : {}),
     }))
     : [];
   const mine = lists.find((l) => l.id === DEFAULT_LIST);

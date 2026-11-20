@@ -11,7 +11,7 @@ const { parseText, markerInfo } = require('./parser');
 const { insertLinesAfter, appendLines, replaceLines, moveLine, createTextFile, ConflictError } = require('./writer');
 const { parseWhen, formatDate, formatTime, toISO } = require('./dates');
 const { modeFor, TEXT_EXT } = require('./indexer');
-const { matcher } = require('./views');
+const { matcher, fileBacked } = require('./views');
 
 const own = (s) => /^[ \t]*/.exec(s)[0];
 const clean = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
@@ -316,7 +316,12 @@ function install(App, HttpError) {
     const text = clean(value && value.text);
     if (!text) throw new HttpError(400, 'Type the new task first.');
     if (markerInfo(text)) throw new HttpError(400, 'Type the task without a leading symbol. The app adds the to-do symbol for you.');
-    const master = this.config.masterFile;
+    const home = listId ? this.getList(listId) : null;
+    // A list that keeps its tasks in a file gets new tasks at the end of that file.
+    const master = fileBacked(home) ? home.file : this.config.masterFile;
+    if (fileBacked(home) && !this.fileEntry(master)) {
+      throw new HttpError(409, `The file for ${home.name} is missing or not in a watched folder. Choose another in Manage lists (press M).`, 'no-list-file');
+    }
     if (!master || !fs.existsSync(master)) {
       throw new HttpError(409, master ? 'The file for new tasks is missing. Choose another.' : 'Choose which file new tasks are saved to.', 'no-master');
     }
@@ -334,8 +339,13 @@ function install(App, HttpError) {
     this.index.refresh(this.now());
     const id = this.idAt(master, res.lineIndex);
     const fresh = id ? this.index.get(id) : null;
-    let message = `Created task in ${this.masterLabel()}: ${text}`;
-    if (fresh && listId) {
+    let message = `Created task in ${fileBacked(home) ? this.fileEntry(master).label : this.masterLabel()}: ${text}`;
+    if (fileBacked(home)) {
+      if (fresh) this.stateData.created[fresh.listKey] = toISO(this.now());
+      this.stateData.lastList = home.id;
+      this.saveState();
+      message = `Created task in ${home.name}, at the end of ${this.fileEntry(master).label}: ${text}`;
+    } else if (fresh && listId) {
       const target = this.getList(listId);
       this.mutateLists((lists) => {
         const l = lists.find((x) => x.id === target.id);
@@ -351,6 +361,10 @@ function install(App, HttpError) {
   proto.listAdd = function listAdd(t, listId) {
     this.requireTask(t);
     const target = this.getList(listId);
+    if (fileBacked(target)) {
+      if (t.file === target.file || target.keys.includes(t.listKey)) return { ok: true, message: `Already on ${target.name}: ${t.text}`, focusId: t.id };
+      return this.moveToListFile(t, target);
+    }
     if (target.keys.includes(t.listKey)) return { ok: true, message: `Already on ${target.name}: ${t.text}`, focusId: t.id };
     this.mutateLists((lists) => {
       lists.find((x) => x.id === target.id).keys.push(t.listKey);
@@ -418,6 +432,11 @@ function install(App, HttpError) {
     return file;
   };
 
+  proto.cleanListFile = function cleanListFile(file) {
+    if (typeof file !== 'string' || !this.fileEntry(file)) throw new HttpError(400, 'That file is not one of your watched files.');
+    return file;
+  };
+
   /** Edits a list's folder, or gives it a notes file (an existing one, or a new one in `notesFolder`). */
   proto.listEdit = function listEdit(listId, value) {
     const target = this.getList(listId);
@@ -425,18 +444,25 @@ function install(App, HttpError) {
     const folder = v.folder !== undefined ? this.cleanFolder(v.folder) : undefined;
     let file;
     if (v.notesFolder) file = this.makeListFile(target, v.notesFolder);
-    else if (v.file) {
-      if (!this.fileEntry(v.file)) throw new HttpError(400, 'That file is not one of your watched files.');
-      file = v.file;
-    }
+    else if (v.file) file = this.cleanListFile(v.file);
+    const fileTasks = typeof v.fileTasks === 'boolean' ? v.fileTasks : undefined;
+    if (fileTasks && !(file || target.file)) throw new HttpError(400, 'Choose a file for the list to keep its tasks in first.');
     this.mutateLists((lists) => {
       const l = lists.find((x) => x.id === target.id);
       if (folder !== undefined) l.folder = folder;
       if (file) l.file = file;
+      if (fileTasks === true) l.fileTasks = true;
+      else if (fileTasks === false) delete l.fileTasks;
     }, target.name);
     const bits = [];
+    const kept = fileBacked(this.getList(target.id));
     if (folder !== undefined) bits.push(folder ? `in folder ${folder}` : 'out of its folder');
-    if (file) bits.push(`notes file ${(this.fileEntry(file) || {}).label || file}`);
+    if (file) bits.push(`${kept ? 'tasks kept in' : 'notes file'} ${(this.fileEntry(file) || {}).label || file}`);
+    if (fileTasks !== undefined) {
+      bits.push(kept
+        ? `shows every task in ${(this.fileEntry(this.getList(target.id).file) || {}).label}, and moving a task here moves its lines into that file`
+        : 'shows only the tasks you add to it');
+    }
     return { ok: true, message: `${target.name}: ${bits.join(', ') || 'no change'}${v.notesFolder ? '. Undo keeps the file on disk.' : ''}`, undo: true };
   };
 

@@ -285,3 +285,101 @@ test('triage hides completed tasks unless show completed is on', () => {
   assert.ok(texts(false).includes('open one'));
   assert.ok(texts(true).includes('finished'));
 });
+
+async function fileLists(app, notes) {
+  const a = (await app.action({ op: 'listCreate', value: { name: 'Alpha', file: path.join(notes, 'a.txt'), fileTasks: true } })).listId;
+  const b = (await app.action({ op: 'listCreate', value: { name: 'Beta', file: path.join(notes, 'b.txt'), fileTasks: true } })).listId;
+  return { a, b };
+}
+
+test('a list that keeps its tasks in a file shows every task there, nested, in file order', async () => {
+  const { notes, app } = setup({ 'a.txt': '@ one\n\t@ one sub\n•@ bullet sub\n+ done\n@ two\n', 'b.txt': '@ elsewhere\n' });
+  const { a } = await fileLists(app, notes);
+  const shown = items(app, `list:${a}`);
+  assert.deepEqual(shown.map((i) => [i.text, i.level]), [['one', 1], ['one sub', 2], ['bullet sub', 2], ['two', 1]]);
+  assert.equal(shown[0].hasChildren, true);
+  assert.ok(find(app, 'two').meta.includes('On list: Alpha'));
+  assert.equal(app.summary().lists.find((l) => l.id === a).fileTasks, true);
+});
+
+test('moving a task to another file list moves its lines, & notes and subtasks, and undo puts both files back', async () => {
+  const A = '@ keep\n•@ parent\n  plain note\n\t@ child\n\t\t@ grandchild\n@ after\n& late note for after\n';
+  const B = '@ existing\n  its note';
+  const { notes, app } = setup({ 'a.txt': A, 'b.txt': B });
+  const { b } = await fileLists(app, notes);
+  const other = (await app.action({ op: 'listCreate', value: 'Errands' })).listId;
+  await app.action({ id: find(app, 'parent').id, op: 'listToggle', list: other });
+  const res = await app.action({ id: find(app, 'parent').id, op: 'listToggle', list: b });
+  assert.match(res.message, /^Moved to Beta from Alpha, with 2 subtasks: parent\. Press u to undo$/);
+  assert.equal(read(notes, 'a.txt'), '@ keep\n@ after\n& late note for after\n');
+  assert.equal(read(notes, 'b.txt'), '@ existing\n  its note\n@ parent\n  plain note\n\t@ child\n\t\t@ grandchild');
+  assert.equal(app.task(res.focusId).text, 'parent');
+  assert.deepEqual(items(app, `list:${b}`).filter((i) => i.type === 'task').map((i) => [i.text, i.level]), [['existing', 1], ['parent', 1], ['child', 2], ['grandchild', 3]]);
+  assert.ok(items(app, `list:${other}`).some((i) => i.text === 'parent'), 'stays on lists that store it by key');
+  app.undo();
+  assert.equal(read(notes, 'a.txt'), A);
+  assert.equal(read(notes, 'b.txt'), B);
+  assert.ok(items(app, `list:${other}`).some((i) => i.text === 'parent'));
+});
+
+test('ticking another file list in the chooser moves the task, and its own file list cannot just be unticked', async () => {
+  const { notes, app } = setup({ 'a.txt': '@ task\n@ stay\n', 'b.txt': '@ b1\n', 'c.txt': '@ c1\n' });
+  const { a, b } = await fileLists(app, notes);
+  const c = (await app.action({ op: 'listCreate', value: { name: 'Gamma', file: path.join(notes, 'c.txt'), fileTasks: true } })).listId;
+  await assert.rejects(() => app.action({ id: find(app, 'task').id, op: 'listSet', value: { ids: [] } }), /stays on that list/);
+  await assert.rejects(() => app.action({ id: find(app, 'task').id, op: 'listSet', value: { ids: [b, c] } }), /only be kept in one file/);
+  await assert.rejects(() => app.action({ id: find(app, 'task').id, op: 'listToggle', list: a }), /press Delete to exclude/);
+  const res = await app.action({ id: find(app, 'task').id, op: 'listSet', value: { ids: [a, b, 'mylist'] } });
+  assert.match(res.message, /^Moved to Beta from Alpha: task\. task is on My list and Beta\. Press u to undo$/);
+  assert.equal(read(notes, 'a.txt'), '@ stay\n');
+  assert.equal(read(notes, 'b.txt'), '@ b1\n@ task\n');
+  app.undo();
+  assert.equal(read(notes, 'a.txt'), '@ task\n@ stay\n');
+  assert.equal(read(notes, 'b.txt'), '@ b1\n');
+  assert.ok(!items(app, 'list:mylist').some((i) => i.text === 'task'));
+});
+
+test('reordering a file list moves the block in the file, among siblings only, and refuses across headings', async () => {
+  const A = '@ one\n\t@ one sub\n  & note\n@ two\n@ three\n\nHeading:\n@ four\n';
+  const { notes, app } = setup({ 'a.txt': A, 'b.txt': '' });
+  const { a } = await fileLists(app, notes);
+  const res = await app.action({ id: find(app, 'one').id, op: 'listMove', value: 'down', list: a });
+  assert.match(res.message, /^Moved down to position 2 of 4: one$/);
+  assert.equal(read(notes, 'a.txt'), '@ two\n@ one\n\t@ one sub\n  & note\n@ three\n\nHeading:\n@ four\n');
+  await app.action({ id: find(app, 'three').id, op: 'listMove', value: 'top', list: a });
+  assert.equal(read(notes, 'a.txt'), '@ three\n@ two\n@ one\n\t@ one sub\n  & note\n\nHeading:\n@ four\n');
+  app.undo();
+  app.undo();
+  assert.equal(read(notes, 'a.txt'), A);
+  assert.match((await app.action({ id: find(app, 'one sub').id, op: 'listMove', value: 'up', list: a })).message, /^Already first under one/);
+  await assert.rejects(() => app.action({ id: find(app, 'four').id, op: 'listMove', value: 'up', list: a }), /without changing other tasks/);
+  assert.equal(read(notes, 'a.txt'), A);
+});
+
+test('file list moves refuse when a file changed on disk, and new tasks go into the list file', async () => {
+  const { notes, app } = setup({ 'a.txt': '@ task\n', 'b.txt': '@ b1\n' });
+  const { a, b } = await fileLists(app, notes);
+  const t = find(app, 'task');
+  fs.writeFileSync(path.join(notes, 'b.txt'), '@ b1\n@ added outside\n');
+  await assert.rejects(() => app.action({ id: t.id, op: 'listToggle', list: b }), /changed/);
+  assert.equal(read(notes, 'a.txt'), '@ task\n');
+  assert.equal(read(notes, 'b.txt'), '@ b1\n@ added outside\n');
+  const res = await app.action({ op: 'newTask', value: { text: 'fresh' }, list: a });
+  assert.match(res.message, /Created task in Alpha, at the end of notes\/a\.txt: fresh/);
+  assert.equal(read(notes, 'a.txt'), '@ task\n@ fresh\n');
+});
+
+test('a list using its file only for notes still keeps tasks by hand', async () => {
+  const { notes, app } = setup({ 'a.txt': '@ task\n', 'n.txt': '@ in notes file\n' });
+  const list = (await app.action({ op: 'listCreate', value: { name: 'Plain', file: path.join(notes, 'n.txt') } })).listId;
+  assert.deepEqual(items(app, `list:${list}`), []);
+  await app.action({ id: find(app, 'task').id, op: 'listToggle', list });
+  assert.equal(read(notes, 'a.txt'), '@ task\n');
+  assert.deepEqual(items(app, `list:${list}`).map((i) => i.text), ['task']);
+  const edit = await app.action({ op: 'listEdit', list, value: { fileTasks: true } });
+  assert.match(edit.message, /shows every task in notes\/n\.txt/);
+  assert.deepEqual(items(app, `list:${list}`).map((i) => i.text), ['in notes file', 'task']);
+  await app.action({ id: find(app, 'task').id, op: 'listToggle', list });
+  assert.deepEqual(items(app, `list:${list}`).map((i) => i.text), ['in notes file']);
+  assert.equal(read(notes, 'a.txt'), '@ task\n');
+});

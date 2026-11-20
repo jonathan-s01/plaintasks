@@ -163,27 +163,39 @@ function insertLinesAfter(file, { afterIndex, expected, newLines }) {
 /** Add lines at the end of a file, keeping its line endings. */
 function appendLines(file, newLines) {
   if (newLines.some((l) => /[\r\n]/.test(l))) throw new Error('Appended lines must be single lines');
-  return editFile(file, (lines, eols) => {
-    const eol = defaultEol(eols);
-    const endsWithNewline = lines.length > 1 && lines[lines.length - 1] === '';
-    const empty = lines.length === 1 && lines[0] === '';
-    if (empty) {
-      lines.splice(0, 1, ...newLines, '');
-      eols.splice(0, 1, ...newLines.map(() => eol), '');
-      return { lineIndex: 0 };
-    }
-    if (endsWithNewline) {
-      const at = lines.length - 1;
-      lines.splice(at, 0, ...newLines);
-      eols.splice(at, 0, ...newLines.map(() => eol));
-      return { lineIndex: at };
-    }
-    const at = lines.length;
-    eols[at - 1] = eol;
-    lines.push(...newLines);
-    eols.push(...newLines.map((_, i) => (i === newLines.length - 1 ? '' : eol)));
+  return editFile(file, (lines, eols) => appendInPlace(lines, eols, newLines));
+}
+
+/** Adds lines at the end of an already split file, keeping its line endings. Returns where the first one landed. */
+function appendInPlace(lines, eols, newLines) {
+  const eol = defaultEol(eols);
+  const endsWithNewline = lines.length > 1 && lines[lines.length - 1] === '';
+  const empty = lines.length === 1 && lines[0] === '';
+  if (empty) {
+    lines.splice(0, 1, ...newLines, '');
+    eols.splice(0, 1, ...newLines.map(() => eol), '');
+    return { lineIndex: 0 };
+  }
+  if (endsWithNewline) {
+    const at = lines.length - 1;
+    lines.splice(at, 0, ...newLines);
+    eols.splice(at, 0, ...newLines.map(() => eol));
     return { lineIndex: at };
-  });
+  }
+  const at = lines.length;
+  eols[at - 1] = eol;
+  lines.push(...newLines);
+  eols.push(...newLines.map((_, i) => (i === newLines.length - 1 ? '' : eol)));
+  return { lineIndex: at };
+}
+
+/** Removes the lines at `indices` from an already split file, keeping the file's final line ending as it was. */
+function removeInPlace(lines, eols, indices) {
+  for (const i of [...indices].sort((a, b) => b - a)) {
+    if (eols[i] === '' && i > 0) eols[i - 1] = '';
+    lines.splice(i, 1);
+    eols.splice(i, 1);
+  }
 }
 
 /** Remove a block of lines that must still read exactly `expected` (used to undo insertions). */
@@ -220,10 +232,36 @@ function moveLine(file, { from, expected, toIndex, replacement, anchorExpected }
   });
 }
 
+/**
+ * Re-reads the file and lets `fn(lines, eols)` rearrange it freely, in one atomic write. Returns the lines and line endings
+ * from before and after, so the change can be undone exactly with restoreFile.
+ */
+function transformFile(file, fn) {
+  let before;
+  let after;
+  const res = editFile(file, (lines, eols) => {
+    before = { lines: [...lines], eols: [...eols] };
+    const r = fn(lines, eols) || {};
+    after = { lines: [...lines], eols: [...eols] };
+    return r;
+  });
+  return { ...res, before, after };
+}
+
+/** Puts back `lines`/`eols`, but only while the file still reads exactly `expect`. */
+function restoreFile(file, { expect, lines: wantLines, eols: wantEols }) {
+  return editFile(file, (lines, eols) => {
+    if (lines.length !== expect.length || lines.some((l, i) => l !== expect[i])) throw new ConflictError(CHANGED);
+    lines.splice(0, lines.length, ...wantLines);
+    eols.splice(0, eols.length, ...wantEols);
+    return {};
+  });
+}
+
 /** Create a new text file. Never overwrites. */
 function createTextFile(file, lines) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, lines.length ? `${lines.join('\n')}\n` : '', { flag: 'wx' });
 }
 
-module.exports = { replaceLine, replaceLines, moveLine, insertLinesAfter, appendLines, removeLines, createTextFile, readTextFile, decode, encode, ConflictError, UnsupportedFileError };
+module.exports = { replaceLine, replaceLines, moveLine, insertLinesAfter, appendLines, removeLines, transformFile, restoreFile, appendInPlace, removeInPlace, createTextFile, readTextFile, decode, encode, ConflictError, UnsupportedFileError };

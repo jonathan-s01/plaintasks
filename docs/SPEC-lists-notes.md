@@ -70,6 +70,12 @@ When `+ > < % *` turn a status on (tasks in any view, unmarked lines in triage),
 - **List notes** (a note that is not a task): `Shift+N` in a list view (Option+Shift+n works too). They are written to the list's own notes file and appear in the list, in order, with the tasks. `s` still adds a note to a task.
 - **List notes file:** a list can have a notes file. When you create a list you can ask for one. It is created in a folder you choose (any watched folder, plus an optional subfolder you type) and named after the list. It contains a title and the creation date. Tasks are **not** copied into it, to avoid duplicates. List notes added later are appended to it. A list without a file can get one later from Manage lists.
 - A notes file can only go in a folder where plain lines are notes.
+- **Lists that keep their tasks in a file** (per-list setting `fileTasks`, off by default so existing notes-file lists are unchanged): the list shows every task in its file, nested as in the file, in file order. Membership is the file, not `state.json`.
+  - Moving a task onto such a list (`l`, `listSet`, `listAdd`) moves its block: the task line, all its notes (including `&` notes anywhere below) and its subtasks, recursively. The block goes to the end of the target file with the head's indent removed and any leading `•` dropped, so it is a main task there. A blank line is added only if needed to keep the target's existing tasks as they were. Unmarked tasks get the to-do symbol if the target treats plain lines as notes; plain notes get `&` if the target treats plain lines as tasks.
+  - Order of writes: target file first, then source; if the source write fails, the target is restored. Each write re-reads the file and refuses if it differs from what was shown. One `u` undoes both files and the list keys. List keys and "date added" follow the task to its new file.
+  - Reordering moves the block among open sibling tasks (same parent) in the file. It is refused if the parent, any other task's text, parent or group, or the number of unmarked lines would change.
+  - A task can be kept in only one file: ticking two such lists with different files is refused, and unticking the list whose file holds the task (without ticking another) is refused. Delete in such a list excludes the task (`$`).
+  - Tasks from other files that were on the list before the setting was turned on stay on it until removed.
 
 ## Adding tasks
 

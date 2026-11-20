@@ -909,6 +909,12 @@
     return where && sub ? `${where}/${sub}` : where;
   };
 
+  const FILE_TASKS_LABEL = 'Keep tasks in this file: the list shows every task in it, putting a task on the list moves its lines here, and reordering the list reorders the file';
+  let watchedFiles = [];
+  const fileSelect = (id, current) => el('select', { id },
+    ...(current ? [] : [el('option', { value: '', text: 'No file' })]),
+    ...watchedFiles.map((f) => el('option', { value: f.file, text: f.label, selected: f.file === current })));
+
   function renderManage() {
     const box = $('manage-lists');
     box.replaceChildren(...st.summary.lists.map((l, i) => {
@@ -920,8 +926,18 @@
           el('button', { type: 'button', text: `Rename ${l.name}`, onclick: () => manageCall({ op: 'listRename', list: l.id, value: nameIn.value }, `#ml-${i}`) })),
         el('div', { class: 'row' }, el('label', { for: `mf-${i}`, text: 'Folder' }), folderIn,
           el('button', { type: 'button', text: `Set folder of ${l.name}`, onclick: () => manageCall({ op: 'listEdit', list: l.id, value: { folder: folderIn.value } }, `#mf-${i}`) })),
-        el('div', { class: 'row' }, el('span', { text: l.notesFile ? `Notes file: ${l.notesFile}.` : 'No notes file.' }),
+        el('div', { class: 'row' }, el('span', { text: l.notesFile ? `${l.fileTasks ? 'Tasks kept in' : 'Notes file'}: ${l.notesFile}.` : 'No notes file.' }),
           el('button', { type: 'button', text: `Create a notes file for ${l.name} in the notes location below`, onclick: () => manageCall({ op: 'listEdit', list: l.id, value: { notesFolder: notesPlace() } }, null) })));
+      const fileSel = fileSelect(`mfile-${i}`, l.file);
+      const tasksCb = el('input', { type: 'checkbox', id: `mt-${i}`, checked: !!l.fileTasks });
+      fs.append(
+        el('div', { class: 'row' }, el('label', { for: `mfile-${i}`, text: `File for ${l.name}` }), fileSel),
+        el('div', { class: 'row' }, tasksCb, el('label', { for: `mt-${i}`, text: FILE_TASKS_LABEL })),
+        el('button', { type: 'button', text: `Save file settings for ${l.name}`, onclick: () => {
+          const value = { fileTasks: tasksCb.checked };
+          if (fileSel.value && fileSel.value !== l.file) value.file = fileSel.value;
+          return manageCall({ op: 'listEdit', list: l.id, value }, `#mt-${i}`);
+        } }));
       if (l.id !== 'mylist') {
         fs.append(el('button', { type: 'button', text: `Delete ${l.name}`, onclick: () => {
           if (window.confirm(`Delete the list ${l.name}? Your tasks and text files are not changed.`)) manageCall({ op: 'listDelete', list: l.id }, null);
@@ -940,6 +956,9 @@
     try {
       const cfg = await api('/api/config');
       $('manage-where').replaceChildren(...cfg.folders.map((f) => el('option', { value: f.path, text: f.path })));
+      watchedFiles = cfg.files || [];
+      $('manage-file').replaceChildren(...fileSelect('x', '').children);
+      $('manage-filetasks').checked = false;
     } catch (err) {
       alertMessage(err.message);
     }
@@ -954,10 +973,14 @@
     e.preventDefault();
     const value = { name: $('manage-new').value, folder: $('manage-folder').value };
     if ($('manage-makefile').checked) value.notesFolder = notesPlace();
+    else if ($('manage-file').value) value.file = $('manage-file').value;
+    if ($('manage-filetasks').checked) value.fileTasks = true;
     const res = await manageCall({ op: 'listCreate', value }, '#manage-new');
     if (res) {
       $('manage-new').value = '';
       $('manage-folder').value = '';
+      $('manage-file').value = '';
+      $('manage-filetasks').checked = false;
     }
   });
 
@@ -1093,11 +1116,12 @@
   }
 
   // In a list, Delete takes the item off that list. Anywhere else it deletes the task: the text stays in the file, marked with $.
+  // A list that keeps its tasks in a file shows everything in it, so there Delete deletes the task.
   function deleteKey() {
     const item = currentItem();
     if (!item) return undefined;
     const listId = curListId();
-    if (listId && (item.type === 'task' || item.type === 'note')) return act('listToggle', null, item, listId);
+    if (listId && !item.kept && (item.type === 'task' || item.type === 'note')) return act('listToggle', null, item, listId);
     return act('exclude');
   }
 

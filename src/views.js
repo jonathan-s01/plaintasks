@@ -121,9 +121,31 @@ function untriaged(index, state, { changedOnly = false } = {}) {
 /** Items on a list: tasks, and unmarked lines that were added as list notes. In the list's own order. */
 function listTasks(index, state, listId) {
   const list = (state.lists || []).find((l) => l.id === listId);
+  if (!list) return [];
+  if (fileBacked(list)) {
+    // Every task in the list's file, plus notes added to the list there, in file order;
+    // then anything from other files that was on the list before it kept its tasks in a file.
+    const keys = new Set(list.keys);
+    const here = [...index.tasks.filter((t) => t.file === list.file), ...index.unmarked.filter((u) => u.file === list.file && keys.has(u.listKey))];
+    const elsewhere = byKeys(index, list.keys).filter((t) => t.file !== list.file);
+    return [...here.sort((a, b) => a.lineIndex - b.lineIndex), ...elsewhere];
+  }
+  return byKeys(index, list.keys);
+}
+
+function byKeys(index, keys) {
   const byKey = new Map(index.unmarked.map((u) => [u.listKey, u]));
   for (const t of index.tasks) byKey.set(t.listKey, t);
-  return list ? list.keys.map((k) => byKey.get(k)).filter(Boolean) : [];
+  return keys.map((k) => byKey.get(k)).filter(Boolean);
+}
+
+/** A list that shows every task in its file, so moving a task onto it moves the lines into that file. */
+function fileBacked(list) {
+  return !!(list && list.fileTasks && list.file);
+}
+
+function isOnList(list, t) {
+  return (fileBacked(list) && t.kind === 'task' && t.file === list.file) || list.keys.includes(t.listKey);
 }
 
 function sortListItems(items, list, state) {
@@ -302,7 +324,7 @@ function buildView(index, state, opts = {}) {
       for (const l of here) {
         const n = listTasks(index, state, l.id).filter((x) => !x.flags.done).length;
         const file = l.file ? index.files.find((x) => x.file === l.file) : null;
-        items.push({ id: `list:${l.id}`, type: 'list', listId: l.id, level: 2, text: l.name, words: [], meta: [n === 1 ? '1 open item' : `${n} open items`, file ? `Notes file ${file.label}` : 'No notes file'], hasChildren: false, flags: {}, notes: [] });
+        items.push({ id: `list:${l.id}`, type: 'list', listId: l.id, level: 2, text: l.name, words: [], meta: [n === 1 ? '1 open item' : `${n} open items`, file ? `${fileBacked(l) ? 'Tasks kept in' : 'Notes file'} ${file.label}` : 'No notes file'], hasChildren: false, flags: {}, notes: [] });
       }
     }
   } else if (view === 'schedule') {
@@ -320,16 +342,26 @@ function buildView(index, state, opts = {}) {
     }
   } else if (def.isList) {
     const list = (state.lists || []).find((l) => l.id === view.slice(5));
+    const nested = fileBacked(list) && (list.sort || 'manual') === 'manual';
+    let prev = 0;
     items = sortListItems(listTasks(index, state, list.id), list, state)
       .filter((t) => (showCompleted || !t.flags.done) && match(t))
       .map((t) => {
+        // Never skip a level when a parent is hidden (done or filtered out).
+        const level = nested && t.kind === 'task' && t.file === list.file ? Math.min(t.depth + 1, prev + 1) : 1;
+        prev = level;
         if (t.kind !== 'task') {
           const n = describe(t, today, 1, { hideGroup: true });
           return { ...n, type: 'note', words: ['Note'], meta: n.meta.filter((m) => !/^File /.test(m)).concat(`File ${t.fileLabel}, line ${t.line}`) };
         }
         const p = t.parentId ? index.get(t.parentId) : null;
-        return describe(t, today, 1, { parentText: p ? p.text : null });
+        // In file order, subtasks are indented under their task the same way as in the file.
+        const kept = fileBacked(list) && t.file === list.file;
+        return { ...describe(t, today, level, { parentText: p ? p.text : null, hideFile: nested && kept }), ...(kept ? { kept: true } : {}) };
       });
+    items.forEach((it, i) => {
+      if (items[i + 1] && items[i + 1].level > it.level) it.hasChildren = true;
+    });
   } else if (view === 'open') {
     items = buildHierarchy(index, ctx, null);
   } else if (view === 'file') {
@@ -351,10 +383,10 @@ function buildView(index, state, opts = {}) {
     });
   }
 
-  if (view !== 'triage' && (state.lists || []).some((l) => l.keys.length)) {
+  if (view !== 'triage' && (state.lists || []).some((l) => l.keys.length || fileBacked(l))) {
     for (const i of items) {
       const t = i.type === 'task' ? index.get(i.id) : null;
-      const on = t ? state.lists.filter((l) => l.keys.includes(t.listKey)) : [];
+      const on = t ? state.lists.filter((l) => isOnList(l, t)) : [];
       if (on.length) {
         i.lists = on.map((l) => l.id);
         i.meta.unshift(`On ${on.length > 1 ? 'lists' : 'list'}: ${on.map((l) => l.name).join(', ')}`);
@@ -367,4 +399,4 @@ function buildView(index, state, opts = {}) {
   return { view, title: def.title, items, count: view === 'lists' ? (state.lists || []).length : count, empty: def.empty || 'No open tasks.', rev: index.rev, sortedBy, isList: !!def.isList };
 }
 
-module.exports = { listTasks, allViews, VIEWS, buildView, viewCounts, describe, matcher, untriaged, DUE_SOON_DAYS };
+module.exports = { listTasks, fileBacked, isOnList, allViews, VIEWS, buildView, viewCounts, describe, matcher, untriaged, DUE_SOON_DAYS };

@@ -60,6 +60,7 @@ Website relaunch
 - **Adding tasks.** `n` opens Add a task: type to search your tasks, Down to a match to put it on a list, or choose the last option to create a new task. `m` creates a task straight away without searching. New tasks are written as `@ text` at the end of the master file, which you choose the first time and can change in Settings. If a list is open the task goes on it.
 - **List sorting.** Shift+`o` in a list sorts it by manual order (remembered, the default), due date, check-in date, date added, type (notes last) or name. Reordering only works in manual order.
 - **List folders, notes files and list notes.** Manage lists lets a list have a folder (a label that groups lists in the All lists view, `=`) and a notes file. A notes file is created as `<List name>.txt` in a folder you pick inside a watched folder, and is skipped by triage. Shift+`n` in a list adds a note that is not a task to that file, stamped with the date.
+- **Lists that keep their tasks in a file.** In Manage lists, pick a file for a list and tick "Keep tasks in this file". The list then shows every task in that file, main tasks and subtasks, indented as in the file and in file order; you don't add them by hand. Putting a task on another such list (`l`, or the list chooser) moves the task line, its notes (including `&` notes further down) and its subtasks to the end of that list's file, as a main task, and takes them out of the old file. Both files are re-read before writing and written atomically; if either changed, nothing is written. `u` undoes the move in both files. Reordering (`g`, Option+Up/Down) moves the lines within the file, among tasks at the same level, and is refused if it would cross a blank line or heading and change other tasks. Delete in such a list deletes the task (`$`), because the list always shows its whole file. New tasks made in the list go to the end of its file. A task can be kept in only one file, so ticking two such lists with different files is refused. Lists that use a file only for notes are unchanged.
 - **Due and check-in dates with times.** `d` sets the due date and a check-in date: `fri 2pm`, `nov 20 14:30`, `+3d 9am`. Stored as `due:2026-11-20 14:30` and `checkin:...`. `k` opens the same dialog on the check-in field. The Schedule view (`4`) groups tasks as Overdue, Today, This week and Later.
 
 The full design, including assumptions, is in [docs/SPEC-lists-notes.md](docs/SPEC-lists-notes.md).
@@ -94,7 +95,7 @@ Press `?` in the app for the list. The short version:
 | Tab / Shift+Tab | make a subtask of the task above / move up a level (on a `•` subtask already at its parent's indentation, Shift+Tab removes the `•`) |
 | `n`, `m` | add a task (search first) / create a task straight away |
 | Option+`n` | make a new list |
-| Delete / Backspace | in a list: off the list; elsewhere: delete the task (`$` in the file) |
+| Delete / Backspace | in a list: off the list; in a list that keeps its tasks in a file, or elsewhere: delete the task (`$` in the file) |
 | Shift+`n` | in a list: add a note that is not a task |
 | Shift+`o` | in a list: sort |
 | `d`, `k` | due and check-in dates with times (`k` starts on check-in) |

@@ -67,7 +67,7 @@
 
   <dialog id="manage-dialog" aria-labelledby="manage-title">
     <h2 id="manage-title">Manage lists</h2>
-    <p>Lists are personal and are kept outside your text files. Deleting a list never changes your files. A list can have a folder to group it, and a notes file for notes that are not tasks, such as meeting notes.</p>
+    <p>Lists are personal and are kept outside your text files. Deleting a list never changes your files. A list can have a folder to group it, and a file: either a notes file for notes that are not tasks, such as meeting notes, or a file the list keeps its tasks in. A list that keeps its tasks in a file shows everything in that file, and moving a task onto it moves the lines in your files.</p>
     <ul id="manage-lists" class="plain"></ul>
     <form id="manage-form">
       <h3>New list</h3>
@@ -80,6 +80,9 @@
       <select id="manage-where"></select>
       <label for="manage-sub">Subfolder for the notes file (optional, created if needed)</label>
       <input id="manage-sub" type="text" autocomplete="off" spellcheck="false">
+      <label for="manage-file">Or use an existing file (optional)</label>
+      <select id="manage-file"></select>
+      <div class="row"><input type="checkbox" id="manage-filetasks"><label for="manage-filetasks">Keep tasks in this file: the list shows every task in it, putting a task on the list moves its lines here, and reordering the list reorders the file</label></div>
       <p><button type="submit">Create list</button></p>
     </form>
     <p id="manage-error" class="error" role="alert"></p>
@@ -222,16 +225,16 @@
         <tr><th scope="row">Enter</th><td>Menu with every action, including converting a task to a note</td></tr>
         <tr><th scope="row">n</th><td>Add a task: type to search the tasks you have, pick one to add to a list, or choose Create new task. In triage, n goes to the next file</td></tr>
         <tr><th scope="row">Option and n</th><td>Make a new list</td></tr>
-        <tr><th scope="row">Delete or Backspace</th><td>In a list: take the item off that list. In any other view, including triage: delete the task and its subtasks. The text stays in the file with a dollar sign at the start, and the app stops showing it. u undoes it</td></tr>
+        <tr><th scope="row">Delete or Backspace</th><td>In a list: take the item off that list. In a list that keeps its tasks in a file, and in any other view, including triage: delete the task and its subtasks. The text stays in the file with a dollar sign at the start, and the app stops showing it. u undoes it</td></tr>
         <tr><th scope="row">Right arrow, Left arrow</th><td>Expand or collapse a task to show its notes and subtasks. Tasks with notes start collapsed</td></tr>
         <tr><th scope="row">m</th><td>Create a new task straight away, without searching</td></tr>
         <tr><th scope="row">shift and n</th><td>In a list: add a note that is not a task, to the list's notes file. In triage: previous file</td></tr>
-        <tr><th scope="row">l</th><td>Choose which lists the task is on. With only My list, it adds or removes straight away. In triage, it marks the line as a to-do first, then opens the list picker: Up and Down move through the lists, Space ticks one, Enter saves and moves on to the next line</td></tr>
+        <tr><th scope="row">l</th><td>Choose which lists the task is on. With only My list, it adds or removes straight away. In triage, it marks the line as a to-do first, then opens the list picker: Up and Down move through the lists, Space ticks one, Enter saves and moves on to the next line. Ticking a list that keeps its tasks in another file moves the task there, with its notes and subtasks</td></tr>
         <tr><th scope="row">shift and l</th><td>Add the task to the list you are viewing or used last, or remove it</td></tr>
         <tr><th scope="row">left bracket, right bracket</th><td>Previous or next list</td></tr>
         <tr><th scope="row">shift and m</th><td>Manage lists: create, rename, delete, folders, notes files</td></tr>
         <tr><th scope="row">shift and o</th><td>In a list: sort by manual order, due, check-in, date added, type or name</td></tr>
-        <tr><th scope="row">g</th><td>In a list with manual order: pick up the item to reorder. Then Up, Down, Home and End move it, Enter or Escape drops it</td></tr>
+        <tr><th scope="row">g</th><td>In a list with manual order: pick up the item to reorder. Then Up, Down, Home and End move it, Enter or Escape drops it. In a list that keeps its tasks in a file, this moves the lines in the file, among the tasks at the same level</td></tr>
         <tr><th scope="row">Option and Up, Option and Down</th><td>In a list with manual order: move the item up or down one place</td></tr>
         <tr><th scope="row">minus</th><td>Open My list</td></tr>
         <tr><th scope="row">equals</th><td>Open All lists</td></tr>

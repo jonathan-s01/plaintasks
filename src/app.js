@@ -11,7 +11,7 @@ const { applyOp, OpError } = require('./ops');
 const { markerInfo, ampNote, parseText } = require('./parser');
 const { replaceLine, replaceLines, removeLines, moveLine, ConflictError } = require('./writer');
 const { formatDate, toISO } = require('./dates');
-const { allViews, buildView, viewCounts, untriaged, listTasks } = require('./views');
+const { allViews, buildView, viewCounts, untriaged, listTasks, fileBacked } = require('./views');
 const { convertRtfFiles } = require('./rtf');
 const { JiraClient, JiraError, KEY_RE } = require('./jira');
 const secrets = require('./secrets');
@@ -79,7 +79,7 @@ class App {
     return {
       rev: this.index.rev,
       views: allViews(this.stateData).map((v) => ({ id: v.id, title: v.title, count: counts[v.id] })),
-      lists: this.stateData.lists.map((l) => ({ id: l.id, name: l.name, count: counts[`list:${l.id}`], folder: l.folder, sort: l.sort, notesFile: l.file ? (this.fileEntry(l.file) || {}).label || null : null })),
+      lists: this.stateData.lists.map((l) => ({ id: l.id, name: l.name, count: counts[`list:${l.id}`], folder: l.folder, sort: l.sort, file: l.file || '', fileTasks: fileBacked(l), notesFile: l.file ? (this.fileEntry(l.file) || {}).label || null : null })),
       lastList: this.stateData.lastList,
       folders: this.config.folders.length,
       files: this.index.files.length,
@@ -391,6 +391,13 @@ class App {
 
   listToggle(t, listId) {
     const target = this.getList(listId);
+    // A task that was on the list before the list kept its tasks in a file is added and removed as usual.
+    if (fileBacked(target) && !target.keys.includes(t.listKey)) {
+      if (t.kind === 'task' && t.file === target.file) {
+        throw new HttpError(400, `${t.text} is kept in the file for ${target.name}. To take it off, move it to another list that has a file, or press Delete to exclude it.`);
+      }
+      return this.moveToListFile(t, target);
+    }
     const had = target.keys.includes(t.listKey);
     if (!had) this.requireTask(t);
     this.mutateLists((lists) => {
@@ -409,6 +416,30 @@ class App {
     const wanted = new Set(Array.isArray(value && value.ids) ? value.ids : []);
     const newName = value && value.newName && String(value.newName).trim() ? this.cleanName(value.newName) : null;
     for (const id of wanted) this.getList(id);
+    const fileLists = [...wanted].map((id) => this.getList(id)).filter((l) => fileBacked(l) && l.file !== t.file && !l.keys.includes(t.listKey));
+    const files = new Set(fileLists.map((l) => l.file));
+    if (files.size > 1) throw new HttpError(400, `A task can only be kept in one file. Choose just one of ${fileLists.map((l) => l.name).join(', ')}.`);
+    const home = this.fileListsOf(t);
+    if (home.length && !home.some((l) => wanted.has(l.id)) && !files.size) {
+      throw new HttpError(400, `${t.text} is kept in the file for ${home[0].name}, so it stays on that list. To move it, tick another list that has a file.`);
+    }
+    // Lists that keep their tasks in a file show everything in it, so they never store keys.
+    for (const l of this.stateData.lists) if (fileBacked(l) && l.file === t.file) wanted.delete(l.id);
+    if (files.size) {
+      // Ticking a list that keeps its tasks in another file moves the task there, then sets the other lists.
+      const before = this.undoStack.length;
+      const moved = this.moveToListFile(t, fileLists[0]);
+      const others = [...wanted].some((id) => id !== fileLists[0].id) || newName;
+      try {
+        const res = this.listSet(this.task(moved.focusId), { ...value, ids: [...wanted] });
+        const steps = this.undoStack.splice(before);
+        this.pushUndo({ type: 'multi', steps, text: t.text });
+        return { ...res, message: moved.message.replace(/\. Press u to undo$/, '') + (others ? `. ${res.message}` : '') + '. Press u to undo' };
+      } catch (err) {
+        while (this.undoStack.length > before) this.undo();
+        throw err;
+      }
+    }
     let createdId = null;
     this.mutateLists((lists) => {
       if (newName) {
@@ -417,6 +448,7 @@ class App {
         wanted.add(createdId);
       }
       for (const l of lists) {
+        if (fileBacked(l) && l.file === t.file) continue;
         const has = l.keys.includes(t.listKey);
         if (wanted.has(l.id) && !has) l.keys.push(t.listKey);
         else if (!wanted.has(l.id) && has) l.keys = l.keys.filter((k) => k !== t.listKey);
@@ -424,7 +456,7 @@ class App {
       const last = createdId || [...wanted].pop();
       if (last) this.stateData.lastList = last;
     }, t.text, t.id);
-    const names = this.stateData.lists.filter((l) => wanted.has(l.id)).map((l) => l.name);
+    const names = this.stateData.lists.filter((l) => wanted.has(l.id) || (fileBacked(l) && l.file === t.file)).map((l) => l.name);
     return { ok: true, message: names.length ? `${t.text} is on ${names.join(' and ')}` : `${t.text} is on no lists`, undo: true, focusId: t.id, listId: createdId };
   }
 
@@ -456,6 +488,7 @@ class App {
   listMove(t, how, listId) {
     const target = this.getList(listId);
     if (target.sort !== 'manual') throw new HttpError(400, `${target.name} is sorted automatically. Press Shift+O and choose manual order to move things by hand.`);
+    if (fileBacked(target)) return this.fileListMove(t, how, target);
     const open = listTasks(this.index, this.stateData, target.id).filter((x) => !x.flags.done);
     const cur = open.findIndex((x) => x.listKey === t.listKey);
     if (cur < 0) throw new HttpError(400, `That task is not on ${target.name}. Press l to add it.`);
@@ -483,6 +516,11 @@ class App {
       const id = this.newListId();
       const entry = { id, name, keys: [], folder, file: '', sort: 'manual' };
       if (v.notesFolder) entry.file = this.makeListFile(entry, v.notesFolder);
+      else if (v.file) entry.file = this.cleanListFile(v.file);
+      if (v.fileTasks) {
+        if (!entry.file) throw new HttpError(400, 'Choose a file for the list to keep its tasks in.');
+        entry.fileTasks = true;
+      }
       this.mutateLists((lists) => lists.push(entry), name);
       const f = entry.file ? this.fileEntry(entry.file) : null;
       return { ok: true, message: `Created list ${name}${f ? ` with notes file ${f.label}` : ''}`, undo: true, listId: id };
@@ -513,6 +551,7 @@ class App {
       for (const step of [...e.steps].reverse()) last = this.undoEntry(step);
       return { ...last, message: `Undid: ${e.text}` };
     }
+    if (e.type === 'rewrite') return this.undoRewrite(e);
     if (e.type === 'insert') {
       try {
         removeLines(e.file, { lineIndex: e.lineIndex, expected: e.lines });
@@ -767,5 +806,6 @@ class App {
 }
 
 require('./features').install(App, HttpError);
+require('./filelists').install(App, HttpError);
 
 module.exports = { App, HttpError };
