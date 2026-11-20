@@ -371,3 +371,57 @@ test('goals: y opens a goal chooser that passes axe, saving announces and shows 
     env.close();
   }
 });
+
+test('Jira sync: shift and j opens a grouped preview that passes axe; Apply sends the chosen items with their signatures', async () => {
+  const env = await boot({ 'a.txt': '@ call Bob\n' });
+  let sent = null;
+  const base = { taskId: 't1', task: 'call Bob', file: 'notes/a.txt', line: 1, raw: '@ call Bob' };
+  env.app.syncPreview = async () => ({
+    synced: ['notes/a.txt'],
+    startedNotes: 1,
+    info: [],
+    items: [
+      { ...base, id: 'A-1:status', key: 'A-1', group: 'conflict', label: 'Status differs (first sync)', choice: 'skip', choices: { file: 'Keep file: to do', jira: 'Take Jira: In Progress' }, sig: 's1' },
+      { ...base, id: 'A-1:desc', key: 'A-1', group: 'push', label: 'Description: from the notes', checked: false, sig: 's2' },
+      { ...base, taskId: 't2', task: 'new thing', line: 2, id: 'create:t2', key: null, group: 'create', label: 'Create Task in epic A-9, status To Do', checked: true, sig: 's3' },
+    ],
+  });
+  env.app.syncApply = async (body) => { sent = body; return { message: 'Jira sync finished: 1 change sent to Jira.', results: [{ ok: true, text: 'Created A-2: new thing' }] }; };
+  try {
+    const { window } = await openPage(env);
+    const doc = window.document;
+    const live = () => doc.getElementById('live').textContent;
+    await waitFor(() => doc.querySelectorAll('#tree [role=treeitem]').length === 1, 'items');
+    key(window, doc.activeElement, 'J');
+    await waitFor(() => doc.getElementById('sync-dialog').hasAttribute('open') && !doc.getElementById('sync-form').hidden, 'preview shown');
+    const legends = [...doc.querySelectorAll('#sync-sections > fieldset > legend')].map((l) => l.textContent);
+    assert.deepEqual(legends, [
+      'Conflicts: changed on both sides, or different on the first sync, 1 change. Section 1 of 3',
+      'Create in Jira, 1 change. Section 2 of 3',
+      'Update Jira, 1 change. Section 3 of 3',
+    ]);
+    assert.match(doc.getElementById('sync-status').textContent, /^3 changes found: 1 conflict, 1 to create in Jira, 1 to update in Jira\. Files checked: notes\/a\.txt\.$/);
+    assert.equal(doc.getElementById('sync-count').textContent, '1 of 3 changes chosen.');
+    assert.equal(doc.activeElement.id, 'sy-conflict-1-file');
+    assert.equal(doc.getElementById('sync-started').hidden, false);
+    window.eval(axe.source);
+    const results = await window.axe.run(doc.getElementById('sync-dialog'), { rules: { 'color-contrast': { enabled: false }, region: { enabled: false } } });
+    assert.equal(results.violations.length, 0, results.violations.map((v) => v.id).join());
+
+    [...doc.querySelectorAll('#sync-sections button')].find((b) => b.textContent === 'Take Jira for all conflicts').click();
+    assert.equal(doc.getElementById('sync-count').textContent, '2 of 3 changes chosen.');
+    doc.getElementById('sync-apply').click();
+    await waitFor(() => sent, 'apply sent');
+    assert.deepEqual(sent.choices, {
+      'A-1:status': { choice: 'jira', sig: 's1' },
+      'A-1:desc': { choice: 'skip', sig: 's2' },
+      'create:t2': { choice: 'apply', sig: 's3' },
+    });
+    await waitFor(() => /Jira sync finished/.test(live()), 'announced');
+    assert.equal(doc.getElementById('sync-results').textContent, 'Done: Created A-2: new thing');
+    assert.equal(doc.getElementById('sync-form').hidden, true);
+    window.close();
+  } finally {
+    env.close();
+  }
+});

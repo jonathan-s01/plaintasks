@@ -212,6 +212,7 @@ class Index extends EventEmitter {
         checkinTime: it.checkinTime || null,
         noteLines: it.notes.map((n) => n.lineIndex),
         doneDate: it.doneDate || null,
+        start: it.start || null,
         jira: it.jira || null,
         goalId: it.goalId || null,
         goalLinks: it.goalLinks || [],

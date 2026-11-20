@@ -76,6 +76,7 @@ function describe(t, today, level, extra = {}) {
   if (due) meta.push(t.flags.done ? `Due ${formatDate(t.due, today)}${atTime(t.dueTime)}` : due.text);
   const checkin = !t.flags.done && checkinText(t, today);
   if (checkin) meta.push(checkin);
+  if (t.start) meta.push(`Started ${formatDate(t.start, today)}`);
   if (t.flags.done && t.doneDate) meta.push(`Completed ${formatDate(t.doneDate, today)}`);
   if (extra.parentText) meta.push(`Subtask of ${extra.parentText}`);
   if (t.group && !extra.hideGroup) meta.push(`Group ${t.group}`);

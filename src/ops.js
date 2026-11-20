@@ -70,7 +70,9 @@ function applyOp(raw, op, arg, ctx) {
     case 'done': {
       if (runHas(d.run, 'done', symbols) && !arg) return raw;
       d.run = runWith(d.run, 'done', symbols);
-      d.body = appendToken(removeTokens(d.body, 'done', today), `done:${toISO(today)}`);
+      // arg may be the date it was done (YYYY-MM-DD), e.g. a resolution date from Jira.
+      const when = typeof arg === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(arg) ? arg : toISO(today);
+      d.body = appendToken(removeTokens(d.body, 'done', today), `done:${when}`);
       return compose(d);
     }
     case 'reopen': {
@@ -97,6 +99,20 @@ function applyOp(raw, op, arg, ctx) {
       d.run = todoChar;
       return compose(d);
     }
+    case 'text': {
+      // Rewords the task, keeping its tokens (dates, jira:, goal:) in their order.
+      const text = String(arg || '').replace(/\s+/g, ' ').trim();
+      if (!text) throw new OpError('The new text is empty');
+      const spans = findDateTokens(d.body, today).map((t) => [t.start, t.end]);
+      for (const re of [new RegExp(JIRA_RE.source, 'g'), new RegExp(GOAL_RE.source, 'g')]) {
+        let m;
+        while ((m = re.exec(d.body))) spans.push([m.index + m[1].length, m.index + m[0].length]);
+      }
+      const tokens = spans.sort((a, b) => a[0] - b[0]).map(([s, e]) => d.body.slice(s, e).trim());
+      d.body = [text, ...tokens].join(' ');
+      return compose(d);
+    }
+    case 'start':
     case 'due':
     case 'checkin': {
       d.body = removeTokens(d.body, op, today);

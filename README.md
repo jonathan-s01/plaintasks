@@ -47,6 +47,7 @@ Website relaunch
 - **Groups.** An unmarked line (or one ending in `:`) that is followed by tasks becomes a group or project name.
 - **Dates.** `due:2026-11-20` is the stored form. When you set a date in the app, friendly input such as `fri`, `nov 20`, `+3d` or `in 2 weeks` is converted to that form. Completing a task adds `+` and `done:YYYY-MM-DD`.
 - **Jira link.** `jira:ABC-123` ties a task to an issue.
+- **Start date.** `start:2026-11-02` records when work began. It is hidden from the displayed text and spoken as "Started …". Sync with Jira sends it to the start-date field.
 - **Goal link.** `goal:partner-network` ties a task to a goal (see Goals below). A task can carry several.
 - **Per-file legends.** A file can define its own symbols with lines like `+ = done`, `nothing = to do`, or `• and indenting = subtasks`. Lines such as `nothing = to do` are recognised and skipped (never shown as tasks) but do not change how unmarked lines are treated; that is decided only by the folder and per-file settings. Legend lines are not tasks.
 - **Unmarked lines per folder.** Each watched folder has a setting: unmarked lines are *notes* (default) or *tasks*. Individual files can override it in the settings page. Precedence: per-file setting, then folder setting. A file's own legend does not override either.
@@ -102,6 +103,7 @@ Press `?` in the app for the list. The short version:
 | Shift+`o` | in a list: sort |
 | `d`, `k` | due and check-in dates with times (`k` starts on check-in) |
 | `j` | Jira |
+| Shift+`j` | Sync with Jira (preview, then apply what you tick) |
 | `y` | link to goals (checkbox list) |
 | `o` | open the source file in your editor |
 | `u` | undo |
@@ -133,6 +135,44 @@ Everything works without Jira. In settings you can add:
 The token is stored in the macOS Keychain (service `plaintasks-jira`) or taken from the `PLAINTASKS_JIRA_TOKEN` environment variable. It is never written to the config file or the repo. Note: when saving to the Keychain, the `security` command receives the token as an argument, so it is briefly visible to other processes running as your user. Use the environment variable if that matters to you.
 
 With Jira set up, `j` on a task lets you link an issue key, show the issue's status, or create a new issue from the task and link it back. Jira URLs must be `https://`.
+
+### Sync with Jira (Jira Cloud)
+
+Sync runs only when you press Shift+`j` or the Sync with Jira button. It covers only lists with **Sync to Jira** ticked (in Manage lists or the New list form; off by default; the list needs a file, and sync is per file). It first shows a preview of every change in both directions. Nothing is sent or written until you choose Apply.
+
+- **Preview.** Changes are grouped in fieldsets with counts: Conflicts, Create in Jira, Update Jira, Update files from Jira. Each item is labelled with its position ("2 of 5"), the task, the issue key, and the file and line. Conflicts have three radio buttons (keep file, take Jira, skip), and each group has apply-all buttons. A live line says how many changes are chosen. Items that can't sync (for example a subtask whose main task is done and was never in Jira) are listed under Not synced.
+- **Push.** A main task becomes a Task in the epic (unless it already has `jira:`); an indented task at any depth becomes a Sub-task of its main task, because Jira can't nest deeper. The summary is the task text without tokens. The description is the task's notes, with web addresses as links. After a create, `jira:KEY` is written onto the task's line. A task that already has a key is updated, never re-created. For issues plaintasks didn't create, summary and description changes start unticked.
+- **Pull.** For linked issues, Jira-side changes to status, summary and resolution are offered and, if ticked, written to the file (marker and `done:` date).
+- **Which side changed.** After each sync the app remembers both values. Next time, a change on one side is offered in that direction; a change on both sides, or a difference on the first sync, is a conflict (default skip).
+- **Status mapping** (configurable in settings):
+
+  | Marker | Jira |
+  | --- | --- |
+  | `+` | Resolved, resolution Done; the `done:` date is sent as the due date |
+  | `%` | In Progress |
+  | `@` or unmarked | To Do, or the list's own status for open tasks (for example In Discovery) |
+  | `>` | Flagged, plus label `waiting` |
+  | `~` | In Progress, plus label `ongoing` |
+  | `$` on a linked task | Resolved with resolution Won't Do, so statuses don't get mixed up |
+
+  A Jira status in the same category counts as in sync (In Review matches `%`).
+- **Goals.** `goal:` links become Jira "Relates" links between the task's issue and the goal's issue.
+- **Per list:** extra labels, and an optional status for open tasks.
+- **Started notes.** If tasks have `& Started 2026-11-02` notes, the dialog offers a one-time button that turns them into `start:` tokens on the task line (all indexed files; `u` undoes).
+- **Undo.** `u` undoes the file changes from one sync. Changes already sent to Jira stay.
+
+Settings (on the settings page, under Jira sync; nothing is hard-coded): project key, epic key, Task and Sub-task issue type ids, start-date and due-date field ids, Flagged field id (found by name if empty), assignee and reporter accountId, transition ids, status names per marker, resolution names or ids, and the waiting/ongoing labels. Example for a site like alberta.atlassian.net:
+
+| Setting | Example |
+| --- | --- |
+| Project, epic | `A11Y`, `A11Y-2108` |
+| Task, Sub-task issue type ids | `10002`, `10003` |
+| Start date, due date fields | `customfield_10035`, `duedate` |
+| Reporter accountId | needed if the project requires a reporter |
+| Transition ids | `In Discovery=3, To Do=11, In Progress=31, In Review=41, Resolved=61, Reopen=2` |
+| Resolutions | Done `10000`, Won't Do `10001` |
+
+The token stays in the Keychain as above.
 
 ## Security
 

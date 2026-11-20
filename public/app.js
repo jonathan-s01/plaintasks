@@ -969,6 +969,7 @@
     return where && sub ? `${where}/${sub}` : where;
   };
 
+  const SYNC_LABEL = 'Sync to Jira: Sync with Jira (shift and j) includes the tasks in this file';
   const FILE_TASKS_LABEL = 'Keep tasks in this file: the list shows every task in it, putting a task on the list moves its lines here, and reordering the list reorders the file';
   let watchedFiles = [];
   const fileSelect = (id, current) => el('select', { id },
@@ -990,11 +991,17 @@
           el('button', { type: 'button', text: `Create a notes file for ${l.name} in the notes location below`, onclick: () => manageCall({ op: 'listEdit', list: l.id, value: { notesFolder: notesPlace() } }, null) })));
       const fileSel = fileSelect(`mfile-${i}`, l.file);
       const tasksCb = el('input', { type: 'checkbox', id: `mt-${i}`, checked: !!l.fileTasks });
+      const syncCb = el('input', { type: 'checkbox', id: `mj-${i}`, checked: !!l.jiraSync });
+      const labelsIn = el('input', { type: 'text', id: `mjl-${i}`, value: (l.jiraLabels || []).join(', '), autocomplete: 'off', spellcheck: 'false' });
+      const statusIn = el('input', { type: 'text', id: `mjs-${i}`, value: l.jiraStatus || '', autocomplete: 'off', spellcheck: 'false' });
       fs.append(
         el('div', { class: 'row' }, el('label', { for: `mfile-${i}`, text: `File for ${l.name}` }), fileSel),
         el('div', { class: 'row' }, tasksCb, el('label', { for: `mt-${i}`, text: FILE_TASKS_LABEL })),
+        el('div', { class: 'row' }, syncCb, el('label', { for: `mj-${i}`, text: SYNC_LABEL })),
+        el('div', { class: 'row' }, el('label', { for: `mjl-${i}`, text: `Extra Jira labels for ${l.name} (optional, separated by commas)` }), labelsIn),
+        el('div', { class: 'row' }, el('label', { for: `mjs-${i}`, text: `Jira status for open tasks in ${l.name} (optional, for example In Discovery)` }), statusIn),
         el('button', { type: 'button', text: `Save file settings for ${l.name}`, onclick: () => {
-          const value = { fileTasks: tasksCb.checked };
+          const value = { fileTasks: tasksCb.checked, jiraSync: syncCb.checked, jiraLabels: labelsIn.value, jiraStatus: statusIn.value };
           if (fileSel.value && fileSel.value !== l.file) value.file = fileSel.value;
           return manageCall({ op: 'listEdit', list: l.id, value }, `#mt-${i}`);
         } }));
@@ -1035,12 +1042,20 @@
     if ($('manage-makefile').checked) value.notesFolder = notesPlace();
     else if ($('manage-file').value) value.file = $('manage-file').value;
     if ($('manage-filetasks').checked) value.fileTasks = true;
+    if ($('manage-jira').checked) {
+      value.jiraSync = true;
+      value.jiraLabels = $('manage-jira-labels').value;
+      value.jiraStatus = $('manage-jira-status').value;
+    }
     const res = await manageCall({ op: 'listCreate', value }, '#manage-new');
     if (res) {
       $('manage-new').value = '';
       $('manage-folder').value = '';
       $('manage-file').value = '';
       $('manage-filetasks').checked = false;
+      $('manage-jira').checked = false;
+      $('manage-jira-labels').value = '';
+      $('manage-jira-status').value = '';
     }
   });
 
@@ -1212,6 +1227,166 @@
     if (file) act('dismissFile', null, { id: `f:${file}`, type: 'group' });
   }
 
+  // ---------- Jira sync ----------
+
+  const SYNC_SECTIONS = [
+    ['conflict', 'Conflicts: changed on both sides, or different on the first sync'],
+    ['create', 'Create in Jira'],
+    ['push', 'Update Jira'],
+    ['pull', 'Update files from Jira'],
+  ];
+  let syncPlan = null;
+
+  function syncCount() {
+    if (!syncPlan) return;
+    const form = $('sync-form');
+    const total = syncPlan.items.length;
+    const boxes = [...form.querySelectorAll('input[type=checkbox]:checked')].length;
+    const radios = [...form.querySelectorAll('input[type=radio]:checked')].filter((r) => r.value !== 'skip').length;
+    $('sync-count').textContent = `${boxes + radios} of ${total} ${total === 1 ? 'change' : 'changes'} chosen.`;
+  }
+
+  function renderSync(plan) {
+    syncPlan = plan;
+    const sections = [];
+    const present = SYNC_SECTIONS.filter(([g]) => plan.items.some((i) => i.group === g));
+    present.forEach(([group, title], si) => {
+      const its = plan.items.filter((i) => i.group === group);
+      const n = its.length;
+      const fs = el('fieldset', { class: 'sync-section' },
+        el('legend', { text: `${title}, ${n} ${n === 1 ? 'change' : 'changes'}. Section ${si + 1} of ${present.length}` }));
+      const setAll = (fn) => () => { for (const inp of fs.querySelectorAll('input')) fn(inp); syncCount(); announce('Done. ' + $('sync-count').textContent); };
+      if (group === 'conflict') {
+        fs.append(el('p', {},
+          el('button', { type: 'button', text: 'Keep file for all conflicts', onclick: setAll((r) => { r.checked = r.value === 'file'; }) }), ' ',
+          el('button', { type: 'button', text: 'Take Jira for all conflicts', onclick: setAll((r) => { r.checked = r.value === 'jira'; }) }), ' ',
+          el('button', { type: 'button', text: 'Skip all conflicts', onclick: setAll((r) => { r.checked = r.value === 'skip'; }) })));
+      } else {
+        fs.append(el('p', {},
+          el('button', { type: 'button', text: `Tick all in ${title}`, onclick: setAll((c) => { c.checked = true; }) }), ' ',
+          el('button', { type: 'button', text: `Untick all in ${title}`, onclick: setAll((c) => { c.checked = false; }) })));
+      }
+      const byTask = new Map();
+      for (const it of its) {
+        if (!byTask.has(it.taskId)) byTask.set(it.taskId, []);
+        byTask.get(it.taskId).push(it);
+      }
+      let k = 0;
+      for (const list of byTask.values()) {
+        const first = list[0];
+        const box = el('fieldset', { class: 'sync-task' },
+          el('legend', { text: `${first.task}${first.key ? `, ${first.key}` : ''}, ${first.file} line ${first.line}` }));
+        for (const it of list) {
+          k += 1;
+          const id = `sy-${group}-${k}`;
+          const pos = `${k} of ${n}`;
+          if (group === 'conflict') {
+            const radios = el('fieldset', { class: 'sync-choice', 'data-item': it.id },
+              el('legend', { text: `${it.label}, ${pos}` }));
+            for (const [value, text] of [['file', it.choices.file], ['jira', it.choices.jira], ['skip', 'Skip for now']]) {
+              radios.append(el('div', { class: 'row' },
+                el('input', { type: 'radio', name: id, id: `${id}-${value}`, value, checked: value === it.choice, onchange: syncCount }),
+                el('label', { for: `${id}-${value}`, text }) ));
+            }
+            box.append(radios);
+          } else {
+            box.append(el('div', { class: 'row' },
+              el('input', { type: 'checkbox', id, 'data-item': it.id, checked: !!it.checked, onchange: syncCount }),
+              el('label', { for: id, text: `${it.label}, ${pos}` })));
+          }
+        }
+        fs.append(box);
+      }
+      sections.push(fs);
+    });
+    if (plan.info && plan.info.length) {
+      sections.push(el('section', {}, el('h3', { text: `Not synced, ${plan.info.length}` }),
+        el('ul', {}, ...plan.info.map((x) => el('li', { text: `${x.task}, ${x.file} line ${x.line}: ${x.text}` })))));
+    }
+    $('sync-sections').replaceChildren(...sections);
+    $('sync-form').hidden = plan.items.length === 0;
+    syncCount();
+    const n = plan.items.length;
+    const SHORT = { conflict: ['conflict', 'conflicts'], create: ['to create in Jira', 'to create in Jira'], push: ['to update in Jira', 'to update in Jira'], pull: ['to update in files', 'to update in files'] };
+    const counts = present.map(([g]) => { const c = plan.items.filter((i) => i.group === g).length; return `${c} ${SHORT[g][c === 1 ? 0 : 1]}`; }).join(', ');
+    $('sync-status').textContent = plan.message
+      || (n ? `${n} ${n === 1 ? 'change' : 'changes'} found: ${counts}. Files checked: ${plan.synced.join(', ')}.` : `Everything is in sync. Files checked: ${plan.synced.join(', ')}.`);
+    $('sync-started').hidden = !plan.startedNotes;
+    $('sync-started-text').textContent = `${plan.startedNotes} ${plan.startedNotes === 1 ? 'task has' : 'tasks have'} a "& Started" date note. Converting moves each date onto the task line as start:, which syncs to the start date in Jira.`;
+  }
+
+  async function checkSync() {
+    $('sync-error').textContent = '';
+    $('sync-done').hidden = true;
+    $('sync-form').hidden = true;
+    $('sync-again').hidden = true;
+    $('sync-started').hidden = true;
+    $('sync-status').textContent = 'Checking Jira…';
+    try {
+      renderSync(await api('/api/jira/sync/preview', { method: 'POST', body: {} }));
+      $('sync-again').hidden = false;
+      const first = $('sync-sections').querySelector('input') || $('sync-close');
+      first.focus();
+    } catch (err) {
+      $('sync-status').textContent = '';
+      $('sync-error').textContent = err.message;
+      $('sync-again').hidden = false;
+      $('sync-close').focus();
+    }
+  }
+
+  function openSync() {
+    $('sync-sections').replaceChildren();
+    openDialog($('sync-dialog'), st.activeId);
+    $('sync-close').focus();
+    checkSync();
+  }
+
+  $('sync-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!syncPlan) return;
+    const choices = {};
+    const nodes = new Map([...$('sync-form').querySelectorAll('[data-item]')].map((n) => [n.getAttribute('data-item'), n]));
+    for (const it of syncPlan.items) {
+      const node = nodes.get(it.id);
+      let choice = 'skip';
+      if (node && node.type === 'checkbox') choice = node.checked ? 'apply' : 'skip';
+      else if (node) choice = (node.querySelector('input:checked') || {}).value || 'skip';
+      choices[it.id] = { choice, sig: it.sig };
+    }
+    $('sync-apply').disabled = true;
+    $('sync-status').textContent = 'Sending changes to Jira…';
+    try {
+      const res = await api('/api/jira/sync/apply', { method: 'POST', body: { choices } });
+      $('sync-form').hidden = true;
+      $('sync-status').textContent = res.message;
+      $('sync-results').replaceChildren(...res.results.map((r) => el('li', { text: `${r.ok ? 'Done' : 'Not done'}: ${r.text}` })));
+      $('sync-done').hidden = !res.results.length;
+      syncPlan = null;
+      announce(res.message);
+      await loadView({ focus: false });
+      ($('sync-done').hidden ? $('sync-close') : $('sync-done-title')).focus();
+    } catch (err) {
+      $('sync-error').textContent = err.message;
+    } finally {
+      $('sync-apply').disabled = false;
+    }
+  });
+  $('sync-started-btn').addEventListener('click', async () => {
+    try {
+      const res = await api('/api/jira/sync/started', { method: 'POST', body: {} });
+      announce(res.message);
+      await loadView({ focus: false });
+      await checkSync();
+      $('sync-status').textContent = `${res.message} ${$('sync-status').textContent}`;
+    } catch (err) {
+      $('sync-error').textContent = err.message;
+    }
+  });
+  $('sync-again').addEventListener('click', checkSync);
+  $('sync-close').addEventListener('click', () => closeDialog($('sync-dialog')));
+  $('sync-btn').addEventListener('click', openSync);
+
   function globalKey(e) {
     if (e.key === '/') {
       e.preventDefault();
@@ -1234,6 +1409,10 @@
     }
     if (e.key === 'G') {
       switchView('goals');
+      return true;
+    }
+    if (e.key === 'J') {
+      openSync();
       return true;
     }
     if (e.key === 'M') {

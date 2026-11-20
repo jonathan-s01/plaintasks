@@ -137,6 +137,12 @@ function createServer(app, { token = crypto.randomBytes(24).toString('hex') } = 
           return send(res, 200, app.setJira(body));
         case '/api/jira/create':
           return send(res, 200, await app.jiraCreate(body));
+        case '/api/jira/sync/preview':
+          return send(res, 200, await app.syncPreview());
+        case '/api/jira/sync/apply':
+          return send(res, 200, await app.syncApply(body));
+        case '/api/jira/sync/started':
+          return send(res, 200, app.convertStarted());
         default:
           return send(res, 404, { ok: false, message: 'Not found' });
       }

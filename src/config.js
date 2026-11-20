@@ -110,6 +110,9 @@ function loadState(dir) {
       file: typeof l.file === 'string' ? l.file : '',
       sort: SORT_MODES.includes(l.sort) ? l.sort : 'manual',
       ...(l.fileTasks === true ? { fileTasks: true } : {}),
+      ...(l.jiraSync === true ? { jiraSync: true } : {}),
+      ...(Array.isArray(l.jiraLabels) && l.jiraLabels.length ? { jiraLabels: clean(l.jiraLabels) } : {}),
+      ...(typeof l.jiraStatus === 'string' && l.jiraStatus ? { jiraStatus: l.jiraStatus } : {}),
     }))
     : [];
   const mine = lists.find((l) => l.id === DEFAULT_LIST);
@@ -121,6 +124,8 @@ function loadState(dir) {
   s.noteOf = s.noteOf && typeof s.noteOf === 'object' ? s.noteOf : {};
   s.created = s.created && typeof s.created === 'object' ? s.created : {};
   s.reviewed = s.reviewed && typeof s.reviewed === 'object' ? s.reviewed : {};
+  const jira = s.jira && typeof s.jira === 'object' ? s.jira : {};
+  s.jira = { created: clean(jira.created), synced: jira.synced && typeof jira.synced === 'object' ? jira.synced : {} };
   return s;
 }
 

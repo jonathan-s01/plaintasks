@@ -447,12 +447,17 @@ function install(App, HttpError) {
     else if (v.file) file = this.cleanListFile(v.file);
     const fileTasks = typeof v.fileTasks === 'boolean' ? v.fileTasks : undefined;
     if (fileTasks && !(file || target.file)) throw new HttpError(400, 'Choose a file for the list to keep its tasks in first.');
+    const jira = this.cleanJiraListSettings(v, { file: file || target.file });
     this.mutateLists((lists) => {
       const l = lists.find((x) => x.id === target.id);
       if (folder !== undefined) l.folder = folder;
       if (file) l.file = file;
       if (fileTasks === true) l.fileTasks = true;
       else if (fileTasks === false) delete l.fileTasks;
+      for (const [k, val] of Object.entries(jira)) {
+        if (val === false || val === '' || (Array.isArray(val) && !val.length)) delete l[k];
+        else l[k] = val;
+      }
     }, target.name);
     const bits = [];
     const kept = fileBacked(this.getList(target.id));
@@ -463,6 +468,9 @@ function install(App, HttpError) {
         ? `shows every task in ${(this.fileEntry(this.getList(target.id).file) || {}).label}, and moving a task here moves its lines into that file`
         : 'shows only the tasks you add to it');
     }
+    if (jira.jiraSync !== undefined) bits.push(jira.jiraSync ? 'syncs with Jira' : 'does not sync with Jira');
+    if (jira.jiraLabels !== undefined) bits.push(jira.jiraLabels.length ? `Jira labels ${jira.jiraLabels.join(', ')}` : 'no extra Jira labels');
+    if (jira.jiraStatus !== undefined) bits.push(jira.jiraStatus ? `open tasks go to Jira as ${jira.jiraStatus}` : 'open tasks use the usual Jira status');
     return { ok: true, message: `${target.name}: ${bits.join(', ') || 'no change'}${v.notesFolder ? '. Undo keeps the file on disk.' : ''}`, undo: true };
   };
 

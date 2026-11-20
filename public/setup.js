@@ -214,13 +214,41 @@
     $('j-project').value = j ? j.project : '';
     $('j-issue-type').value = j ? j.issueType : 'Task';
     $('j-token').value = '';
+    renderSyncFields(cfg.jira && cfg.jira.sync);
     $('j-state').textContent = j ? `Jira is set up for ${j.baseUrl}. ${j.hasToken ? 'A token is saved.' : 'No token is saved yet.'}` : 'Jira is not set up.';
     syncJiraType();
+  }
+
+  const SYNC_FIELDS = [
+    ['js-project', 'project'], ['js-epic', 'epic'], ['js-task-type', 'taskType'], ['js-subtask-type', 'subtaskType'],
+    ['js-start-field', 'startField'], ['js-due-field', 'dueField'], ['js-flagged-field', 'flaggedField'],
+    ['js-assignee', 'assignee'], ['js-reporter', 'reporter'],
+  ];
+  const SYNC_NESTED = [
+    ['js-st-open', 'statuses', 'open'], ['js-st-inprogress', 'statuses', 'inProgress'], ['js-st-ongoing', 'statuses', 'ongoing'],
+    ['js-st-done', 'statuses', 'done'], ['js-st-deleted', 'statuses', 'deleted'],
+    ['js-res-done', 'resolutions', 'done'], ['js-res-deleted', 'resolutions', 'deleted'],
+    ['js-label-waiting', 'labels', 'waiting'], ['js-label-ongoing', 'labels', 'ongoing'],
+  ];
+
+  function renderSyncFields(sync) {
+    const s = sync || {};
+    for (const [id, k] of SYNC_FIELDS) $(id).value = s[k] || '';
+    for (const [id, g, k] of SYNC_NESTED) $(id).value = (s[g] && s[g][k]) || '';
+    $('js-transitions').value = Object.entries(s.transitions || {}).map(([n, v]) => `${n}=${v}`).join(', ');
+  }
+
+  function syncFieldsValue() {
+    const out = { transitions: $('js-transitions').value, statuses: {}, resolutions: {}, labels: {} };
+    for (const [id, k] of SYNC_FIELDS) out[k] = $(id).value.trim();
+    for (const [id, g, k] of SYNC_NESTED) out[g][k] = $(id).value.trim();
+    return out;
   }
 
   function syncJiraType() {
     const cloud = $('j-type').value === 'cloud';
     $('j-email-field').hidden = !cloud;
+    $('js-fields').hidden = !cloud;
   }
   $('j-type').addEventListener('change', syncJiraType);
 
@@ -236,6 +264,7 @@
           project: $('j-project').value.trim(),
           issueType: $('j-issue-type').value.trim(),
           token: $('j-token').value,
+          sync: syncFieldsValue(),
         },
       });
       renderJira();

@@ -147,3 +147,10 @@ test('goal: tokens: first on a ~ line is its id, others are links; stripped from
   assert.equal(u.text, 'see mygoal:x and goal:-bad');
   assert.deepEqual(u.goalLinks, []);
 });
+
+test('start: is read and hidden like due:', () => {
+  const [t] = tasks(parse('@ write report start:2026-11-02 due:2026-12-01\n'));
+  assert.equal(t.text, 'write report');
+  assert.equal(t.start, '2026-11-02');
+  assert.equal(t.due, '2026-12-01');
+});

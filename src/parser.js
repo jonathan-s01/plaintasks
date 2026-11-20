@@ -144,6 +144,7 @@ function stripTokens(body, ref) {
   const due = toks.find((t) => t.kind === 'due');
   const done = toks.find((t) => t.kind === 'done');
   const checkin = toks.find((t) => t.kind === 'checkin');
+  const start = toks.find((t) => t.kind === 'start');
   let jira = null;
   const jm = JIRA_RE.exec(out);
   if (jm) {
@@ -162,6 +163,7 @@ function stripTokens(body, ref) {
     checkin: checkin ? checkin.iso : null,
     checkinTime: checkin ? checkin.time : null,
     doneDate: done ? done.iso : null,
+    start: start ? start.iso : null,
     jira,
     goals,
   };
@@ -314,6 +316,7 @@ function makeTask(lineIndex, raw, indent, flags, parsed, groups, implicit) {
     checkin: parsed.checkin,
     checkinTime: parsed.checkinTime,
     doneDate: parsed.doneDate,
+    start: parsed.start,
     jira: parsed.jira,
     goalId: flags.ongoing && parsed.goals.length ? parsed.goals[0] : null,
     goalLinks: flags.ongoing ? parsed.goals.slice(1) : parsed.goals,

@@ -14,6 +14,7 @@ const { formatDate, toISO } = require('./dates');
 const { allViews, buildView, viewCounts, untriaged, listTasks, fileBacked } = require('./views');
 const { convertRtfFiles } = require('./rtf');
 const { JiraClient, JiraError, KEY_RE } = require('./jira');
+const { cleanSync } = require('./jirasync');
 const secrets = require('./secrets');
 
 class HttpError extends Error {
@@ -79,7 +80,7 @@ class App {
     return {
       rev: this.index.rev,
       views: allViews(this.stateData).map((v) => ({ id: v.id, title: v.title, count: counts[v.id] })),
-      lists: this.stateData.lists.map((l) => ({ id: l.id, name: l.name, count: counts[`list:${l.id}`], folder: l.folder, sort: l.sort, file: l.file || '', fileTasks: fileBacked(l), notesFile: l.file ? (this.fileEntry(l.file) || {}).label || null : null })),
+      lists: this.stateData.lists.map((l) => ({ id: l.id, name: l.name, count: counts[`list:${l.id}`], folder: l.folder, sort: l.sort, file: l.file || '', fileTasks: fileBacked(l), jiraSync: !!l.jiraSync, jiraLabels: l.jiraLabels || [], jiraStatus: l.jiraStatus || '', notesFile: l.file ? (this.fileEntry(l.file) || {}).label || null : null })),
       lastList: this.stateData.lastList,
       folders: this.config.folders.length,
       files: this.index.files.length,
@@ -523,6 +524,7 @@ class App {
         if (!entry.file) throw new HttpError(400, 'Choose a file for the list to keep its tasks in.');
         entry.fileTasks = true;
       }
+      Object.assign(entry, this.cleanJiraListSettings(v, entry));
       this.mutateLists((lists) => lists.push(entry), name);
       const f = entry.file ? this.fileEntry(entry.file) : null;
       return { ok: true, message: `Created list ${name}${f ? ` with notes file ${f.label}` : ''}`, undo: true, listId: id };
@@ -644,7 +646,7 @@ class App {
       masterFile: this.config.masterFile,
       masterLabel: this.config.masterFile ? this.masterLabel() : null,
       files: this.index.files.map((f) => ({ file: f.file, label: f.label })),
-      jira: j ? { baseUrl: j.baseUrl, type: j.type, email: j.email || '', project: j.project || '', issueType: j.issueType || 'Task', hasToken: !!this.secrets.getJiraToken() } : null,
+      jira: j ? { baseUrl: j.baseUrl, type: j.type, email: j.email || '', project: j.project || '', issueType: j.issueType || 'Task', hasToken: !!this.secrets.getJiraToken(), sync: cleanSync(j.sync || {}) } : null,
       today: toISO(this.now()),
     };
   }
@@ -761,7 +763,9 @@ class App {
       const url = normalizeBaseUrl(baseUrl);
       if (type !== 'cloud' && type !== 'datacenter') throw new JiraError('Choose Jira Cloud or Data Center');
       if (type === 'cloud' && !String(email).trim()) throw new JiraError('Jira Cloud needs the account email');
-      this.config = { ...this.config, jira: { baseUrl: url, type, email: String(email).trim(), project: String(project).trim(), issueType: String(issueType).trim() || 'Task' } };
+      const prev = this.config.jira || {};
+      const sync = body.sync !== undefined ? this.cleanJiraSync(body.sync, prev.sync) : prev.sync;
+      this.config = { ...this.config, jira: { baseUrl: url, type, email: String(email).trim(), project: String(project).trim(), issueType: String(issueType).trim() || 'Task', ...(sync ? { sync } : {}) } };
       if (token) this.secrets.setJiraToken(String(token));
     } catch (err) {
       throw new HttpError(400, err.message);
@@ -810,5 +814,6 @@ class App {
 require('./features').install(App, HttpError);
 require('./filelists').install(App, HttpError);
 require('./goals').install(App, HttpError);
+require('./jirasync').install(App, HttpError);
 
 module.exports = { App, HttpError };

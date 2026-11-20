@@ -31,10 +31,10 @@ class JiraClient {
     this.auth = type === 'cloud' ? `Basic ${Buffer.from(`${email}:${token}`).toString('base64')}` : `Bearer ${token}`;
   }
 
-  async request(method, apiPath, body) {
+  async request(method, apiPath, body, version = 2) {
     let res;
     try {
-      res = await this.fetch(`${this.baseUrl}/rest/api/2${apiPath}`, {
+      res = await this.fetch(`${this.baseUrl}/rest/api/${version}${apiPath}`, {
         method,
         headers: { Authorization: this.auth, Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) },
         body: body ? JSON.stringify(body) : undefined,
@@ -56,7 +56,47 @@ class JiraClient {
       }
       throw new JiraError(`Jira returned ${res.status}${detail ? `: ${detail}` : ''}`);
     }
-    return res.json();
+    if (res.status === 204) return {};
+    const text = typeof res.text === 'function' ? await res.text() : JSON.stringify(await res.json());
+    return text ? JSON.parse(text) : {};
+  }
+
+  v3(method, apiPath, body) {
+    return this.request(method, apiPath, body, 3);
+  }
+
+  /** All issues matching `jql` (Cloud /search/jql, paged by nextPageToken). */
+  async searchJql(jql, fields) {
+    const out = [];
+    let nextPageToken;
+    for (let page = 0; page < 50; page += 1) {
+      const j = await this.v3('POST', '/search/jql', { jql, fields, maxResults: 100, ...(nextPageToken ? { nextPageToken } : {}) });
+      out.push(...(j.issues || []));
+      if (j.isLast !== false || !j.nextPageToken) break;
+      nextPageToken = j.nextPageToken;
+    }
+    return out;
+  }
+
+  fields() {
+    return this.v3('GET', '/field');
+  }
+
+  async create(fields) {
+    const j = await this.v3('POST', '/issue', { fields });
+    return { key: j.key, url: this.issueUrl(j.key) };
+  }
+
+  update(key, { fields, update } = {}) {
+    return this.v3('PUT', `/issue/${encodeURIComponent(key)}`, { ...(fields ? { fields } : {}), ...(update ? { update } : {}) });
+  }
+
+  transition(key, id, fields) {
+    return this.v3('POST', `/issue/${encodeURIComponent(key)}/transitions`, { transition: { id: String(id) }, ...(fields ? { fields } : {}) });
+  }
+
+  link(type, inwardKey, outwardKey) {
+    return this.v3('POST', '/issueLink', { type: { name: type }, inwardIssue: { key: inwardKey }, outwardIssue: { key: outwardKey } });
   }
 
   issueUrl(key) {

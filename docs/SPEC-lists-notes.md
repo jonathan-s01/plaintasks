@@ -113,6 +113,17 @@ When `+ > < % *` turn a status on (tasks in any view, unmarked lines in triage),
 - Tokens are stripped from displayed text, like `jira:` and dates. Task details begin with "Goal: …" (or "Goals: …"); goals elsewhere get "N linked tasks".
 - Goals view (Shift+`g`, view id `goals`): each goal, "N open, M done linked tasks", then its linked tasks from any file at level 2. A task on two goals appears under each, with row id `taskId@goalId`; actions on either row act on the task. Done goals and done tasks show only with `c`.
 
+## Jira sync
+
+- Only on press (Shift+`j` or the toolbar button); Jira Cloud only. Endpoints: `POST /api/jira/sync/preview`, `/api/jira/sync/apply` (`{ choices: { itemId: { choice: 'apply'|'file'|'jira'|'skip', sig } } }`), `/api/jira/sync/started`.
+- Covers files of lists with `jiraSync` (needs a file). Per-list `jiraLabels` (extra labels) and `jiraStatus` (status for open tasks).
+- Items have stable ids (`create:<taskId>`, `KEY:<field>`, `link:<taskId>:<goalId>`) and a signature. Apply rebuilds the plan and skips any item whose signature changed since the preview.
+- Three-way rule for status and summary: the last synced value of both sides is stored. Only Jira changed → pull (ticked); only the file changed → push; both, or no snapshot → conflict (default skip). Pulling ongoing (`~`) back to open is unticked, because it stops the task being a goal.
+- Push-only fields: description (notes in ADF, `& Started` notes excluded), due date (the done date for done tasks), start date (`start:`), Flagged (for `>`), labels. A Jira value plaintasks didn't set is never cleared. Labels removed are only ones plaintasks added.
+- Summary and description pushes are unticked for issues plaintasks didn't create.
+- Order on apply: creates (main tasks, then subtasks), field updates and transitions, links, then file writes. File writes are one undo step; Jira changes can't be undone.
+- `start:YYYY-MM-DD` is a token like `due:`: hidden from text, spoken "Started …".
+
 ## What is stored where
 
 | Data | Location |
@@ -123,6 +134,10 @@ When `+ > < % *` turn a status on (tasks in any view, unmarked lines in triage),
 | Lists, order, sort, folder, notes-file path | `state.json` |
 | Created date | `state.json` |
 | Master file, watched folders | `config.json` |
+| Jira sync settings | `config.json` (`jira.sync`); token in the Keychain |
+| Per-list sync settings (`jiraSync`, `jiraLabels`, `jiraStatus`) | `state.json` |
+| Issues plaintasks created, last synced values | `state.json` (`jira.created`, `jira.synced`) |
+| Start date | the original text file (`start:`) |
 
 If you reword a line in an editor, its list membership and triage decisions are lost. Status changes (the thing you said you do most) do not reword the line.
 

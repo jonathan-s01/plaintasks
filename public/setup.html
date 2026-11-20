@@ -80,6 +80,97 @@
           <label for="j-issue-type">Default issue type</label>
           <input id="j-issue-type" type="text" autocomplete="off" spellcheck="false" value="Task">
         </div>
+        <fieldset id="js-fields">
+          <legend>Jira sync (Jira Cloud only)</legend>
+          <p>Used by Sync with Jira (shift and j). Turn sync on for a list in Manage lists.</p>
+        <div class="field">
+          <label for="js-project">Sync project key</label>
+          <input id="js-project" type="text" autocomplete="off" spellcheck="false" aria-describedby="js-project-hint">
+          <span id="js-project-hint" class="hint">For example A11Y.</span>
+        </div>
+        <div class="field">
+          <label for="js-epic">Epic key for new main tasks (optional)</label>
+          <input id="js-epic" type="text" autocomplete="off" spellcheck="false" aria-describedby="js-epic-hint">
+          <span id="js-epic-hint" class="hint">For example A11Y-2108. Tasks that already have a jira: key keep their parent.</span>
+        </div>
+        <div class="field">
+          <label for="js-task-type">Task issue type id</label>
+          <input id="js-task-type" type="text" autocomplete="off" spellcheck="false" aria-describedby="js-task-type-hint">
+          <span id="js-task-type-hint" class="hint">Find ids under Issue types in Jira settings, for example 10002.</span>
+        </div>
+        <div class="field">
+          <label for="js-subtask-type">Sub-task issue type id</label>
+          <input id="js-subtask-type" type="text" autocomplete="off" spellcheck="false" aria-describedby="js-subtask-type-hint">
+          <span id="js-subtask-type-hint" class="hint">For example 10003. Indented tasks at any depth become Sub-tasks of their main task.</span>
+        </div>
+        <div class="field">
+          <label for="js-start-field">Start date field id (optional)</label>
+          <input id="js-start-field" type="text" autocomplete="off" spellcheck="false" aria-describedby="js-start-field-hint">
+          <span id="js-start-field-hint" class="hint">For example customfield_10035.</span>
+        </div>
+        <div class="field">
+          <label for="js-due-field">Due date field id</label>
+          <input id="js-due-field" type="text" autocomplete="off" spellcheck="false" aria-describedby="js-due-field-hint">
+          <span id="js-due-field-hint" class="hint">Usually duedate.</span>
+        </div>
+        <div class="field">
+          <label for="js-flagged-field">Flagged field id (optional)</label>
+          <input id="js-flagged-field" type="text" autocomplete="off" spellcheck="false" aria-describedby="js-flagged-field-hint">
+          <span id="js-flagged-field-hint" class="hint">Leave empty to look it up by name.</span>
+        </div>
+        <div class="field">
+          <label for="js-assignee">Assignee accountId (optional)</label>
+          <input id="js-assignee" type="text" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="js-reporter">Reporter accountId (optional)</label>
+          <input id="js-reporter" type="text" autocomplete="off" spellcheck="false" aria-describedby="js-reporter-hint">
+          <span id="js-reporter-hint" class="hint">Needed if your project requires a reporter.</span>
+        </div>
+        <div class="field">
+          <label for="js-transitions">Transition ids (optional)</label>
+          <input id="js-transitions" type="text" autocomplete="off" spellcheck="false" aria-describedby="js-transitions-hint">
+          <span id="js-transitions-hint" class="hint">Name=id pairs separated by commas, for example To Do=11, In Progress=31, Resolved=61. Without them the app asks Jira for the transitions of each issue.</span>
+        </div>
+        <div class="field">
+          <label for="js-st-open">Jira status for @ to do</label>
+          <input id="js-st-open" type="text" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="js-st-inprogress">Jira status for % in progress</label>
+          <input id="js-st-inprogress" type="text" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="js-st-ongoing">Jira status for ~ ongoing</label>
+          <input id="js-st-ongoing" type="text" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="js-st-done">Jira status for + done</label>
+          <input id="js-st-done" type="text" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="js-st-deleted">Jira status for $ deleted (already linked)</label>
+          <input id="js-st-deleted" type="text" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="js-res-done">Resolution for done</label>
+          <input id="js-res-done" type="text" autocomplete="off" spellcheck="false" aria-describedby="js-res-done-hint">
+          <span id="js-res-done-hint" class="hint">A name or id, for example Done or 10000.</span>
+        </div>
+        <div class="field">
+          <label for="js-res-deleted">Resolution for deleted</label>
+          <input id="js-res-deleted" type="text" autocomplete="off" spellcheck="false" aria-describedby="js-res-deleted-hint">
+          <span id="js-res-deleted-hint" class="hint">For example Won't Do or 10001.</span>
+        </div>
+        <div class="field">
+          <label for="js-label-waiting">Label for > waiting (the issue is also flagged)</label>
+          <input id="js-label-waiting" type="text" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="js-label-ongoing">Label for ~ ongoing</label>
+          <input id="js-label-ongoing" type="text" autocomplete="off" spellcheck="false">
+        </div>
+        </fieldset>
         <p id="j-state"></p>
         <p><button type="submit">Save Jira settings</button> <button type="button" id="j-remove">Remove Jira settings</button></p>
       </form>

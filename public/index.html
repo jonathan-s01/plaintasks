@@ -24,6 +24,7 @@
       </div>
       <button id="toggle-completed" type="button" aria-pressed="false">Show completed</button>
       <button id="manage-btn" type="button">Manage lists</button>
+      <button id="sync-btn" type="button">Sync with Jira</button>
       <button id="help-btn" type="button">Keyboard shortcuts</button>
       <a href="/setup">Settings</a>
     </div>
@@ -97,6 +98,9 @@
       <label for="manage-file">Or use an existing file (optional)</label>
       <select id="manage-file"></select>
       <div class="row"><input type="checkbox" id="manage-filetasks"><label for="manage-filetasks">Keep tasks in this file: the list shows every task in it, putting a task on the list moves its lines here, and reordering the list reorders the file</label></div>
+      <div class="row"><input type="checkbox" id="manage-jira"><label for="manage-jira">Sync to Jira (needs a file): Sync with Jira includes the tasks in this file</label></div>
+      <div class="row"><label for="manage-jira-labels">Extra Jira labels (optional, separated by commas)</label><input type="text" id="manage-jira-labels" autocomplete="off" spellcheck="false"></div>
+      <div class="row"><label for="manage-jira-status">Jira status for open tasks (optional, for example In Discovery)</label><input type="text" id="manage-jira-status" autocomplete="off" spellcheck="false"></div>
       <p><button type="submit">Create list</button></p>
     </form>
     <p id="manage-error" class="error" role="alert"></p>
@@ -209,6 +213,28 @@
     <p><button type="button" id="jira-close">Close</button></p>
   </dialog>
 
+  <dialog id="sync-dialog" aria-labelledby="sync-title" aria-describedby="sync-about">
+    <h2 id="sync-title">Sync with Jira</h2>
+    <p id="sync-about">Compares the tasks in lists that sync to Jira with their issues. Nothing is sent or written until you choose Apply. Changes to files can be undone with u; changes sent to Jira cannot.</p>
+    <p id="sync-status" role="status"></p>
+    <form id="sync-form" hidden>
+      <div id="sync-sections"></div>
+      <p id="sync-count" aria-live="polite"></p>
+      <p><button type="submit" id="sync-apply">Apply chosen changes</button></p>
+    </form>
+    <div id="sync-started" hidden>
+      <h3>Started notes</h3>
+      <p id="sync-started-text"></p>
+      <p><button type="button" id="sync-started-btn">Convert Started notes to start: dates</button></p>
+    </div>
+    <div id="sync-done" hidden>
+      <h3 id="sync-done-title" tabindex="-1">Results</h3>
+      <ul id="sync-results"></ul>
+    </div>
+    <p id="sync-error" class="error" role="alert"></p>
+    <p><button type="button" id="sync-again" hidden>Check again</button> <button type="button" id="sync-close">Close</button></p>
+  </dialog>
+
   <dialog id="help-dialog" aria-labelledby="help-title">
     <h2 id="help-title">Keyboard shortcuts</h2>
     <p>Use Up and Down to move through the list. Single-letter keys work while the list has focus.</p>
@@ -233,6 +259,7 @@
         <tr><th scope="row">Shift and Tab</th><td>Move a subtask up a level. A bullet subtask at its parent's indentation loses its bullet instead. Tasks right after it at the old level become its subtasks</td></tr>
         <tr><th scope="row">d</th><td>Set or clear the due date and the check-in date. A time works too: fri 2pm</td></tr>
         <tr><th scope="row">j</th><td>Jira: link, status, create</td></tr>
+        <tr><th scope="row">shift and j</th><td>Sync with Jira: shows every change in both directions for the lists that sync to Jira, grouped as conflicts, new issues, updates to Jira and updates to files. Tick what to do, then Apply. Nothing is sent or written before that</td></tr>
         <tr><th scope="row">y</th><td>Link the task to goals (ongoing tasks, marked with ~)</td></tr>
         <tr><th scope="row">o</th><td>Open the source file in your text editor</td></tr>
         <tr><th scope="row">u</th><td>Undo the last change</td></tr>
