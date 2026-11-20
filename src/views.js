@@ -81,6 +81,7 @@ function describe(t, today, level, extra = {}) {
   if (extra.parentText) meta.push(`Subtask of ${extra.parentText}`);
   if (t.group && !extra.hideGroup) meta.push(`Group ${t.group}`);
   if (t.jira) meta.push(`Jira ${t.jira}`);
+  if (t.jiraLabel && t.kind === 'task' && t.flags.ongoing) meta.push('Jira label goal: linked tasks get its label, it is not an issue');
   if (t.notes.length) meta.push(t.notes.length === 1 ? '1 note' : `${t.notes.length} notes`);
   if (!extra.hideFile) meta.push(`File ${t.fileLabel}, line ${t.line}`);
   return {

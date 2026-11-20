@@ -29,6 +29,7 @@ const SYNC_DEFAULTS = {
   transitions: {},
   resolutions: { done: 'Done', deleted: "Won't Do" },
   labels: { waiting: 'waiting', ongoing: 'ongoing' },
+  labelPrefix: 'bucket-',
   linkType: 'Relates',
 };
 
@@ -65,6 +66,7 @@ function cleanSync(v, prev = {}) {
     assignee: pick('assignee'),
     reporter: pick('reporter'),
     linkType: pick('linkType') || 'Relates',
+    labelPrefix: (pick('labelPrefix') || SYNC_DEFAULTS.labelPrefix).replace(/\s+/g, '-'),
     statuses: { ...SYNC_DEFAULTS.statuses, ...base.statuses },
     resolutions: { ...SYNC_DEFAULTS.resolutions, ...base.resolutions },
     labels: { ...SYNC_DEFAULTS.labels, ...base.labels },
@@ -197,10 +199,19 @@ function managedLabels(cfg, ctxLists) {
   return new Set([cfg.labels.waiting, cfg.labels.ongoing, ...ctxLists.flatMap((l) => l.jiraLabels || [])].filter(Boolean));
 }
 
-function wantedLabels(cfg, t, list) {
+const isLabelGoal = (g) => !!(g && g.jiraLabel && g.flags && g.flags.ongoing);
+
+/** Labels for the label goals (jira:label) a task links to directly: prefix plus the goal id. */
+function bucketLabels(cfg, t, goalsById) {
+  if (!goalsById) return [];
+  return (t.goalLinks || []).filter((id) => isLabelGoal(goalsById.get(id)) && goalsById.get(id).id !== t.id).map((id) => `${cfg.labelPrefix}${id}`);
+}
+
+function wantedLabels(cfg, t, list, goalsById) {
   const out = new Set(list.jiraLabels || []);
   if (t.flags.waitingOnOthers && cfg.labels.waiting) out.add(cfg.labels.waiting);
   if (t.flags.ongoing && cfg.labels.ongoing) out.add(cfg.labels.ongoing);
+  for (const l of bucketLabels(cfg, t, goalsById)) out.add(l);
   return out;
 }
 
@@ -229,11 +240,13 @@ function fieldStates(ctx, entry, issue) {
     const j = isFlagged(f[ctx.flaggedField]);
     out.flagged = { file: !!t.flags.waitingOnOthers, jira: j, same: j === !!t.flags.waitingOnOthers };
   }
-  const want = wantedLabels(cfg, t, list);
+  const want = wantedLabels(cfg, t, list, ctx.goalsById);
   const have = new Set(f.labels || []);
   const snap = ((ctx.synced[issue.key] || {}).labels || {}).added || [];
   const add = [...want].filter((l) => !have.has(l));
-  const remove = snap.filter((l) => !want.has(l) && have.has(l));
+  // Labels with the bucket prefix belong to label goals, so any that is no longer wanted goes, whoever added it.
+  const prefixed = [...have].filter((l) => cfg.labelPrefix && l.startsWith(cfg.labelPrefix));
+  const remove = [...new Set([...snap, ...prefixed])].filter((l) => !want.has(l) && have.has(l));
   out.labels = { file: [...want], jira: [...have], add, remove, same: !add.length && !remove.length };
   return out;
 }
@@ -294,12 +307,13 @@ function install(App, HttpError) {
     const entries = [];
     for (const file of files) {
       const list = listForFile(this.stateData.lists, file);
-      for (const t of this.index.tasks) if (t.file === file) entries.push({ t, list });
+      // Label goals (jira:label) are never issues; their linked tasks get a label instead.
+      for (const t of this.index.tasks) if (t.file === file && !isLabelGoal(t)) entries.push({ t, list });
       // Deleted ($) lines are not in the index, but a linked one still closes its issue as Won't Do.
       const parsed = this.parsedFor(file);
       const label = this.fileEntry(file).label;
       for (const it of parsed.items) {
-        if (it.kind !== 'excluded' || !it.jira) continue;
+        if (it.kind !== 'excluded' || !it.jira || it.jiraLabel) continue;
         entries.push({ t: { ...it, id: `x:${file}:${it.lineIndex}`, file, fileLabel: label, line: it.lineIndex + 1, notes: [], symbols: parsed.symbols, unmarkedMode: parsed.unmarkedMode }, list, excluded: true });
       }
     }
@@ -312,7 +326,7 @@ function install(App, HttpError) {
     }
     const issues = await this.fetchIssues(client, cfg, flaggedField, keys);
     const jstate = this.stateData.jira;
-    return { cfg, client, lists, files, entries, issues, flaggedField, created: new Set(jstate.created), synced: jstate.synced };
+    return { cfg, client, lists, files, entries, issues, flaggedField, goalsById: goalIndex(this.index).byId, created: new Set(jstate.created), synced: jstate.synced };
   };
 
   proto.fetchIssues = async function fetchIssues(client, cfg, flaggedField, keys) {
@@ -334,6 +348,7 @@ function install(App, HttpError) {
     const byTaskId = new Map(entries.map((e) => [e.t.id, e]));
     const where = (t) => ({ taskId: t.id, task: t.text, file: t.fileLabel, line: t.line });
     const add = (it) => items.push({ ...it, sig: JSON.stringify([it.from, it.to, it.raw]) });
+    // A task under a label goal is a main task: the label goal is never an issue to be a parent.
     const topOf = (t) => {
       let cur = t;
       while (cur.parentId && byTaskId.has(cur.parentId)) cur = byTaskId.get(cur.parentId).t;
@@ -353,6 +368,7 @@ function install(App, HttpError) {
         continue;
       }
       creating.add(t.id);
+      const buckets = bucketLabels(cfg, t, ctx.goalsById);
       add({
         id: `create:${t.id}`,
         group: 'create',
@@ -360,7 +376,7 @@ function install(App, HttpError) {
         raw: t.raw,
         field: 'create',
         parentTaskId: sub ? top.id : null,
-        label: `Create ${sub ? `Sub-task of ${top.jira || top.text}` : `Task${cfg.epic ? ` in epic ${cfg.epic}` : ''}`}, status ${wantedStatus(cfg, kind, list)}`,
+        label: `Create ${sub ? `Sub-task of ${top.jira || top.text}` : `Task${cfg.epic ? ` in epic ${cfg.epic}` : ''}`}, status ${wantedStatus(cfg, kind, list)}${buckets.length ? `, ${buckets.length === 1 ? 'label' : 'labels'} ${buckets.join(', ')}` : ''}`,
         from: null,
         to: { kind, text: t.text },
         checked: kind !== 'done',
@@ -458,7 +474,7 @@ function install(App, HttpError) {
       if (!t.jira && !creating.has(t.id)) continue;
       for (const gid of t.goalLinks) {
         const g = byId.get(gid);
-        if (!g || g.id === t.id) continue;
+        if (!g || g.id === t.id || isLabelGoal(g)) continue;
         if (!g.jira && !creating.has(g.id)) continue;
         if (issue && g.jira) {
           const links = (issue.fields && issue.fields.issuelinks) || [];
@@ -552,7 +568,7 @@ function install(App, HttpError) {
             if (cfg.reporter) fields.reporter = { accountId: cfg.reporter };
             if (cfg.dueField && dueOf(t)) fields[cfg.dueField] = dueOf(t);
             if (cfg.startField && startOf(t)) fields[cfg.startField] = startOf(t);
-            const labels = [...wantedLabels(cfg, t, list)];
+            const labels = [...wantedLabels(cfg, t, list, ctx.goalsById)];
             if (labels.length) fields.labels = labels;
             const made = await client.create(fields);
             jiraChanges += 1;

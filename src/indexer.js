@@ -214,6 +214,7 @@ class Index extends EventEmitter {
         doneDate: it.doneDate || null,
         start: it.start || null,
         jira: it.jira || null,
+        jiraLabel: !!it.jiraLabel,
         goalId: it.goalId || null,
         goalLinks: it.goalLinks || [],
         symbols: parsed.symbols,

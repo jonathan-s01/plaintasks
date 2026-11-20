@@ -49,6 +49,7 @@ Website relaunch
 - **Jira link.** `jira:ABC-123` ties a task to an issue.
 - **Start date.** `start:2026-11-02` records when work began. It is hidden from the displayed text and spoken as "Started …". Sync with Jira sends it to the start-date field.
 - **Goal link.** `goal:partner-network` ties a task to a goal (see Goals below). A task can carry several.
+- **Label goal.** `jira:label` on a goal's line makes it a Jira label (bucket) instead of an issue; see Sync with Jira.
 - **Per-file legends.** A file can define its own symbols with lines like `+ = done`, `nothing = to do`, or `• and indenting = subtasks`. Lines such as `nothing = to do` are recognised and skipped (never shown as tasks) but do not change how unmarked lines are treated; that is decided only by the folder and per-file settings. Legend lines are not tasks.
 - **Unmarked lines per folder.** Each watched folder has a setting: unmarked lines are *notes* (default) or *tasks*. Individual files can override it in the settings page. Precedence: per-file setting, then folder setting. A file's own legend does not override either.
 - **Triage (initial review).** The Triage view shows every file that still has unmarked lines, newest file first, with the whole file in order. Lines that already have a marker are shown as "Already a task" and need nothing from you; unmarked lines are read with their position ("3 of 12 to review in this file") and Enter shows the lines around it. `a` or `@` makes the line a `@` to-do; `+`, `<`, `>`, `%` and `*` (or `x`, `w`, `i`, `p`) make it a to-do with that status straight away; `s` or `&` marks it as a note: `& ` is written in front of the line in your file, which attaches it to the nearest task above it (a line with no task above is remembered as a note in `~/.config/plaintasks/state.json` instead). Shift+`s` marks every remaining line in the file as a note, `n` / Shift+`n` jump to the next / previous file, Shift+`r` marks a file as reviewed, and `f` shows only files that are new or changed since you reviewed them.
@@ -157,11 +158,12 @@ Sync runs only when you press Shift+`j` or the Sync with Jira button. It covers 
 
   A Jira status in the same category counts as in sync (In Review matches `%`).
 - **Goals.** `goal:` links become Jira "Relates" links between the task's issue and the goal's issue.
+- **Label goals (buckets).** Put `jira:label` on a goal's line, for example `~ Advisory services goal:advisory-services jira:label`. That goal is never created, updated or closed in Jira and gets no Relates links. Instead every synced task that links to it directly (open or done) gets the label prefix plus the goal id, `bucket-advisory-services` by default; unlinking removes it. Labels starting with the prefix are managed by sync (one no longer wanted is removed even if added in Jira); other labels are left alone. Label updates are ticked even on issues plaintasks didn't create. Tasks indented under a label goal sync as main tasks. The prefix is a setting (default `bucket-`). The token is hidden from the text, and the goal's details say "Jira label goal".
 - **Per list:** extra labels, and an optional status for open tasks.
 - **Started notes.** If tasks have `& Started 2026-11-02` notes, the dialog offers a one-time button that turns them into `start:` tokens on the task line (all indexed files; `u` undoes).
 - **Undo.** `u` undoes the file changes from one sync. Changes already sent to Jira stay.
 
-Settings (on the settings page, under Jira sync; nothing is hard-coded): project key, epic key, Task and Sub-task issue type ids, start-date and due-date field ids, Flagged field id (found by name if empty), assignee and reporter accountId, transition ids, status names per marker, resolution names or ids, and the waiting/ongoing labels. Example for a site like alberta.atlassian.net:
+Settings (on the settings page, under Jira sync; nothing is hard-coded): label goal prefix, project key, epic key, Task and Sub-task issue type ids, start-date and due-date field ids, Flagged field id (found by name if empty), assignee and reporter accountId, transition ids, status names per marker, resolution names or ids, and the waiting/ongoing labels. Example for a site like alberta.atlassian.net:
 
 | Setting | Example |
 | --- | --- |

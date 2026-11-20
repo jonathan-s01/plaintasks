@@ -222,7 +222,7 @@
   const SYNC_FIELDS = [
     ['js-project', 'project'], ['js-epic', 'epic'], ['js-task-type', 'taskType'], ['js-subtask-type', 'subtaskType'],
     ['js-start-field', 'startField'], ['js-due-field', 'dueField'], ['js-flagged-field', 'flaggedField'],
-    ['js-assignee', 'assignee'], ['js-reporter', 'reporter'],
+    ['js-assignee', 'assignee'], ['js-reporter', 'reporter'], ['js-label-prefix', 'labelPrefix'],
   ];
   const SYNC_NESTED = [
     ['js-st-open', 'statuses', 'open'], ['js-st-inprogress', 'statuses', 'inProgress'], ['js-st-ongoing', 'statuses', 'ongoing'],

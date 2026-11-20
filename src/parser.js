@@ -21,6 +21,8 @@ const STRONG_MARKERS = /[+@<>•]/;
 // A line starting with & is a note of the nearest task above it, however many lines lie between.
 const NOTE_RE = /^[ \t]*&[ \t]*(.*)$/;
 const JIRA_RE = /(^|\s)jira:([A-Za-z][A-Za-z0-9_]*-\d+)(?![\w-])/;
+// jira:label on a goal line: sync tags linked tasks with a label instead of making the goal an issue.
+const JIRA_LABEL_RE = /(^|\s)jira:label(?![\w-])/i;
 // goal:some-id. On a ~ (ongoing) line the first one is that goal's own id; every other one links to a goal.
 const GOAL_RE = /(^|\s)goal:([A-Za-z0-9][A-Za-z0-9-]*)(?![\w-])/g;
 const HAS_WORD_RE = /[\p{L}\p{N}]/u;
@@ -151,6 +153,11 @@ function stripTokens(body, ref) {
     jira = jm[2].toUpperCase();
     out = out.slice(0, jm.index) + out.slice(jm.index + jm[0].length);
   }
+  let jiraLabel = false;
+  out = out.replace(new RegExp(JIRA_LABEL_RE.source, 'gi'), (m, pre) => {
+    jiraLabel = true;
+    return pre;
+  });
   const goals = [];
   out = out.replace(GOAL_RE, (m, pre, id) => {
     if (!goals.includes(id.toLowerCase())) goals.push(id.toLowerCase());
@@ -165,6 +172,7 @@ function stripTokens(body, ref) {
     doneDate: done ? done.iso : null,
     start: start ? start.iso : null,
     jira,
+    jiraLabel,
     goals,
   };
 }
@@ -318,6 +326,7 @@ function makeTask(lineIndex, raw, indent, flags, parsed, groups, implicit) {
     doneDate: parsed.doneDate,
     start: parsed.start,
     jira: parsed.jira,
+    jiraLabel: parsed.jiraLabel,
     goalId: flags.ongoing && parsed.goals.length ? parsed.goals[0] : null,
     goalLinks: flags.ongoing ? parsed.goals.slice(1) : parsed.goals,
     implicit,
@@ -347,4 +356,4 @@ function attach(item, stack, items) {
 }
 
 module.exports = {
-  GOAL_RE, ampNote, parseText, splitLines, markerInfo, indentWidth, DEFAULT_SYMBOLS, MARKER_CHARS, stripTokens, JIRA_RE };
+  GOAL_RE, ampNote, parseText, splitLines, markerInfo, indentWidth, DEFAULT_SYMBOLS, MARKER_CHARS, stripTokens, JIRA_RE, JIRA_LABEL_RE };

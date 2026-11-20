@@ -123,6 +123,7 @@ When `+ > < % *` turn a status on (tasks in any view, unmarked lines in triage),
 - Summary and description pushes are unticked for issues plaintasks didn't create.
 - Order on apply: creates (main tasks, then subtasks), field updates and transitions, links, then file writes. File writes are one undo step; Jira changes can't be undone.
 - `start:YYYY-MM-DD` is a token like `due:`: hidden from text, spoken "Started …".
+- Label goals: a `~` line with `jira:label` (case-insensitive, hidden like `jira:`; `text` keeps it). Excluded from sync entries, so never created, updated, closed or linked. Tasks linking to one directly via `goal:` want label `<labelPrefix><goalId>` (setting `jira.sync.labelPrefix`, default `bucket-`); it is added on create and in the labels push item. Any label on the issue starting with the prefix that is not wanted is removed. Children of a label goal have no syncing parent, so they become Tasks.
 
 ## What is stored where
 

@@ -128,6 +128,7 @@ test('text rewords a task and keeps its tokens; done takes the date it was done'
   const raw = '\t% call bob due:2026-11-20 jira:ABC-1 goal:x start:2026-11-01';
   assert.equal(applyOp(raw, 'text', 'phone  Bob', ctx), '\t% phone Bob due:2026-11-20 jira:ABC-1 goal:x start:2026-11-01');
   assert.throws(() => applyOp(raw, 'text', ' ', ctx), /empty/);
+  assert.equal(applyOp('~ Advisory goal:advisory jira:label', 'text', 'Advice', ctx), '~ Advice goal:advisory jira:label');
   assert.equal(applyOp('@ a', 'done', '2026-10-01', ctx), '+@ a done:2026-10-01');
   assert.equal(applyOp('@ a', 'done', null, ctx), '+@ a done:2026-11-16');
   assert.equal(applyOp('@ a start:2026-01-01', 'start', '2026-02-02', ctx), '@ a start:2026-02-02');

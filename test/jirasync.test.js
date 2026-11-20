@@ -258,3 +258,45 @@ test('jira sync: settings are validated, stored without the token, and needed be
   app.setJira({ baseUrl: 'https://alberta.atlassian.net', type: 'cloud', email: 'me@example.test', sync: { taskType: '' } });
   await assert.rejects(() => app.syncPreview(), /Task issue type id/);
 });
+
+test('jira sync: label goals (jira:label) are never issues; linked tasks get prefix+id labels, and unlinking removes them', async () => {
+  const { notes, app, jira } = setup({
+    'a.txt': [
+      '~ Advisory services goal:advisory-services jira:label',
+      '\t@ Under the bucket',
+      '~ Partner network goal:partner-network',
+      '@ Review site goal:advisory-services goal:partner-network',
+      '+ Jurisdictional scan jira:A11Y-2591 goal:advisory-services done:2026-11-10',
+      '@ Other thing jira:A11Y-5',
+      '',
+    ].join('\n'),
+  });
+  jira.add('A11Y-2591', { summary: 'Jurisdictional scan', labels: ['legal'] });
+  jira.add('A11Y-5', { summary: 'Other thing', labels: ['bucket-old', 'keep'] });
+  await syncedList(app, 'a.txt');
+  const plan = await app.syncPreview();
+  const byId = Object.fromEntries(plan.items.map((i) => [i.id, i]));
+  const creates = plan.items.filter((i) => i.group === 'create');
+  assert.deepEqual(creates.map((i) => i.task), ['Under the bucket', 'Partner network', 'Review site']);
+  assert.equal(creates[0].parentTaskId, null, 'a task under a label goal is a main task');
+  assert.match(creates[2].label, /, label bucket-advisory-services$/);
+  assert.deepEqual(plan.items.filter((i) => i.field === 'link').map((i) => i.to), ['Partner network']);
+  assert.deepEqual([byId['A11Y-2591:labels'].to, byId['A11Y-2591:labels'].checked], [{ add: ['bucket-advisory-services'], remove: [] }, true]);
+  assert.deepEqual(byId['A11Y-5:labels'].to, { add: [], remove: ['bucket-old'] });
+
+  const res = await app.syncApply({ choices: choose(plan) });
+  assert.ok(res.results.every((r) => r.ok), JSON.stringify(res.results));
+  const made = jira.calls.filter((c) => c.method === 'POST' && c.path === '/issue').map((c) => c.body.fields);
+  assert.ok(!made.some((f) => /Advisory/.test(f.summary)));
+  assert.deepEqual(made.find((f) => f.summary === 'Review site').labels, ['bucket-advisory-services']);
+  assert.equal(jira.calls.filter((c) => c.path === '/issueLink').length, 1);
+  const f = (k) => jira.issues.get(k).fields;
+  assert.deepEqual(f('A11Y-2591').labels, ['legal', 'bucket-advisory-services']);
+  assert.deepEqual(f('A11Y-5').labels, ['keep']);
+  assert.match(read(notes, 'a.txt'), /^~ Advisory services goal:advisory-services jira:label$/m);
+  assert.ok(!plan.items.some((i) => i.task === 'Advisory services'));
+
+  fs.writeFileSync(path.join(notes, 'a.txt'), read(notes, 'a.txt').replace('jira:A11Y-2591 goal:advisory-services', 'jira:A11Y-2591'));
+  const plan2 = await app.syncPreview();
+  assert.deepEqual(plan2.items.find((i) => i.id === 'A11Y-2591:labels').to, { add: [], remove: ['bucket-advisory-services'] });
+});

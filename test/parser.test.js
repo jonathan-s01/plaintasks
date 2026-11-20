@@ -148,6 +148,12 @@ test('goal: tokens: first on a ~ line is its id, others are links; stripped from
   assert.deepEqual(u.goalLinks, []);
 });
 
+test('jira:label marks a label goal and is hidden; other jira: words are not it', () => {
+  const [g, t] = tasks(parse('~ Advisory services goal:advisory-services jira:label\n@ read jira:labels\n'));
+  assert.deepEqual([g.text, g.jiraLabel, g.goalId], ['Advisory services', true, 'advisory-services']);
+  assert.deepEqual([t.text, t.jiraLabel], ['read jira:labels', false]);
+});
+
 test('start: is read and hidden like due:', () => {
   const [t] = tasks(parse('@ write report start:2026-11-02 due:2026-12-01\n'));
   assert.equal(t.text, 'write report');

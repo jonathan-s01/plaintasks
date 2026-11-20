@@ -1,6 +1,6 @@
 'use strict';
 
-const { markerInfo, DEFAULT_SYMBOLS, JIRA_RE, GOAL_RE } = require('./parser');
+const { markerInfo, DEFAULT_SYMBOLS, JIRA_RE, JIRA_LABEL_RE, GOAL_RE } = require('./parser');
 const { findDateTokens, toISO } = require('./dates');
 
 class OpError extends Error {}
@@ -100,11 +100,11 @@ function applyOp(raw, op, arg, ctx) {
       return compose(d);
     }
     case 'text': {
-      // Rewords the task, keeping its tokens (dates, jira:, goal:) in their order.
+      // Rewords the task, keeping its tokens (dates, jira:, jira:label, goal:) in their order.
       const text = String(arg || '').replace(/\s+/g, ' ').trim();
       if (!text) throw new OpError('The new text is empty');
       const spans = findDateTokens(d.body, today).map((t) => [t.start, t.end]);
-      for (const re of [new RegExp(JIRA_RE.source, 'g'), new RegExp(GOAL_RE.source, 'g')]) {
+      for (const re of [new RegExp(JIRA_RE.source, 'g'), new RegExp(JIRA_LABEL_RE.source, 'gi'), new RegExp(GOAL_RE.source, 'g')]) {
         let m;
         while ((m = re.exec(d.body))) spans.push([m.index + m[1].length, m.index + m[0].length]);
       }
