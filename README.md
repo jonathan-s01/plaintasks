@@ -52,7 +52,7 @@ Website relaunch
 - **Label goal.** `jira:label` on a goal's line makes it a Jira label (bucket) instead of an issue; see Sync with Jira.
 - **Per-file legends.** A file can define its own symbols with lines like `+ = done`, `nothing = to do`, or `• and indenting = subtasks`. Lines such as `nothing = to do` are recognised and skipped (never shown as tasks) but do not change how unmarked lines are treated; that is decided only by the folder and per-file settings. Legend lines are not tasks.
 - **Unmarked lines per folder.** Each watched folder has a setting: unmarked lines are *notes* (default) or *tasks*. Individual files can override it in the settings page. Precedence: per-file setting, then folder setting. A file's own legend does not override either.
-- **Triage (initial review).** The Triage view shows every file that still has unmarked lines, newest file first, with the whole file in order. Lines that already have a marker are shown as "Already a task" and need nothing from you; unmarked lines are read with their position ("3 of 12 to review in this file") and Enter shows the lines around it. `a` or `@` makes the line a `@` to-do; `+`, `<`, `>`, `%` and `*` (or `x`, `w`, `i`, `p`) make it a to-do with that status straight away; `s` or `&` marks it as a note: `& ` is written in front of the line in your file, which attaches it to the nearest task above it (a line with no task above is remembered as a note in `~/.config/plaintasks/state.json` instead). Shift+`s` marks every remaining line in the file as a note, `n` / Shift+`n` jump to the next / previous file, Shift+`r` marks a file as reviewed, and `f` shows only files that are new or changed since you reviewed them.
+- **Triage (initial review).** The Triage view shows every file that still has unmarked lines, newest file first, with the whole file in order. Lines that already have a marker are read with just their status and text (the details, starting "Already a task", are on screen and in the Enter menu) and need nothing from you; unmarked lines are read with their position ("3 of 12 to review in this file") and Enter shows the lines around it. `a` or `@` makes the line a `@` to-do; `+`, `<`, `>`, `%` and `*` (or `x`, `w`, `i`, `p`) make it a to-do with that status straight away; `s` or `&` marks it as a note: `& ` is written in front of the line in your file, which attaches it to the nearest task above it (a line with no task above is remembered as a note in `~/.config/plaintasks/state.json` instead). Shift+`s` marks every remaining line in the file as a note, `n` / Shift+`n` jump to the next / previous file, Shift+`r` marks a file as reviewed, and `f` shows only files that are new or changed since you reviewed them.
 - **Lists (My list and your own).** Personal, reorderable working lists that are independent of which file a task lives in. You start with one, **My list**; make more in Manage lists (Shift+`m` or the Manage lists button) or from the chooser. A task can be on several lists. Press `l` on a task: with only My list it adds or removes straight away; with several lists a dialog shows a checkbox per list plus a field to create a new list and add the task to it. In triage, `l` marks the unmarked line as a to-do and opens the same dialog: Up and Down move through the lists, Space ticks one, Enter saves and moves to the next line. Shift+`l` adds or removes the task from the list you are viewing, or the one you used last. Press `-` for My list, `[` and `]` to step through lists, or use the View menu. Lists and their order are stored in `~/.config/plaintasks/state.json`, never in your text files, and tasks are matched by file and task text, so membership survives marking done or setting dates but resets if you reword the task. Deleting a list never touches your files (My list can be renamed, not deleted). Reorder with Option+Up / Option+Down, or press `g` to pick a task up, then Up, Down, Home and End move it and Enter or Escape drops it. Each move is announced ("Moved down to position 3 of 7"). `u` undoes list changes.
 
 - **Notes on tasks.** `s` on a task opens Add a note. The note is written into the file under the task, after its other notes, as `[2026-11-16, ListName] text` (the date stamp can be switched off). The task shows all its notes whichever list they were added from. To turn a task into a note, use Enter, then Convert to a note.
@@ -84,13 +84,13 @@ All open, by file, by group or project, goals and their tasks, schedule (overdue
 
 ## Keyboard
 
-Press `?` in the app for the list. The short version:
+Press `?` in the app for the list (Escape closes it). Every command is also written out in plain text in [docs/COMMANDS.txt](docs/COMMANDS.txt). The short version:
 
 | Key | Action |
 | --- | --- |
 | Up / Down, Home / End, PageUp / PageDown | move through the list |
 | Right / Left | expand / collapse subtasks, move to first child / parent |
-| Enter | actions menu for the item |
+| Enter | actions menu for the item, with its full details (dates, file, notes, Jira, goals) |
 | `+` (or `x`) | done / reopen |
 | `<` / `>` | toggle waiting on me / waiting on someone else |
 | `*` / `%` (or `i` / `p`), `b` or `~` | toggle important / in progress; ongoing (`~`) |
@@ -183,6 +183,8 @@ The server binds to `127.0.0.1` only, checks the Host and Origin headers, requir
 ## Accessibility notes
 
 Semantic HTML first. The list is an ARIA tree (flat, with `aria-level`, `aria-posinset`, `aria-setsize`, `aria-expanded`, roving tabindex) so arrow keys behave like moving through a text file. `?ui=list` loads the same list as a plain listbox in case the tree behaves badly with your VoiceOver setup. Text sizes use relative units and reflow down to 400 % zoom; the design honours dark mode, forced colours/high contrast, and reduced motion. See [docs/VOICEOVER.md](docs/VOICEOVER.md) for a manual test script.
+
+Task rows are read with just their status and name, for example "Open. Call Sam." Due dates, file and line, notes and the rest stay visible on screen but are hidden from screen readers; press Enter on the task to hear them. Group and list rows still read their counts.
 
 Background, design decisions and the roadmap are in [docs/PLAN.md](docs/PLAN.md).
 

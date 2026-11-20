@@ -305,7 +305,7 @@ function buildView(index, state, opts = {}) {
         it.meta = it.meta.filter((m) => !/^\d+ notes?$/.test(m));
         it.meta.push(`Line ${u.line}`);
         if (known) {
-          it.words = [...it.words, 'Already a task'];
+          it.meta.unshift('Already a task');
         } else if (reviewed) {
           it.words = ['Note', 'Reviewed'];
           if (u.attachedTo) it.meta.push(`Attached to ${u.attachedTo}`);

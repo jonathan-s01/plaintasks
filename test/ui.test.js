@@ -96,6 +96,17 @@ test('list is a tree with roving tabindex; keyboard moves, collapses and complet
     assert.equal(rows().filter((r) => r.tabIndex === 0).length, 1, 'exactly one tab stop');
     assert.equal(doc.activeElement, rows()[0]);
     assert.match(rows()[0].textContent, /Open\. parent task\. .*Due .*Nov 20/);
+    const meta = rows()[0].querySelector('.meta');
+    assert.match(meta.textContent, /Due .*File .*a\.txt/);
+    assert.equal(meta.getAttribute('aria-hidden'), 'true', 'rows speak only status and name');
+    assert.equal(doc.getElementById('actions-dialog').getAttribute('aria-describedby'), 'actions-details');
+
+    key(window, doc.activeElement, '?');
+    assert.ok(doc.getElementById('help-dialog').hasAttribute('open'), 'help opens');
+    assert.equal(doc.activeElement, doc.getElementById('help-title'), 'help starts at its heading');
+    key(window, doc.body, 'Escape');
+    assert.ok(!doc.getElementById('help-dialog').hasAttribute('open'), 'Escape closes help even with focus outside it');
+    await waitFor(() => doc.activeElement === rows()[0], 'focus back on the task');
     assert.equal(rows()[0].getAttribute('aria-expanded'), 'true');
     assert.equal(rows()[1].getAttribute('aria-level'), '2');
 

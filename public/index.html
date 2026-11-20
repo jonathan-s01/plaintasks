@@ -43,7 +43,7 @@
   <div id="live" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
   <div id="alert" class="sr-only" role="alert"></div>
 
-  <dialog id="actions-dialog" aria-labelledby="actions-title">
+  <dialog id="actions-dialog" aria-labelledby="actions-title" aria-describedby="actions-details">
     <h2 id="actions-title"></h2>
     <p id="actions-details"></p>
     <div id="actions-notes"></div>
@@ -236,8 +236,8 @@
   </dialog>
 
   <dialog id="help-dialog" aria-labelledby="help-title">
-    <h2 id="help-title">Keyboard shortcuts</h2>
-    <p>Use Up and Down to move through the list. Single-letter keys work while the list has focus.</p>
+    <h2 id="help-title" tabindex="-1">Keyboard shortcuts</h2>
+    <p>Use Up and Down to move through the list. Single-letter keys work while the list has focus. Escape closes this help.</p>
     <table>
       <caption>Shortcuts</caption>
       <thead><tr><th scope="col">Key</th><th scope="col">What it does</th></tr></thead>
@@ -247,7 +247,7 @@
         <tr><th scope="row">Page Up, Page Down</th><td>Move ten items</td></tr>
         <tr><th scope="row">Right</th><td>Expand subtasks, or move to the first subtask</td></tr>
         <tr><th scope="row">Left</th><td>Collapse subtasks, or move to the parent</td></tr>
-        <tr><th scope="row">Enter</th><td>Open the actions menu for the item (or expand and collapse a group)</td></tr>
+        <tr><th scope="row">Enter</th><td>Open the actions menu for the item, which starts with its full details (or expand and collapse a group). Rows read only status and name.</td></tr>
         <tr><th scope="row">plus, x</th><td>Toggle done (a done task gets done: and today's date)</td></tr>
         <tr><th scope="row">plus, greater than, less than, percent, asterisk</th><td>When these turn a status on, a box asks for an optional note, for example who you are waiting on. Enter with nothing typed sets the status without a note. The note is saved under the task and shows when it is expanded. The letters x, w, p, i and b set the status straight away</td></tr>
         <tr><th scope="row">greater than, w</th><td>Toggle waiting on someone else</td></tr>

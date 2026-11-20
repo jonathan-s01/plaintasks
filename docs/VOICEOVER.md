@@ -29,10 +29,10 @@ Automated tests (jsdom and axe-core) cover structure and keyboard logic, but the
 - Tab from the page start: skip link, View, Search, Show completed, Keyboard shortcuts, Settings, then the list.
 
 **The list (the main test)**
-- Tab into the list. Does VoiceOver say it is a tree (or outline) and read the first item fully?
+- Tab into the list. Does VoiceOver say it is a tree (or outline) and read the first item as just its status and name (for example "Open. Call Sam.")?
   - Expected: "Open. write spec. Due Tue Dec 1, in N days. Group Project Alpha. File ..., line 2." plus level and position, e.g. "level 1, 1 of 3, expanded".
 - If VoiceOver says the tree is empty or does not read items, try **VO+Shift+Down** to interact with the tree first.
-- Up/Down arrows: one item per press, full line read each time? Does it ever read twice or skip?
+- Up/Down arrows: one item per press, status and name read each time, with no dates, file or notes? Does it ever read twice or skip?
 - Right/Left on a task with a subtask: says expanded or collapsed? Left on a subtask goes to its parent?
 - Home/End and PageUp/PageDown.
 - Rotor: does "Landmarks" and "Form controls" look sensible?
@@ -52,11 +52,11 @@ Automated tests (jsdom and axe-core) cover structure and keyboard logic, but the
 - `?` opens the shortcuts table.
 
 **Triage (initial review)**
-- `0`, then Down: each unmarked line is read with "Line N. 3 of 12 to review in this file". Enter shows the nearby lines.
+- `0`, then Down: each unmarked line is read as "Unmarked" and its text. Enter shows its line, position and the nearby lines.
 - `a` marks it as a to-do and focus lands on the next line. `s` skips. `n` jumps to the next file heading, Shift+`n` back. Shift+`r` marks the file reviewed. `f` toggles "new or changed files only"; confirm it is announced.
 
 **My list and reordering**
-- On any task press `l`: "Added to My list, position N of N". The task is then read with "On My list".
+- On any task press `l`: "Added to My list, position N of N". Enter on the task then shows "On My list" in its details.
 - `-` opens My list. Press `g` on a task: you should hear "Picked up: ... Position 2 of 5". Press Down: "Moved down to position 3 of 5" and focus stays on the same task. Press Enter: "Dropped at position 3 of 5".
 - Also try Option+Up and Option+Down without picking up. Check that this does not clash with VoiceOver's own keys; tell me if it does.
 - `u` undoes a move. The text files must not change when you reorder.
@@ -65,7 +65,7 @@ Automated tests (jsdom and axe-core) cover structure and keyboard logic, but the
 - Shift+`m` (or the Manage lists button): create "Work", rename it, delete it. Check that errors ("already exists") are read out.
 - With two or more lists, `l` on a task opens "Choose lists": a group of checkboxes (one per list) and a "new list" field. Tick two, press Save: you should hear "task is on My list and Work".
 - `[` and `]` step through lists with the list name and count announced. Shift+`l` adds or removes the task from the list you are viewing.
-- Tasks on lists read "On lists: My list, Work" in the other views.
+- Enter on a task on lists shows "On lists: My list, Work" in the other views.
 
 **External edits**
 - Edit the file in TextEdit and save. The list should refresh without losing your place. If your VoiceOver cursor was in the list, you may hear "The list was updated because a file changed".

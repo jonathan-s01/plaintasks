@@ -95,14 +95,6 @@
     return out;
   }
 
-  function spoken(it) {
-    const parts = [];
-    if (it.words.length) parts.push(`${it.words.join(', ')}.`);
-    parts.push(`${it.text}.`);
-    if (it.meta.length) parts.push(`${it.meta.join('. ')}.`);
-    return parts.join(' ');
-  }
-
   // ---------- rendering ----------
 
   function render() {
@@ -149,7 +141,12 @@
       if (listMode && it.level > 1) node.append(el('span', { class: 'meta', text: `Level ${it.level}. ` }));
       if (it.words.length) node.append(el('span', { class: 'words', text: `${it.words.join(', ')}. ` }));
       node.append(el('span', { class: 'text', text: `${it.text}. ` }));
-      if (it.meta.length) node.append(el('span', { class: 'meta', text: `${it.meta.join('. ')}.` }));
+      if (it.meta.length) {
+        const meta = el('span', { class: 'meta', text: `${it.meta.join('. ')}.` });
+        // Rows speak only status and name; the details are in the Enter dialog. Group and list rows keep their counts.
+        if (it.type !== 'group' && it.type !== 'list') meta.setAttribute('aria-hidden', 'true');
+        node.append(meta);
+      }
       tree.append(node);
     }
 
@@ -318,6 +315,12 @@
 
   function closeDialog(dlg) {
     if (dlg.open) dlg.close();
+  }
+
+  // Help starts at its heading, so VoiceOver reads it from the top instead of jumping to Close.
+  function openHelp(returnId) {
+    openDialog($('help-dialog'), returnId);
+    $('help-title').focus();
   }
 
   for (const dlg of document.querySelectorAll('dialog')) {
@@ -523,8 +526,15 @@
   }));
   $('jira-close').addEventListener('click', () => closeDialog($('jira-dialog')));
 
-  $('help-btn').addEventListener('click', () => openDialog($('help-dialog'), null));
+  $('help-btn').addEventListener('click', () => openHelp(null));
   $('help-close').addEventListener('click', () => closeDialog($('help-dialog')));
+  // Escape closes help wherever focus or the VoiceOver cursor is, not only when the dialog itself has focus.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !$('help-dialog').open) return;
+    e.preventDefault();
+    e.stopPropagation();
+    closeDialog($('help-dialog'));
+  }, true);
 
   // ---------- notes, new tasks, sorting, master file ----------
 
@@ -1420,7 +1430,7 @@
       return true;
     }
     if (e.key === '?') {
-      openDialog($('help-dialog'), st.activeId);
+      openHelp(st.activeId);
       return true;
     }
     if (e.key === 'r') {
