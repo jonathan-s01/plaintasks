@@ -133,3 +133,14 @@ test('text rewords a task and keeps its tokens; done takes the date it was done'
   assert.equal(applyOp('@ a', 'done', null, ctx), '+@ a done:2026-11-16');
   assert.equal(applyOp('@ a start:2026-01-01', 'start', '2026-02-02', ctx), '@ a start:2026-02-02');
 });
+
+test('today and later ops write and clear their tokens, and text keeps them', () => {
+  const o = (line, op, arg) => applyOp(line, op, arg, ctx);
+  assert.equal(o('@ call Sam', 'today', '2026-11-16'), '@ call Sam today:2026-11-16');
+  assert.equal(o('@ call Sam today:2026-11-13', 'today', '2026-11-16'), '@ call Sam today:2026-11-16');
+  assert.equal(o('@ call Sam today:2026-11-13', 'today', null), '@ call Sam');
+  assert.equal(o('@ call Sam', 'later', true), '@ call Sam later:');
+  assert.equal(o('@ call Sam later:', 'later', '2027-01-15'), '@ call Sam later:2027-01-15');
+  assert.equal(o('@ call Sam later:2027-01-15', 'later', false), '@ call Sam');
+  assert.equal(o('@ call Sam later: today:2026-11-16', 'text', 'call Samuel'), '@ call Samuel later: today:2026-11-16');
+});

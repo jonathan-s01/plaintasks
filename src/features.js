@@ -9,9 +9,9 @@ const cfgMod = require('./config');
 const { applyOp, OpError } = require('./ops');
 const { parseText, markerInfo } = require('./parser');
 const { insertLinesAfter, appendLines, replaceLines, moveLine, createTextFile, ConflictError } = require('./writer');
-const { parseWhen, formatDate, formatTime, toISO } = require('./dates');
+const { parseWhen, parseFriendly, formatDate, formatTime, toISO } = require('./dates');
 const { modeFor, TEXT_EXT } = require('./indexer');
-const { matcher, fileBacked } = require('./views');
+const { matcher, fileBacked, heldBack } = require('./views');
 
 const own = (s) => /^[ \t]*/.exec(s)[0];
 const clean = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
@@ -447,9 +447,12 @@ function install(App, HttpError) {
     else if (v.file) file = this.cleanListFile(v.file);
     const fileTasks = typeof v.fileTasks === 'boolean' ? v.fileTasks : undefined;
     if (fileTasks && !(file || target.file)) throw new HttpError(400, 'Choose a file for the list to keep its tasks in first.');
+    const notActionable = typeof v.notActionable === 'boolean' ? v.notActionable : undefined;
     const jira = this.cleanJiraListSettings(v, { file: file || target.file });
     this.mutateLists((lists) => {
       const l = lists.find((x) => x.id === target.id);
+      if (notActionable === true) l.notActionable = true;
+      else if (notActionable === false) delete l.notActionable;
       if (folder !== undefined) l.folder = folder;
       if (file) l.file = file;
       if (fileTasks === true) l.fileTasks = true;
@@ -468,6 +471,7 @@ function install(App, HttpError) {
         ? `shows every task in ${(this.fileEntry(this.getList(target.id).file) || {}).label}, and moving a task here moves its lines into that file`
         : 'shows only the tasks you add to it');
     }
+    if (notActionable !== undefined) bits.push(notActionable ? 'not actionable: its tasks stay out of My Day and Next actions' : 'actionable: its tasks can show in My Day and Next actions');
     if (jira.jiraSync !== undefined) bits.push(jira.jiraSync ? 'syncs with Jira' : 'does not sync with Jira');
     if (jira.jiraLabels !== undefined) bits.push(jira.jiraLabels.length ? `Jira labels ${jira.jiraLabels.join(', ')}` : 'no extra Jira labels');
     if (jira.jiraStatus !== undefined) bits.push(jira.jiraStatus ? `open tasks go to Jira as ${jira.jiraStatus}` : 'open tasks use the usual Jira status');
@@ -539,6 +543,35 @@ function install(App, HttpError) {
     const w = parseWhen(raw, this.now());
     if (!w) throw new HttpError(400, `Could not understand "${raw}" as a ${label}. Try fri, nov 20, +3d, 2026-11-20, or add a time such as fri 2pm.`, 'bad-date');
     return { arg: w.time ? `${w.iso} ${w.time}` : w.iso, text: `${formatDate(w.iso, this.now())}${w.time ? ` at ${formatTime(w.time)}` : ''}` };
+  };
+
+  /** Picks a task for My Day (today:), or takes it out again. A pick from an earlier day counts as picked until it is removed. */
+  proto.pickToday = function pickToday(t) {
+    if (t.kind !== 'task') throw new HttpError(400, 'Only tasks can be picked for My Day. Mark this line as a to-do first.');
+    if (t.flags.done) throw new HttpError(400, 'That task is done, so it cannot be picked for My Day.');
+    const today = this.now();
+    const now = toISO(today);
+    const unpick = !!t.picked && t.picked <= now;
+    const r = this.lineWrite(t, 'today', unpick ? null : now);
+    const why = unpick ? null : heldBack(this.stateData, { ...t, picked: now }, today);
+    const message = unpick ? `Taken out of My Day: ${t.text}` : `Picked for today: ${t.text}${why ? `. It will not show in My Day while ${why}` : ''}`;
+    return r ? { ok: true, message, undo: true, focusId: r.focusId } : { ok: true, message: `No change: ${t.text}` };
+  };
+
+  /** Parks a task as Later (later:, or later:DATE to bring it back on that day). value: undefined toggles; { later, revisit } sets. */
+  proto.setLater = function setLater(t, value) {
+    if (t.kind !== 'task') throw new HttpError(400, 'Only tasks can be marked Later. Mark this line as a to-do first.');
+    const v = value && typeof value === 'object' ? value : {};
+    const on = v.later === undefined ? !t.later : !!v.later;
+    const raw = clean(v.revisit);
+    let iso = null;
+    if (on && raw) {
+      iso = parseFriendly(raw.toLowerCase(), this.now());
+      if (!iso) throw new HttpError(400, `Could not understand "${raw}" as a revisit date. Try fri, nov 20, +3d or 2026-11-20.`, 'bad-date');
+    }
+    const r = this.lineWrite(t, 'later', on ? iso || true : null);
+    const message = !on ? `No longer Later: ${t.text}` : `Later${iso ? `, comes back ${formatDate(iso, this.now())}` : ''}: ${t.text}. It is hidden from My Day and Next actions${iso ? ' until then' : ''}`;
+    return r ? { ok: true, message, undo: true, focusId: r.focusId } : { ok: true, message: `No change: ${t.text}` };
   };
 
   proto.setDates = function setDates(t, value) {

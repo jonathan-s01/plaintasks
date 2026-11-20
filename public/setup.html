@@ -171,6 +171,10 @@
           <input id="js-label-ongoing" type="text" autocomplete="off" spellcheck="false">
         </div>
         <div class="field">
+          <label for="js-label-later">Label for tasks marked Later (later:), so dashboards can tell them apart</label>
+          <input id="js-label-later" type="text" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="field">
           <label for="js-label-prefix">Label prefix for label goals</label>
           <input id="js-label-prefix" type="text" autocomplete="off" spellcheck="false" aria-describedby="js-label-prefix-hint">
           <span id="js-label-prefix-hint" class="hint">A goal with jira:label on its line is not an issue: each task linked to it gets this prefix plus the goal id as a label, for example bucket-advisory-services. Labels with this prefix are managed by sync. Default bucket-.</span>

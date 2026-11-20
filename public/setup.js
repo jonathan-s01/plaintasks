@@ -228,7 +228,7 @@
     ['js-st-open', 'statuses', 'open'], ['js-st-inprogress', 'statuses', 'inProgress'], ['js-st-ongoing', 'statuses', 'ongoing'],
     ['js-st-done', 'statuses', 'done'], ['js-st-deleted', 'statuses', 'deleted'],
     ['js-res-done', 'resolutions', 'done'], ['js-res-deleted', 'resolutions', 'deleted'],
-    ['js-label-waiting', 'labels', 'waiting'], ['js-label-ongoing', 'labels', 'ongoing'],
+    ['js-label-waiting', 'labels', 'waiting'], ['js-label-ongoing', 'labels', 'ongoing'], ['js-label-later', 'labels', 'later'],
   ];
 
   function renderSyncFields(sync) {

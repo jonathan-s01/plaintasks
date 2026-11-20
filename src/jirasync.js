@@ -28,7 +28,7 @@ const SYNC_DEFAULTS = {
   statuses: { open: 'To Do', inProgress: 'In Progress', ongoing: 'In Progress', done: 'Resolved', deleted: 'Resolved' },
   transitions: {},
   resolutions: { done: 'Done', deleted: "Won't Do" },
-  labels: { waiting: 'waiting', ongoing: 'ongoing' },
+  labels: { waiting: 'waiting', ongoing: 'ongoing', later: 'later' },
   labelPrefix: 'bucket-',
   linkType: 'Relates',
 };
@@ -74,7 +74,7 @@ function cleanSync(v, prev = {}) {
   };
   for (const k of KINDS) if (s.statuses && s.statuses[k] !== undefined) out.statuses[k] = str(s.statuses[k]) || SYNC_DEFAULTS.statuses[k];
   for (const k of ['done', 'deleted']) if (s.resolutions && s.resolutions[k] !== undefined) out.resolutions[k] = str(s.resolutions[k]) || SYNC_DEFAULTS.resolutions[k];
-  for (const k of ['waiting', 'ongoing']) if (s.labels && s.labels[k] !== undefined) out.labels[k] = str(s.labels[k]).replace(/\s+/g, '-');
+  for (const k of ['waiting', 'ongoing', 'later']) if (s.labels && s.labels[k] !== undefined) out.labels[k] = str(s.labels[k]).replace(/\s+/g, '-');
   if (out.project && !/^[A-Z][A-Z0-9_]*$/.test(out.project)) throw new JiraError('The Jira project key looks like ABC');
   if (out.epic && !KEY_RE.test(out.epic)) throw new JiraError('The epic key looks like ABC-123');
   for (const k of ['taskType', 'subtaskType', 'startField', 'dueField', 'flaggedField']) {
@@ -196,7 +196,7 @@ function listForFile(lists, file) {
 }
 
 function managedLabels(cfg, ctxLists) {
-  return new Set([cfg.labels.waiting, cfg.labels.ongoing, ...ctxLists.flatMap((l) => l.jiraLabels || [])].filter(Boolean));
+  return new Set([cfg.labels.waiting, cfg.labels.ongoing, cfg.labels.later, ...ctxLists.flatMap((l) => l.jiraLabels || [])].filter(Boolean));
 }
 
 const isLabelGoal = (g) => !!(g && g.jiraLabel && g.flags && g.flags.ongoing);
@@ -211,6 +211,7 @@ function wantedLabels(cfg, t, list, goalsById) {
   const out = new Set(list.jiraLabels || []);
   if (t.flags.waitingOnOthers && cfg.labels.waiting) out.add(cfg.labels.waiting);
   if (t.flags.ongoing && cfg.labels.ongoing) out.add(cfg.labels.ongoing);
+  if (t.later && !t.flags.done && cfg.labels.later) out.add(cfg.labels.later);
   for (const l of bucketLabels(cfg, t, goalsById)) out.add(l);
   return out;
 }
@@ -368,7 +369,7 @@ function install(App, HttpError) {
         continue;
       }
       creating.add(t.id);
-      const buckets = bucketLabels(cfg, t, ctx.goalsById);
+      const buckets = [...bucketLabels(cfg, t, ctx.goalsById), ...(t.later && !t.flags.done && cfg.labels.later ? [cfg.labels.later] : [])];
       add({
         id: `create:${t.id}`,
         group: 'create',

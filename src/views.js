@@ -7,6 +7,8 @@ const VIEWS = [
   { id: 'open', title: 'All open tasks', hierarchical: true },
   { id: 'file', title: 'By file', hierarchical: true },
   { id: 'group', title: 'By group or project', hierarchical: true },
+  { id: 'myday', title: 'My Day: picked, overdue and due today', empty: 'Nothing is picked, overdue or due today. Press t on a task to pick it for today.' },
+  { id: 'next', title: 'Next actions', empty: 'No next actions. Open tasks that are not goals, not waiting, not Later and not on a not-actionable list show here.' },
   { id: 'goals', title: 'Goals and their tasks', empty: 'No goals yet. A goal is an ongoing task, marked with ~. Press y on any task to link it to one.' },
   { id: 'schedule', title: 'Schedule: overdue, today, this week', empty: 'Nothing has a due date or check-in date. Press d on a task to set one.' },
   { id: 'due', title: 'Due soon and overdue', empty: 'No open tasks are overdue or due within 7 days.' },
@@ -42,9 +44,15 @@ function matcher(q) {
   };
 }
 
-function statusWords(t) {
+/** A task parked with later: stays out of My Day and Next actions until its revisit date arrives. */
+function isParked(t, today) {
+  return !!t.later && !t.flags.done && !(t.revisit && t.revisit <= toISO(today));
+}
+
+function statusWords(t, today = new Date()) {
   const f = t.flags;
   const w = [f.done ? 'Done' : 'Open'];
+  if (t.kind === 'task' && t.later && !f.done) w.push(isParked(t, today) ? 'Later' : 'Revisit due');
   if (f.important) w.push('Important');
   if (f.waitingOnMe) w.push('Waiting on me');
   if (f.waitingOnOthers) w.push('Waiting on someone else');
@@ -77,6 +85,8 @@ function describe(t, today, level, extra = {}) {
   const checkin = !t.flags.done && checkinText(t, today);
   if (checkin) meta.push(checkin);
   if (t.start) meta.push(`Started ${formatDate(t.start, today)}`);
+  if (t.later && !t.flags.done) meta.push(isParked(t, today) ? `Later${t.revisit ? `, revisit ${formatDate(t.revisit, today)}` : ''}` : `Later, revisit date ${formatDate(t.revisit, today)} has arrived`);
+  if (t.picked && !t.flags.done) meta.push(t.picked === toISO(today) ? 'Picked for today' : t.picked < toISO(today) ? `Picked ${formatDate(t.picked, today)}, carried over to today` : `Picked for ${formatDate(t.picked, today)}`);
   if (t.flags.done && t.doneDate) meta.push(`Completed ${formatDate(t.doneDate, today)}`);
   if (extra.parentText) meta.push(`Subtask of ${extra.parentText}`);
   if (t.group && !extra.hideGroup) meta.push(`Group ${t.group}`);
@@ -89,11 +99,14 @@ function describe(t, today, level, extra = {}) {
     type: t.kind === 'unmarked' ? 'unmarked' : 'task',
     level,
     text: t.text,
-    words: t.kind === 'unmarked' ? ['Unmarked'] : statusWords(t),
+    words: t.kind === 'unmarked' ? ['Unmarked'] : (extra.words || statusWords(t, today)),
     meta,
     due: due ? { iso: due.iso, state: due.state, time: t.dueTime || null } : null,
     checkin: t.checkin ? { iso: t.checkin, time: t.checkinTime || null } : null,
     flags: t.flags,
+    later: t.kind === 'task' && t.later && !t.flags.done ? { revisit: t.revisit || null, parked: isParked(t, today) } : null,
+    picked: t.kind === 'task' ? t.picked || null : null,
+    pickedNow: t.kind === 'task' && !!t.picked && t.picked <= toISO(today),
     hasChildren: !!extra.hasChildren,
     notes: t.notes,
     jira: t.jira,
@@ -194,6 +207,50 @@ function scheduleBucket(iso, today) {
   return 'Later';
 }
 
+/** True when the task sits on a list marked "not actionable" (events, meetings, ideas). */
+function onNotActionable(state, t) {
+  return (state.lists || []).some((l) => l.notActionable && isOnList(l, t));
+}
+
+/** Why a task stays out of My Day and Next actions, or null when it can show there. */
+function heldBack(state, t, today) {
+  if (t.flags.ongoing) return 'it is an ongoing goal';
+  if (t.flags.waitingOnOthers) return 'it is waiting on someone else';
+  if (isParked(t, today)) return 'it is Later';
+  if (onNotActionable(state, t)) return 'it is on a not-actionable list';
+  return null;
+}
+
+/** Open tasks that could be worked on today: not goals, not waiting on others, not parked as Later, not on a not-actionable list. */
+function workable(index, state, today) {
+  return index.tasks.filter((t) => !t.flags.done && !t.flags.ongoing && !t.flags.waitingOnOthers && !isParked(t, today) && !onNotActionable(state, t));
+}
+
+const byFileLine = (a, b) => a.fileLabel.localeCompare(b.fileLabel) || a.lineIndex - b.lineIndex;
+const whenKey = (iso, time) => `${iso} ${time || '00:00'}`;
+
+/** My Day: tasks picked for today (and earlier picks still open), overdue, due today, and Later tasks whose revisit date has come. */
+function myDay(index, state, today) {
+  const now = toISO(today);
+  const groups = { picked: [], overdue: [], dueToday: [], revisit: [] };
+  for (const t of workable(index, state, today)) {
+    if (t.picked && t.picked <= now) groups.picked.push(t);
+    else if (t.due && t.due < now) groups.overdue.push(t);
+    else if (t.due === now) groups.dueToday.push(t);
+    else if (t.later && t.revisit && t.revisit <= now) groups.revisit.push(t);
+  }
+  groups.picked.sort((a, b) => a.picked.localeCompare(b.picked) || byFileLine(a, b));
+  groups.overdue.sort((a, b) => whenKey(a.due, a.dueTime).localeCompare(whenKey(b.due, b.dueTime)) || byFileLine(a, b));
+  groups.dueToday.sort((a, b) => whenKey(a.due, a.dueTime).localeCompare(whenKey(b.due, b.dueTime)) || byFileLine(a, b));
+  groups.revisit.sort((a, b) => a.revisit.localeCompare(b.revisit) || byFileLine(a, b));
+  return groups;
+}
+
+/** Next actions: workable tasks with no open subtasks (a task with open subtasks shows them instead). */
+function nextActions(index, state, today) {
+  return workable(index, state, today).filter((t) => !t.childIds.some((c) => { const k = index.get(c); return k && !k.flags.done; }));
+}
+
 function viewCounts(index, state, today) {
   const preds = predicates(today);
   const counts = {};
@@ -202,6 +259,8 @@ function viewCounts(index, state, today) {
     else if (v.id === 'lists') counts.lists = (state.lists || []).length;
     else if (v.id === 'schedule') counts.schedule = scheduled(index, today).length;
     else if (v.isList) counts[v.id] = listTasks(index, state, v.id.slice(5)).filter((t) => !t.flags.done).length;
+    else if (v.id === 'myday') counts.myday = Object.values(myDay(index, state, today)).reduce((n, g) => n + g.length, 0);
+    else if (v.id === 'next') counts.next = nextActions(index, state, today).length;
     else if (v.id === 'goals') counts.goals = goalIndex(index).goals.filter((g) => !g.flags.done).length;
     else if (v.id === 'completed') counts.completed = index.tasks.filter(preds.completed).length;
     else counts[v.id] = index.tasks.filter((t) => !t.flags.done && preds[v.id](t)).length;
@@ -273,6 +332,7 @@ function buildHierarchy(index, ctx, groupKeyOf) {
 function buildView(index, state, opts = {}) {
   const today = opts.today || new Date();
   let sortedBy = null;
+  let summary = '';
   const views = allViews(state);
   const wanted = opts.view === 'mylist' ? 'list:mylist' : opts.view;
   const view = views.some((v) => v.id === wanted) ? wanted : 'open';
@@ -322,6 +382,39 @@ function buildView(index, state, opts = {}) {
         const n = listTasks(index, state, l.id).filter((x) => !x.flags.done).length;
         const file = l.file ? index.files.find((x) => x.file === l.file) : null;
         items.push({ id: `list:${l.id}`, type: 'list', listId: l.id, level: 2, text: l.name, words: [], meta: [n === 1 ? '1 open item' : `${n} open items`, file ? `${fileBacked(l) ? 'Tasks kept in' : 'Notes file'} ${file.label}` : 'No notes file'], hasChildren: false, flags: {}, notes: [] });
+      }
+    }
+  } else if (view === 'myday' || view === 'next') {
+    const parentOf = (t) => (t.parentId ? index.get(t.parentId) : null);
+    const heading = (id, text, n) => ({ id: `g:${id}`, type: 'group', level: 1, text, words: [], meta: [n === 1 ? '1 task' : `${n} tasks`], hasChildren: true });
+    const row = (t, extra = {}) => {
+      const p = parentOf(t);
+      return describe(t, today, 2, { parentText: p ? p.text : null, ...extra });
+    };
+    items = [];
+    if (view === 'myday') {
+      const g = myDay(index, state, today);
+      const now = toISO(today);
+      const parts = [];
+      const section = (id, text, list, extraFor) => {
+        const here = list.filter(match);
+        if (!here.length) return;
+        parts.push(`${text} ${here.length}`);
+        items.push(heading(id, text, here.length));
+        for (const t of here) items.push(row(t, extraFor ? extraFor(t) : {}));
+      };
+      section('picked', 'Picked', g.picked, (t) => (t.picked < now ? { words: [...statusWords(t, today), 'Carried over'] } : {}));
+      section('overdue', 'Overdue', g.overdue);
+      section('dueToday', 'Due today', g.dueToday);
+      section('revisit', 'Revisit', g.revisit);
+      summary = parts.join(', ');
+    } else {
+      const here = nextActions(index, state, today).filter(match);
+      const files = [...new Set(here.map((t) => t.fileLabel))].sort((a, b) => a.localeCompare(b));
+      for (const f of files) {
+        const mine = here.filter((t) => t.fileLabel === f).sort((a, b) => (b.flags.inProgress ? 1 : 0) - (a.flags.inProgress ? 1 : 0) || a.lineIndex - b.lineIndex);
+        items.push(heading(`next:${f}`, f, mine.length));
+        for (const t of mine) items.push(row(t, { hideFile: true }));
       }
     }
   } else if (view === 'goals') {
@@ -430,7 +523,7 @@ function buildView(index, state, opts = {}) {
   }
   if (def.isList) sortedBy = (state.lists || []).find((l) => l.id === view.slice(5)).sort || 'manual';
   const count = view === 'triage' ? items.filter((i) => i.type === 'unmarked' && !i.known).length : items.filter((i) => i.type === 'task' || i.type === 'unmarked').length;
-  return { view, title: def.title, items, count: view === 'lists' ? (state.lists || []).length : count, empty: def.empty || 'No open tasks.', rev: index.rev, sortedBy, isList: !!def.isList };
+  return { view, title: def.title, items, count: view === 'lists' ? (state.lists || []).length : count, empty: def.empty || 'No open tasks.', rev: index.rev, sortedBy, summary, isList: !!def.isList };
 }
 
-module.exports = { listTasks, fileBacked, isOnList, allViews, VIEWS, buildView, viewCounts, describe, matcher, untriaged, DUE_SOON_DAYS };
+module.exports = { heldBack, listTasks, fileBacked, isOnList, allViews, VIEWS, buildView, viewCounts, describe, matcher, untriaged, DUE_SOON_DAYS };

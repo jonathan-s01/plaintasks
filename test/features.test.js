@@ -435,3 +435,81 @@ test('goals: links survive rewording the goal, ids stay unique, unknown tokens a
   await app.action({ id: view[2].id, op: 'toggleDone' });
   assert.equal(read(notes, 'a.txt').split('\n')[2], '+@ plan day goal:partner-network-2 done:2026-11-16');
 });
+
+test('My Day and Next actions: picks roll over, overdue and due today join, Later and exclusions stay out', async () => {
+  const { app } = setup({
+    'a.txt': [
+      '~ goal thing',
+      '@ picked today today:2026-11-16',
+      '@ picked old today:2026-11-13',
+      '@ overdue one due:2026-11-10',
+      '@ due now due:2026-11-16',
+      '@ parked later:',
+      '@ revisit due later:2026-11-15',
+      '@ revisit future later:2027-01-15',
+      '> waiting on x today:2026-11-16',
+      '% doing',
+      '@ parent',
+      '\t@ child one',
+      '\t+ child done',
+      '+ finished today:2026-11-16',
+      '',
+    ].join('\n'),
+    'ideas.txt': '@ idea one due:2026-11-10\n@ idea two\n',
+  });
+  const day = app.view({ view: 'myday', q: '', showCompleted: false });
+  assert.equal(day.summary, 'Picked 2, Overdue 2, Due today 1, Revisit 1');
+  assert.deepEqual(day.items.filter((i) => i.type === 'task').map((i) => i.text), ['picked old', 'picked today', 'overdue one', 'idea one', 'due now', 'revisit due']);
+  assert.ok(find(app, 'picked old', 'myday').words.includes('Carried over'));
+  assert.match(find(app, 'picked old', 'myday').meta[0], /carried over to today/);
+  assert.ok(find(app, 'revisit due', 'myday').words.includes('Revisit due'));
+  assert.deepEqual(find(app, 'parked').words, ['Open', 'Later']);
+  assert.equal(find(app, 'parked').later.parked, true);
+  assert.match(find(app, 'revisit future').meta[0], /^Later, revisit /);
+
+  const next = app.view({ view: 'next', q: '', showCompleted: false });
+  const tasks = next.items.filter((i) => i.type === 'task').map((i) => i.text);
+  assert.equal(tasks[0], 'doing');
+  assert.ok(tasks.includes('child one') && !tasks.includes('parent'), 'subtasks stand in for their parent');
+  for (const hidden of ['goal thing', 'parked', 'revisit future', 'waiting on x', 'finished', 'child done']) assert.ok(!tasks.includes(hidden), hidden);
+  assert.deepEqual(next.items.filter((i) => i.type === 'group').map((i) => i.text), ['notes/a.txt', 'notes/ideas.txt']);
+});
+
+test('t picks for today and unpicks, z toggles Later, the Later dialog op sets a revisit date, and Later tasks come back in My Day', async () => {
+  const { notes, app } = setup({ 'a.txt': '@ one\n@ two\n+ done one\n' });
+  const id = (n) => find(app, n).id;
+  let res = await app.action({ id: id('one'), op: 'today' });
+  assert.match(res.message, /picked for today/i);
+  assert.equal(read(notes, 'a.txt').split('\n')[0], '@ one today:2026-11-16');
+  assert.deepEqual(items(app, 'myday').filter((i) => i.type === 'task').map((i) => i.text), ['one']);
+  res = await app.action({ id: id('one'), op: 'today' });
+  assert.equal(read(notes, 'a.txt').split('\n')[0], '@ one');
+  await assert.rejects(() => app.action({ id: items(app, 'open', { showCompleted: true }).find((i) => i.text === 'done one').id, op: 'today' }), /done/i);
+
+  res = await app.action({ id: id('two'), op: 'later' });
+  assert.match(res.message, /Later/);
+  assert.equal(read(notes, 'a.txt').split('\n')[1], '@ two later:');
+  res = await app.action({ id: id('two'), op: 'today' });
+  assert.match(res.message, /Later/, 'picking a Later task says it is held back');
+  await app.action({ id: id('two'), op: 'later', value: { later: true, revisit: '2026-11-16' } });
+  assert.equal(read(notes, 'a.txt').split('\n')[1], '@ two today:2026-11-16 later:2026-11-16');
+  assert.deepEqual(items(app, 'myday').filter((i) => i.type === 'task').map((i) => i.text), ['two']);
+  await app.action({ id: id('two'), op: 'later', value: { later: false } });
+  assert.equal(read(notes, 'a.txt').split('\n')[1], '@ two today:2026-11-16');
+  await assert.rejects(() => app.action({ id: id('two'), op: 'later', value: { later: true, revisit: 'banana' } }), /date/i);
+});
+
+test('Not actionable lists keep their tasks out of My Day and Next, and still show in the open view', async () => {
+  const { notes, app } = setup({ 'a.txt': '@ real work due:2026-11-10\n', 'meet.txt': '@ team lunch due:2026-11-10\n' });
+  const file = path.join(notes, 'meet.txt');
+  const list = (await app.action({ op: 'listCreate', value: { name: 'Meetings', file, fileTasks: true, notActionable: true } })).listId;
+  assert.equal(app.summary().lists.find((l) => l.id === list).notActionable, true);
+  assert.deepEqual(items(app, 'myday').filter((i) => i.type === 'task').map((i) => i.text), ['real work']);
+  assert.deepEqual(items(app, 'next').filter((i) => i.type === 'task').map((i) => i.text), ['real work']);
+  assert.ok(find(app, 'team lunch'));
+  const res = await app.action({ op: 'listEdit', list, value: { notActionable: false } });
+  assert.match(res.message, /actionable/i);
+  assert.deepEqual(items(app, 'next').filter((i) => i.type === 'task').map((i) => i.text).sort(), ['real work', 'team lunch']);
+  await app.action({ op: 'listEdit', list, value: { notActionable: true } });
+  assert.equal(items(app, 'myday').filter((i) => i.type === 'task').length, 1);
+});

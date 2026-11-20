@@ -110,6 +110,7 @@ function loadState(dir) {
       file: typeof l.file === 'string' ? l.file : '',
       sort: SORT_MODES.includes(l.sort) ? l.sort : 'manual',
       ...(l.fileTasks === true ? { fileTasks: true } : {}),
+      ...(l.notActionable === true ? { notActionable: true } : {}),
       ...(l.jiraSync === true ? { jiraSync: true } : {}),
       ...(Array.isArray(l.jiraLabels) && l.jiraLabels.length ? { jiraLabels: clean(l.jiraLabels) } : {}),
       ...(typeof l.jiraStatus === 'string' && l.jiraStatus ? { jiraStatus: l.jiraStatus } : {}),

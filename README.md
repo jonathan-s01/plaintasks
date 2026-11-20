@@ -48,6 +48,8 @@ Website relaunch
 - **Dates.** `due:2026-11-20` is the stored form. When you set a date in the app, friendly input such as `fri`, `nov 20`, `+3d` or `in 2 weeks` is converted to that form. Completing a task adds `+` and `done:YYYY-MM-DD`.
 - **Jira link.** `jira:ABC-123` ties a task to an issue.
 - **Start date.** `start:2026-11-02` records when work began. It is hidden from the displayed text and spoken as "Started …". Sync with Jira sends it to the start-date field.
+- **Later.** `later:` parks a task: it is hidden from My Day and Next actions but still shows in the file, list and All open views, spoken as "Later". `later:2027-01-15` adds a revisit date; from that day the task shows in My Day again ("Revisit due"). A bare `later:` only counts at the end of the line or before another token, so "do it later: after lunch" stays text. Sync with Jira labels Later tasks `later` (a setting).
+- **Picked for today.** `today:2026-11-16` is written by `t`. It is hidden from the text. A pick still open on a later day carries over to My Day until you take it out. It is never sent to Jira.
 - **Goal link.** `goal:partner-network` ties a task to a goal (see Goals below). A task can carry several.
 - **Label goal.** `jira:label` on a goal's line makes it a Jira label (bucket) instead of an issue; see Sync with Jira.
 - **Per-file legends.** A file can define its own symbols with lines like `+ = done`, `nothing = to do`, or `• and indenting = subtasks`. Lines such as `nothing = to do` are recognised and skipped (never shown as tasks) but do not change how unmarked lines are treated; that is decided only by the folder and per-file settings. Legend lines are not tasks.
@@ -80,7 +82,14 @@ The full design, including assumptions, is in [docs/SPEC-lists-notes.md](docs/SP
 
 ## Views
 
-All open, by file, by group or project, goals and their tasks, schedule (overdue, today, this week, later), due soon and overdue, waiting on me, waiting on others, important, in progress, completed, triage, All lists, and each list. Completed tasks are hidden everywhere except the Completed view; `c` shows them in the others. Search filters the current view.
+All open, by file, by group or project, goals and their tasks, My Day, Next actions, schedule (overdue, today, this week, later), due soon and overdue, waiting on me, waiting on others, important, in progress, completed, triage, All lists, and each list. Completed tasks are hidden everywhere except the Completed view; `c` shows them in the others. Search filters the current view.
+
+## My Day and Next actions
+
+- **My Day** (Shift+`t`) lists, in groups with counts in the heading ("Picked 2, Overdue 1, Due today 1"): tasks you picked with `t` today, picks from earlier days that are still open (spoken "Carried over"), overdue tasks, tasks due today, and Later tasks whose revisit date has arrived. Left out: goals (`~`), tasks waiting on others (`>`), done and deleted tasks, tasks that are Later, and tasks on a not-actionable list. Waiting on me (`<`) stays.
+- **Next actions** (Shift+`a`) lists open tasks with no open subtasks, grouped by file, in progress first. A task with open subtasks is replaced by those subtasks. Same exclusions as My Day.
+- **Not actionable lists.** Manage lists and the New list form have "Not actionable (events, meetings, ideas)", off by default. Tasks on such a list (any list with that setting that holds the task) stay out of My Day and Next actions but still show everywhere else. Tick it on lists such as Ideas, One-off meetings, Recurring meetings and Conferences and events; nothing is guessed from list names.
+- `t` picks or unpicks the task, `z` toggles Later, Shift+`z` opens a Later dialog with a checkbox and a revisit date field.
 
 ## Keyboard
 
@@ -113,6 +122,9 @@ Press `?` in the app for the list (Escape closes it). Every command is also writ
 | `l` / Shift+`l` | choose lists for the task / quick add or remove on the current or last-used list |
 | `[` / `]`, Shift+`m` | previous / next list, manage lists |
 | Shift+`g` | Goals view |
+| Shift+`t` / Shift+`a` | My Day view / Next actions view |
+| `t` | pick the task for today, or take it out of My Day |
+| `z` / Shift+`z` | toggle Later / Later with a revisit date |
 | `g`, Option+Up / Down | in a list: pick up and reorder with arrows, or move one place |
 | `1`–`9`, `0`, `-`, `=` | switch view (1 open, 2 file, 3 group, 4 schedule, 5 waiting on me, 6 waiting on others, 7 important, 8 in progress, 9 completed, 0 triage, minus My list, equals All lists; other lists via `[` `]` or the View menu) |
 | `v` | jump to the view menu |
@@ -159,6 +171,7 @@ Sync runs only when you press Shift+`j` or the Sync with Jira button. It covers 
   A Jira status in the same category counts as in sync (In Review matches `%`).
 - **Goals.** `goal:` links become Jira "Relates" links between the task's issue and the goal's issue.
 - **Label goals (buckets).** Put `jira:label` on a goal's line, for example `~ Advisory services goal:advisory-services jira:label`. That goal is never created, updated or closed in Jira and gets no Relates links. Instead every synced task that links to it directly (open or done) gets the label prefix plus the goal id, `bucket-advisory-services` by default; unlinking removes it. Labels starting with the prefix are managed by sync (one no longer wanted is removed even if added in Jira); other labels are left alone. Label updates are ticked even on issues plaintasks didn't create. Tasks indented under a label goal sync as main tasks. The prefix is a setting (default `bucket-`). The token is hidden from the text, and the goal's details say "Jira label goal".
+- **Later.** Open tasks with `later:` get the label `later` (setting `labels.later`, default `later`), also on creation. Removing `later:` removes it, as a ticked Labels update. Status is unchanged. `today:` is never sent.
 - **Per list:** extra labels, and an optional status for open tasks.
 - **Started notes.** If tasks have `& Started 2026-11-02` notes, the dialog offers a one-time button that turns them into `start:` tokens on the task line (all indexed files; `u` undoes).
 - **Undo.** `u` undoes the file changes from one sync. Changes already sent to Jira stay.

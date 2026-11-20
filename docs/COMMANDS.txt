@@ -31,6 +31,8 @@ Pressing a view key says the view name straight away, before the first item is r
 Minus: My list.
 Equals: all lists.
 Shift and g: Goals, each goal followed by its linked tasks.
+Shift and t: My Day. Tasks you picked for today, earlier picks still open (spoken as carried over), overdue tasks, tasks due today, and Later tasks whose revisit date has come. Goals, waiting on others, Later tasks and tasks on not-actionable lists are left out. The status line gives the counts.
+Shift and a: Next actions. Open tasks with no open subtasks, grouped by file, in progress first. A task with subtasks shows its subtasks instead. Same exclusions as My Day.
 Left bracket and right bracket: previous or next list.
 v: jump to the view menu.
 c or h: show or hide completed tasks.
@@ -56,6 +58,9 @@ Tab: make the task a subtask of the task above it, with its notes and subtasks.
 Shift and Tab: move a subtask up one level.
 d: set or clear the due date and the check-in date. A time works too, for example fri 2pm.
 s or ampersand: add a note under the task, after its other notes in the file.
+t: pick the task for today, or take it out of My Day. A pick still open tomorrow carries over. Written as today: and a date.
+z: toggle Later. Later tasks stay out of My Day and Next actions but still show in other views, spoken as Later. Written as later: on the line.
+Shift and z: Later with a revisit date. When the date arrives the task shows in My Day. Written as later: and a date.
 y: link the task to goals. A checkbox list of goals opens: Up and Down move, Space ticks or unticks, Enter saves.
 o: open the task's file in your text editor.
 u: undo the last change.
@@ -74,7 +79,7 @@ LISTS
 l: choose which lists the task is on. Up and Down move, Space ticks a list, Enter saves. Ticking a list that keeps its tasks in another file moves the task there, with its notes and subtasks.
 Shift and l: add the task to the list you are viewing or used last, or take it off.
 Option and n: make a new list.
-Shift and m: manage lists: create, rename, delete, folders, notes files, and Jira sync settings per list.
+Shift and m: manage lists: create, rename, delete, folders, notes files, Jira sync settings per list, and Not actionable (events, meetings, ideas), which keeps a list's tasks out of My Day and Next actions.
 Shift and o: sort a list by manual order, due date, check-in date, date added, type or name.
 g: pick up the item to reorder it, in a list with manual order. Then Up, Down, Home and End move it, and Enter or Escape drops it.
 Option and Up arrow, Option and Down arrow: move the item up or down one place in a list with manual order.

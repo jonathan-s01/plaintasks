@@ -101,6 +101,16 @@ When `+ > < % *` turn a status on (tasks in any view, unmarked lines in triage),
 - **Schedule view**: overdue, today, this week, later, grouped, including check-ins.
 - The existing "Due soon and overdue" view remains.
 
+## Later, My Day and Next actions
+
+- Tokens: `later:` (bare) or `later:YYYY-MM-DD` (revisit date), `today:YYYY-MM-DD`. Both are hidden from text (`text` keeps them). Bare `later:` is a token only at end of line or directly before another known token (`due:`, `done:`, `checkin:`, `start:`, `today:`, `jira:`, `goal:`), so prose like "later: after lunch" is untouched.
+- Keys: `t` op `today` (picks for today, or unpicks when already picked for today or earlier; refused on done tasks), `z` op `later` (toggle), Shift+`z` dialog `later` with `{ later, revisit }` (revisit parsed like due dates). Done tasks keep their tokens.
+- A task is parked while `later` is set, it is not done, and there is no revisit date or the date is still in the future. Parked tasks are marked "Later" (spoken in the row), and details say "Later" plus "revisit <date>".
+- Workable = open, not `~`, not `>`, not parked, not on a not-actionable list. List setting `notActionable` (Manage lists, New list form; persisted in state.json; default off) excludes tasks that `isOnList` for such a list.
+- My Day (Shift+`t`, view `myday`): groups Picked (picked ≤ today; earlier picks roll over at view time, nothing is rewritten), Overdue, Due today, Revisit (revisit ≤ today). A task appears once, in the first group that matches. The list status adds a summary such as "Picked 3, Overdue 1".
+- Next actions (Shift+`a`, view `next`): workable tasks with no open child, grouped by file, `%` first. A parent with any open child is hidden, even if that child is itself excluded.
+- Jira: Later open tasks want label `labels.later` (default `later`), treated like the other managed labels; `today:` is never pushed.
+
 ## Showing completed
 
 `c` or `h` shows or hides completed tasks in the current view.

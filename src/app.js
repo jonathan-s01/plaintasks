@@ -80,7 +80,7 @@ class App {
     return {
       rev: this.index.rev,
       views: allViews(this.stateData).map((v) => ({ id: v.id, title: v.title, count: counts[v.id] })),
-      lists: this.stateData.lists.map((l) => ({ id: l.id, name: l.name, count: counts[`list:${l.id}`], folder: l.folder, sort: l.sort, file: l.file || '', fileTasks: fileBacked(l), jiraSync: !!l.jiraSync, jiraLabels: l.jiraLabels || [], jiraStatus: l.jiraStatus || '', notesFile: l.file ? (this.fileEntry(l.file) || {}).label || null : null })),
+      lists: this.stateData.lists.map((l) => ({ id: l.id, name: l.name, count: counts[`list:${l.id}`], folder: l.folder, sort: l.sort, file: l.file || '', fileTasks: fileBacked(l), notActionable: !!l.notActionable, jiraSync: !!l.jiraSync, jiraLabels: l.jiraLabels || [], jiraStatus: l.jiraStatus || '', notesFile: l.file ? (this.fileEntry(l.file) || {}).label || null : null })),
       lastList: this.stateData.lastList,
       folders: this.config.folders.length,
       files: this.index.files.length,
@@ -309,6 +309,10 @@ class App {
         return this.reindent(t, 'out');
       case 'listAdd':
         return this.listAdd(t, list);
+      case 'today':
+        return this.pickToday(t);
+      case 'later':
+        return this.setLater(t, value);
       case 'goalSet':
         return this.goalSet(t, value);
       case 'jira': {
@@ -524,6 +528,7 @@ class App {
         if (!entry.file) throw new HttpError(400, 'Choose a file for the list to keep its tasks in.');
         entry.fileTasks = true;
       }
+      if (v.notActionable === true) entry.notActionable = true;
       Object.assign(entry, this.cleanJiraListSettings(v, entry));
       this.mutateLists((lists) => lists.push(entry), name);
       const f = entry.file ? this.fileEntry(entry.file) : null;

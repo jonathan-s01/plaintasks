@@ -122,7 +122,7 @@ const VALUE = [
   `\\d{1,2}(?:st|nd|rd|th)?\\s+${WORD}(?:\\s+\\d{4})?(?![\\w:-])`,
   '[A-Za-z]+(?![\\w-])',
 ].join('|');
-const TOKEN_RE = new RegExp(`(^|\\s)(due|done|checkin|start):(${VALUE})(?:\\s+(\\d{1,2}:\\d{2}))?`, 'gi');
+const TOKEN_RE = new RegExp(`(^|\\s)(due|done|checkin|start|today|later):(${VALUE})(?:\\s+(\\d{1,2}:\\d{2}))?`, 'gi');
 
 function validTime(t) {
   const m = /^(\d{1,2}):(\d{2})$/.exec(t || '');

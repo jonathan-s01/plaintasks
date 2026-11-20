@@ -164,7 +164,7 @@
     const n = st.model.count;
     const noun = st.model.view === 'triage' ? (n === 1 ? 'unmarked line' : 'unmarked lines') : st.model.view === 'lists' ? (n === 1 ? 'list' : 'lists') : n === 1 ? 'task' : 'tasks';
     const sorted = st.model.isList && st.model.sortedBy && st.model.sortedBy !== 'manual' ? `, sorted by ${SORT_LABELS[st.model.sortedBy] || st.model.sortedBy}` : '';
-    $('list-status').textContent = `${n} ${noun}${sorted}${st.q ? ` matching "${st.q}"` : ''}${st.showCompleted && st.model.view !== 'completed' ? ', including completed' : ''}${st.changedOnly && st.model.view === 'triage' ? ', new or changed files only' : ''}.`;
+    $('list-status').textContent = `${n} ${noun}${st.model.summary ? `, ${st.model.summary}` : ''}${sorted}${st.q ? ` matching "${st.q}"` : ''}${st.showCompleted && st.model.view !== 'completed' ? ', including completed' : ''}${st.changedOnly && st.model.view === 'triage' ? ', new or changed files only' : ''}.`;
   }
 
   function nodeFor(id) {
@@ -414,6 +414,11 @@
     }
     add(item.flags.done ? 'Reopen (plus)' : 'Mark done (plus)', () => act('toggleDone'));
     for (const [flag, on, off, key] of FLAG_LABELS) add(`${item.flags[flag] ? off : on} (${key})`, () => act(flag));
+    if (item.type === 'task') {
+      add(item.pickedNow ? 'Take out of My Day (t)' : 'Pick for today (t)', () => act('today'));
+      add(item.later ? 'No longer Later (z)' : 'Later: keep out of My Day and Next actions (z)', () => act('later'));
+      add('Later with a revisit date (shift and z)', () => openLater());
+    }
     add('Due date and check-in (d)', () => openDue());
     add('Open source file (o)', () => act('open'));
     add('Jira (j)', () => openJira());
@@ -469,6 +474,34 @@
     }
   });
   $('due-cancel').addEventListener('click', () => closeDialog($('due-dialog')));
+
+  function openLater() {
+    const item = currentItem();
+    if (!item || item.type !== 'task') return;
+    $('later-task').textContent = item.text;
+    $('later-on').checked = true;
+    $('later-revisit').value = (item.later && item.later.revisit) || '';
+    $('later-error').textContent = '';
+    openDialog($('later-dialog'), item.id);
+    $('later-revisit').focus();
+    $('later-revisit').select();
+  }
+
+  $('later-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const item = currentItem();
+    const idx = activeIndex();
+    try {
+      const res = await api('/api/action', { method: 'POST', body: { id: item.id, op: 'later', value: { later: $('later-on').checked, revisit: $('later-revisit').value } } });
+      closeDialog($('later-dialog'));
+      announce(res.message);
+      await loadView({ focusId: res.focusId, keepIndex: idx });
+    } catch (err) {
+      $('later-error').textContent = err.message;
+      $('later-revisit').focus();
+    }
+  });
+  $('later-cancel').addEventListener('click', () => closeDialog($('later-dialog')));
 
   async function openJira() {
     const item = currentItem();
@@ -989,6 +1022,7 @@
     return where && sub ? `${where}/${sub}` : where;
   };
 
+  const NOT_ACTIONABLE_LABEL = 'Not actionable (events, meetings, ideas): keep this list\'s tasks out of My Day and Next actions';
   const SYNC_LABEL = 'Sync to Jira: Sync with Jira (shift and j) includes the tasks in this file';
   const FILE_TASKS_LABEL = 'Keep tasks in this file: the list shows every task in it, putting a task on the list moves its lines here, and reordering the list reorders the file';
   let watchedFiles = [];
@@ -1012,16 +1046,18 @@
       const fileSel = fileSelect(`mfile-${i}`, l.file);
       const tasksCb = el('input', { type: 'checkbox', id: `mt-${i}`, checked: !!l.fileTasks });
       const syncCb = el('input', { type: 'checkbox', id: `mj-${i}`, checked: !!l.jiraSync });
+      const actCb = el('input', { type: 'checkbox', id: `mna-${i}`, checked: !!l.notActionable });
       const labelsIn = el('input', { type: 'text', id: `mjl-${i}`, value: (l.jiraLabels || []).join(', '), autocomplete: 'off', spellcheck: 'false' });
       const statusIn = el('input', { type: 'text', id: `mjs-${i}`, value: l.jiraStatus || '', autocomplete: 'off', spellcheck: 'false' });
       fs.append(
         el('div', { class: 'row' }, el('label', { for: `mfile-${i}`, text: `File for ${l.name}` }), fileSel),
         el('div', { class: 'row' }, tasksCb, el('label', { for: `mt-${i}`, text: FILE_TASKS_LABEL })),
+        el('div', { class: 'row' }, actCb, el('label', { for: `mna-${i}`, text: NOT_ACTIONABLE_LABEL })),
         el('div', { class: 'row' }, syncCb, el('label', { for: `mj-${i}`, text: SYNC_LABEL })),
         el('div', { class: 'row' }, el('label', { for: `mjl-${i}`, text: `Extra Jira labels for ${l.name} (optional, separated by commas)` }), labelsIn),
         el('div', { class: 'row' }, el('label', { for: `mjs-${i}`, text: `Jira status for open tasks in ${l.name} (optional, for example In Discovery)` }), statusIn),
         el('button', { type: 'button', text: `Save file settings for ${l.name}`, onclick: () => {
-          const value = { fileTasks: tasksCb.checked, jiraSync: syncCb.checked, jiraLabels: labelsIn.value, jiraStatus: statusIn.value };
+          const value = { fileTasks: tasksCb.checked, notActionable: actCb.checked, jiraSync: syncCb.checked, jiraLabels: labelsIn.value, jiraStatus: statusIn.value };
           if (fileSel.value && fileSel.value !== l.file) value.file = fileSel.value;
           return manageCall({ op: 'listEdit', list: l.id, value }, `#mt-${i}`);
         } }));
@@ -1046,6 +1082,7 @@
       watchedFiles = cfg.files || [];
       $('manage-file').replaceChildren(...fileSelect('x', '').children);
       $('manage-filetasks').checked = false;
+      $('manage-notactionable').checked = false;
     } catch (err) {
       alertMessage(err.message);
     }
@@ -1062,6 +1099,7 @@
     if ($('manage-makefile').checked) value.notesFolder = notesPlace();
     else if ($('manage-file').value) value.file = $('manage-file').value;
     if ($('manage-filetasks').checked) value.fileTasks = true;
+    if ($('manage-notactionable').checked) value.notActionable = true;
     if ($('manage-jira').checked) {
       value.jiraSync = true;
       value.jiraLabels = $('manage-jira-labels').value;
@@ -1073,6 +1111,7 @@
       $('manage-folder').value = '';
       $('manage-file').value = '';
       $('manage-filetasks').checked = false;
+      $('manage-notactionable').checked = false;
       $('manage-jira').checked = false;
       $('manage-jira-labels').value = '';
       $('manage-jira-status').value = '';
@@ -1180,6 +1219,9 @@
     d: () => openDue(),
     j: () => openJira(),
     y: () => openGoals(),
+    t: () => act('today'),
+    z: () => act('later'),
+    Z: () => openLater(),
     o: () => act('open'),
     u: () => undo(),
     a: () => markTodo(),
@@ -1429,6 +1471,14 @@
     }
     if (e.key === 'G') {
       switchView('goals');
+      return true;
+    }
+    if (e.key === 'T') {
+      switchView('myday');
+      return true;
+    }
+    if (e.key === 'A') {
+      switchView('next');
       return true;
     }
     if (e.key === 'J') {

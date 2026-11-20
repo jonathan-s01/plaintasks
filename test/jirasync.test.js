@@ -300,3 +300,28 @@ test('jira sync: label goals (jira:label) are never issues; linked tasks get pre
   const plan2 = await app.syncPreview();
   assert.deepEqual(plan2.items.find((i) => i.id === 'A11Y-2591:labels').to, { add: [], remove: ['bucket-advisory-services'] });
 });
+
+test('jira sync: Later tasks get the later label, removing later: removes it, today: is never pushed', async () => {
+  const { notes, app, jira } = setup({
+    'a.txt': '@ Park me later: today:2026-11-16\n@ Linked one jira:A11Y-7 later:2027-01-15\n+ Finished later: jira:A11Y-8 done:2026-11-10\n',
+  });
+  jira.add('A11Y-7', { summary: 'Linked one', labels: ['keep'] });
+  jira.add('A11Y-8', { summary: 'Finished', labels: [] });
+  await syncedList(app, 'a.txt');
+  const plan = await app.syncPreview();
+  const create = plan.items.find((i) => i.group === 'create' && i.task === 'Park me');
+  assert.match(create.label, /, label later$/);
+  const upd = plan.items.find((i) => i.id === 'A11Y-7:labels');
+  assert.deepEqual([upd.to, upd.checked], [{ add: ['later'], remove: [] }, true]);
+  assert.ok(!plan.items.some((i) => i.id === 'A11Y-8:labels'), 'done tasks are not labelled Later');
+  const res = await app.syncApply({ choices: choose(plan) });
+  assert.ok(res.results.every((r) => r.ok), JSON.stringify(res.results));
+  const made = jira.calls.filter((c) => c.method === 'POST' && c.path === '/issue').map((c) => c.body);
+  assert.deepEqual(made[0].fields.labels, ['later']);
+  assert.ok(!JSON.stringify(jira.calls).includes('today'), 'today: is never sent');
+  assert.deepEqual(jira.issues.get('A11Y-7').fields.labels, ['keep', 'later']);
+
+  fs.writeFileSync(path.join(notes, 'a.txt'), read(notes, 'a.txt').replace(' later:2027-01-15', ''));
+  const plan2 = await app.syncPreview();
+  assert.deepEqual(plan2.items.find((i) => i.id === 'A11Y-7:labels').to, { add: [], remove: ['later'] });
+});

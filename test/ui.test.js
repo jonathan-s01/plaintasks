@@ -475,3 +475,63 @@ test('Jira sync: shift and j opens a grouped preview that passes axe; Apply send
     env.close();
   }
 });
+
+test('t picks for today, z toggles Later, shift+z opens the Later dialog (passes axe), shift+t and shift+a open the new views', async () => {
+  const env = await boot({ 'a.txt': '@ one\n@ two\n' });
+  try {
+    const { window } = await openPage(env);
+    const doc = window.document;
+    const rows = () => [...doc.getElementById('tree').querySelectorAll('[role=option]')];
+    const live = () => doc.getElementById('live').textContent;
+    await waitFor(() => rows().length === 2, 'items');
+    key(window, doc.activeElement, 't');
+    await waitFor(() => /picked for today/i.test(live()), 'pick announced');
+    assert.match(fs.readFileSync(path.join(env.notes, 'a.txt'), 'utf8'), /^@ one today:2026-11-16\n/);
+    key(window, doc.activeElement, 'z');
+    await waitFor(() => /Later/.test(live()), 'later announced');
+    await waitFor(() => /Later/.test(rows()[0].textContent), 'row says Later');
+
+    key(window, doc.activeElement, 'Z');
+    await waitFor(() => doc.getElementById('later-dialog').hasAttribute('open'), 'later dialog');
+    assert.equal(doc.activeElement, doc.getElementById('later-revisit'));
+    window.eval(axe.source);
+    const results = await window.axe.run(doc.getElementById('later-dialog'), { rules: { 'color-contrast': { enabled: false }, region: { enabled: false } } });
+    assert.equal(results.violations.length, 0, results.violations.map((v) => v.id).join());
+    doc.getElementById('later-revisit').value = '2026-11-20';
+    doc.getElementById('later-form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+    await waitFor(() => /comes back/i.test(live()), 'revisit announced');
+    assert.match(fs.readFileSync(path.join(env.notes, 'a.txt'), 'utf8'), /^@ one today:2026-11-16 later:2026-11-20\n/);
+
+    key(window, doc.activeElement, 'T');
+    await waitFor(() => /My Day/.test(doc.getElementById('list-heading').textContent), 'my day');
+    key(window, doc.activeElement, 'A');
+    await waitFor(() => /Next actions/.test(doc.getElementById('list-heading').textContent), 'next actions');
+    window.close();
+  } finally {
+    env.close();
+  }
+});
+
+test('Manage lists and New list have a Not actionable checkbox that saves', async () => {
+  const env = await boot({ 'a.txt': '@ one\n' });
+  try {
+    env.app.action({ op: 'listCreate', value: 'Ideas' });
+    const { window } = await openPage(env);
+    const doc = window.document;
+    await waitFor(() => doc.querySelector('[role=option]'), 'items');
+    key(window, doc.activeElement, 'M');
+    await waitFor(() => doc.getElementById('manage-dialog').hasAttribute('open'), 'manage opens');
+    assert.match(doc.querySelector('label[for=manage-notactionable]').textContent, /^Not actionable/);
+    const cb = await waitFor(() => doc.getElementById('mna-1'), 'list checkbox');
+    assert.match(doc.querySelector('label[for=mna-1]').textContent, /^Not actionable/);
+    cb.checked = true;
+    [...cb.closest('li').querySelectorAll('button')].find((b) => /^Save file settings for Ideas/.test(b.textContent)).click();
+    await waitFor(() => env.app.summary().lists.some((l) => l.notActionable), 'saved');
+    window.eval(axe.source);
+    const results = await window.axe.run(doc.getElementById('manage-dialog'), { rules: { 'color-contrast': { enabled: false }, region: { enabled: false } } });
+    assert.equal(results.violations.length, 0, results.violations.map((v) => v.id).join());
+    window.close();
+  } finally {
+    env.close();
+  }
+});

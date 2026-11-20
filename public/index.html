@@ -98,6 +98,7 @@
       <label for="manage-file">Or use an existing file (optional)</label>
       <select id="manage-file"></select>
       <div class="row"><input type="checkbox" id="manage-filetasks"><label for="manage-filetasks">Keep tasks in this file: the list shows every task in it, putting a task on the list moves its lines here, and reordering the list reorders the file</label></div>
+      <div class="row"><input type="checkbox" id="manage-notactionable"><label for="manage-notactionable">Not actionable (events, meetings, ideas): keep this list's tasks out of My Day and Next actions</label></div>
       <div class="row"><input type="checkbox" id="manage-jira"><label for="manage-jira">Sync to Jira (needs a file): Sync with Jira includes the tasks in this file</label></div>
       <div class="row"><label for="manage-jira-labels">Extra Jira labels (optional, separated by commas)</label><input type="text" id="manage-jira-labels" autocomplete="off" spellcheck="false"></div>
       <div class="row"><label for="manage-jira-status">Jira status for open tasks (optional, for example In Discovery)</label><input type="text" id="manage-jira-status" autocomplete="off" spellcheck="false"></div>
@@ -118,6 +119,19 @@
       <p id="due-hint" class="hint">Examples: fri, nov 20, +3d, 2026-11-20. Add a time after it: fri 2pm, nov 20 14:30. Leave a field empty to clear it.</p>
       <p id="due-error" class="error" role="alert"></p>
       <p><button type="submit" id="due-save">Save dates</button> <button type="button" id="due-cancel">Cancel</button></p>
+    </form>
+  </dialog>
+
+  <dialog id="later-dialog" aria-labelledby="later-title">
+    <form method="dialog" id="later-form">
+      <h2 id="later-title">Later</h2>
+      <p id="later-task"></p>
+      <div class="row"><input type="checkbox" id="later-on"><label for="later-on">Later: keep this task out of My Day and Next actions</label></div>
+      <label for="later-revisit">Revisit date (optional)</label>
+      <input id="later-revisit" type="text" autocomplete="off" spellcheck="false" aria-describedby="later-hint">
+      <p id="later-hint" class="hint">When this date arrives the task shows in My Day again. Examples: fri, nov 20, +3d, 2026-11-20. Leave it empty for no date. Untick Later to bring the task back now.</p>
+      <p id="later-error" class="error" role="alert"></p>
+      <p><button type="submit" id="later-save">Save</button> <button type="button" id="later-cancel">Cancel</button></p>
     </form>
   </dialog>
 
@@ -258,6 +272,9 @@
         <tr><th scope="row">Tab</th><td>Make the task a subtask of the task above it, with its notes and subtasks. On an unmarked line it also marks it as a to-do, and if other lines sit between them it moves the line to the end of that task's block</td></tr>
         <tr><th scope="row">Shift and Tab</th><td>Move a subtask up a level. A bullet subtask at its parent's indentation loses its bullet instead. Tasks right after it at the old level become its subtasks</td></tr>
         <tr><th scope="row">d</th><td>Set or clear the due date and the check-in date. A time works too: fri 2pm</td></tr>
+        <tr><th scope="row">t</th><td>Pick the task for today, or take it out of My Day. A pick that is still open tomorrow carries over until you take it out. Written on the line as today: and a date</td></tr>
+        <tr><th scope="row">z</th><td>Toggle Later: park the task so it stays out of My Day and Next actions. Written as later: on the line. It still shows in the other views, marked Later</td></tr>
+        <tr><th scope="row">shift and z</th><td>Later with a revisit date. The task shows in My Day when the date arrives. Written as later: and a date</td></tr>
         <tr><th scope="row">j</th><td>Jira: link, status, create</td></tr>
         <tr><th scope="row">shift and j</th><td>Sync with Jira: shows every change in both directions for the lists that sync to Jira, grouped as conflicts, new issues, updates to Jira and updates to files. Tick what to do, then Apply. Nothing is sent or written before that</td></tr>
         <tr><th scope="row">y</th><td>Link the task to goals (ongoing tasks, marked with ~). A goal with jira:label on its line is a label goal: Sync with Jira tags its linked tasks with a label such as bucket-advisory-services instead of making the goal an issue</td></tr>
@@ -281,6 +298,8 @@
         <tr><th scope="row">minus</th><td>Open My list</td></tr>
         <tr><th scope="row">equals</th><td>Open All lists</td></tr>
         <tr><th scope="row">shift and g</th><td>Open Goals: each goal with its linked tasks</td></tr>
+        <tr><th scope="row">shift and t</th><td>Open My Day: tasks you picked for today (and earlier picks still open), overdue tasks, tasks due today, and Later tasks whose revisit date has come. Goals, tasks waiting on others, Later tasks and tasks on not-actionable lists are left out</td></tr>
+        <tr><th scope="row">shift and a</th><td>Open Next actions: open tasks with no open subtasks, grouped by file, in progress first. A task with subtasks shows its subtasks instead. Same exclusions as My Day</td></tr>
         <tr><th scope="row">a or @</th><td>Triage: mark the unmarked line as a to-do. The symbol keys also work on unmarked lines</td></tr>
         <tr><th scope="row">f</th><td>Triage: show only files not yet reviewed or changed since review</td></tr>
         <tr><th scope="row">shift and r</th><td>Triage: mark the whole file as reviewed</td></tr>

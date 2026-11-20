@@ -160,3 +160,13 @@ test('start: is read and hidden like due:', () => {
   assert.equal(t.start, '2026-11-02');
   assert.equal(t.due, '2026-12-01');
 });
+
+test('later: and today: tokens are hidden; bare later: only counts at the end or before another token', () => {
+  const t = (line) => tasks(parse(`${line}\n`))[0];
+  const a = t('@ call Sam later: due:2026-11-20');
+  assert.deepEqual([a.text, a.later, a.revisit || null, a.due], ['call Sam', true, null, '2026-11-20']);
+  const b = t('@ call Sam later:2027-01-15 today:2026-11-16');
+  assert.deepEqual([b.text, b.later, b.revisit, b.picked], ['call Sam', true, '2027-01-15', '2026-11-16']);
+  const c = t('@ do it later: after lunch');
+  assert.deepEqual([c.text, !!c.later], ['do it later: after lunch', false]);
+});

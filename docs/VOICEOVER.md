@@ -62,6 +62,7 @@ Automated tests (jsdom and axe-core) cover structure and keyboard logic, but the
 - `u` undoes a move. The text files must not change when you reorder.
 
 **Several lists**
+- `t` on a task: is "picked for today" announced? `z`: is "Later" announced, and does the row then end with "Later"? Shift+`z` opens the Later dialog on the revisit field; check the checkbox and the hint are read. Shift+`t` and Shift+`a` say "My Day" and "Next actions" at once, and the status line reads the group counts.
 - Shift+`m` (or the Manage lists button): create "Work", rename it, delete it. Check that errors ("already exists") are read out.
 - With two or more lists, `l` on a task opens "Choose lists": a group of checkboxes (one per list) and a "new list" field. Tick two, press Save: you should hear "task is on My list and Work".
 - `[` and `]` step through lists with the list name and count announced. Shift+`l` adds or removes the task from the list you are viewing.
