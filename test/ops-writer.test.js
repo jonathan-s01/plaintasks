@@ -36,6 +36,13 @@ test('toggling flags keeps other markers; waiting markers are exclusive', () => 
   assert.equal(op('plain line', 'inProgress'), '% plain line');
 });
 
+test('ongoing writes ~, and done/reopen on a • subtask keep the •', () => {
+  assert.equal(applyOp('@ big thing', 'ongoing', null, ctx), '@~ big thing');
+  assert.equal(applyOp('~ big thing', 'ongoing', null, ctx), '@ big thing');
+  assert.equal(applyOp('• sub', 'done', null, ctx), '+• sub done:2026-11-16');
+  assert.equal(applyOp('+• sub done:2026-11-16', 'reopen', null, ctx), '• sub');
+});
+
 test('todo (triage) prefixes @ and keeps indentation; marked lines unchanged', () => {
   assert.equal(op('\tsend email', 'todo'), '\t@ send email');
   assert.equal(op('+ done', 'todo'), '+ done');

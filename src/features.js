@@ -150,6 +150,7 @@ function install(App, HttpError) {
     let newIndent;
     let expectParent;
     let prev = null;
+    let clearSubtask = false;
 
     if (dir === 'in') {
       const rank = (i) => i.lineIndex;
@@ -166,6 +167,8 @@ function install(App, HttpError) {
       const p = parsed.items[me.parent];
       newIndent = own(p.raw);
       expectParent = p.parent >= 0 ? parsed.items[p.parent].lineIndex : -1;
+      // A "•" subtask at its parent's indentation moves up a level by losing the "•".
+      clearSubtask = me.flags.subtask && newIndent === myIndent;
     }
 
     const subtree = [];
@@ -187,6 +190,7 @@ function install(App, HttpError) {
           throw err;
         }
       }
+      if (idx === me.lineIndex && clearSubtask) raw = applyOp(raw, 'clearSubtask', null, { symbols: t.symbols, unmarkedMode: t.unmarkedMode, today: this.now() });
       if (!raw.startsWith(myIndent)) throw new HttpError(400, 'The indentation here mixes tabs and spaces, so it cannot be changed safely. Fix it in the file first.');
       const next = newIndent + raw.slice(myIndent.length);
       lines[idx] = next;

@@ -1058,6 +1058,7 @@
     O: () => openSort(),
     k: () => openDue(true),
     b: () => act('ongoing'),
+    '~': () => act('ongoing'),
     d: () => openDue(),
     j: () => openJira(),
     o: () => act('open'),

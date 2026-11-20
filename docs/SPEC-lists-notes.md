@@ -12,7 +12,7 @@ This is the agreed design for the next round of work. It records what was asked,
 ## Import and triage
 
 - Point the app at folders. It reads every `.txt`, `.md`, `.text` file inside.
-- A line with a known marker (`@ + < > • * %`, with or without a space after it) is a task and needs no review.
+- A line with a known marker (`@ + < > ~ • * %`, with or without a space after it) is a task and needs no review.
 - Every other non-blank line goes to the triage list, grouped by file, in one long list. The whole file is shown in order so you can see context. Tasks and already-reviewed notes are shown but need no action.
 - Per line: `a` or `@` marks it a to-do (writes `@` into the file). `s` marks it a note (stored in `state.json`, never in the file). A note attaches to the nearest task above it.
 - Folder default for unmarked lines is "notes". A file legend (`nothing = to do`) is skipped as a line but does not override it.
@@ -30,7 +30,7 @@ Every status is a toggle. Pressing it again clears it. The key is the same as th
 | `<` | waiting on me | `<` |
 | `%` (or `p`) | in progress | `%` |
 | `*` (or `i`) | important | `*` |
-| `b` | ongoing / major outcome | `•` |
+| `b` or `~` | ongoing / major outcome | `~` |
 | `@` or `a` | to-do (triage only) | `@` |
 
 `>` and `<` replace each other. `%` and `*` combine with any other status. All of these work on tasks in any view and on unmarked lines in triage.

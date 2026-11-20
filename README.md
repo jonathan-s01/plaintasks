@@ -20,7 +20,7 @@ Your settings live outside the repo, in `~/.config/plaintasks/` (override with `
 
 ## How tasks are recognised
 
-A marker is one or more of these symbols at the start of a line (after optional indentation). A space after it is normal, but `+Wayne thing` and `@call Sam` work too (not for `*` and `%` alone, and not when a digit follows, so `+1 for that` stays plain text). Markers combine, e.g. `+*` or `@%`. A `$` at the start of a line (`$ old thing`, always with a space, so `$5 lunch` stays plain text) means deleted: the app hides the line and everything nested under it, and leaves the text in your file.
+A marker is one or more of these symbols at the start of a line (after optional indentation). A space after it is normal, but `+Wayne thing` and `@call Sam` work too (not for `*`, `%` and `~` alone, and not when a digit follows, so `+1 for that`, `~/Documents` and `~5 min` stay plain text; `~~` is always strikethrough). Markers combine, e.g. `+*` or `@%`. A `$` at the start of a line (`$ old thing`, always with a space, so `$5 lunch` stays plain text) means deleted: the app hides the line and everything nested under it, and leaves the text in your file.
 
 | Symbol | Meaning |
 | --- | --- |
@@ -30,7 +30,8 @@ A marker is one or more of these symbols at the start of a line (after optional 
 | `>` | waiting on someone else |
 | `*` | important |
 | `%` | in progress |
-| `•` | ongoing / major outcome |
+| `~` | ongoing / major outcome |
+| `•` | subtask of the task above |
 
 ```text
 Website relaunch
@@ -42,7 +43,7 @@ Website relaunch
 > vendor to confirm date jira:ABC-123
 ```
 
-- **Hierarchy.** An indented marked line is a subtask. Unmarked lines directly after a task are notes for it. A blank line ends the block.
+- **Hierarchy.** An indented marked line is a subtask. So is a line starting with `•`, with or without indenting: `• call Sam` is an open to-do under the task above, and it combines with statuses (`•+ done thing`, `•% doing`, `•> waiting`). A `•` line belongs to the nearest task above it at the same indentation that is not itself a `•` subtask, so a run of `•` lines are siblings; indent a `•` line to nest it one level deeper under the line above. Unmarked lines directly after a task are notes for it. A blank line ends the block.
 - **Groups.** An unmarked line (or one ending in `:`) that is followed by tasks becomes a group or project name.
 - **Dates.** `due:2026-11-20` is the stored form. When you set a date in the app, friendly input such as `fri`, `nov 20`, `+3d` or `in 2 weeks` is converted to that form. Completing a task adds `+` and `done:YYYY-MM-DD`.
 - **Jira link.** `jira:ABC-123` ties a task to an issue.
@@ -53,7 +54,7 @@ Website relaunch
 
 - **Notes on tasks.** `s` on a task opens Add a note. The note is written into the file under the task, after its other notes, as `[2026-11-16, ListName] text` (the date stamp can be switched off). The task shows all its notes whichever list they were added from. To turn a task into a note, use Enter, then Convert to a note.
 - **Notes with `&`.** A line starting with `&` (`& call back` or `&call back`) is a note of the nearest task above it, however many blank or other lines are between. It shows without the `&`, under the task. With no task above it, it stays an ordinary unmarked line.
-- **Subtasks.** Tab makes the task a subtask of the task above it, with its notes and subtasks. Shift+Tab moves it up a level, and tasks right after it at the old level become its subtasks. On an unmarked line in triage Tab also marks it as a to-do; if other lines sit between it and the task above, the line is moved to the end of that task's block (u undoes the move). The file is re-indented.
+- **Subtasks.** Tab makes the task a subtask of the task above it, with its notes and subtasks. Shift+Tab moves it up a level (a `•` subtask at its parent's indentation loses its `•` instead), and tasks right after it at the old level become its subtasks. On an unmarked line in triage Tab also marks it as a to-do; if other lines sit between it and the task above, the line is moved to the end of that task's block (u undoes the move). The file is re-indented.
 - **Delete.** Delete or Backspace on a task in a list takes it off that list. In any other view, including triage, it marks the line and its subtasks with `$` in the file and the app stops showing them; the text stays in the file. `u` undoes it. Option+`n` makes a new list.
 - **Notes under a task.** A task with notes can be expanded (Right arrow) to show them as rows under it. Tasks with notes start collapsed.
 - **Adding tasks.** `n` opens Add a task: type to search your tasks, Down to a match to put it on a list, or choose the last option to create a new task. `m` creates a task straight away without searching. New tasks are written as `@ text` at the end of the master file, which you choose the first time and can change in Settings. If a list is open the task goes on it.
@@ -87,10 +88,10 @@ Press `?` in the app for the list. The short version:
 | Enter | actions menu for the item |
 | `+` (or `x`) | done / reopen |
 | `<` / `>` | toggle waiting on me / waiting on someone else |
-| `*` / `%` (or `i` / `p`), `b` | toggle important / in progress; ongoing |
+| `*` / `%` (or `i` / `p`), `b` or `~` | toggle important / in progress; ongoing (`~`) |
 | (status symbols) | `+ > < % *` turning a status on opens a box for an optional note (who you are waiting on, why it matters). Enter with nothing typed skips it; Escape cancels. The note is saved dated under the task, for example `[2026-11-18] Waiting on others: Sam`, and one `u` undoes both. The letters `x w i p b` skip the box |
 | `s` or `&` | on a task: add a note; in triage, on an unmarked line: mark as a note |
-| Tab / Shift+Tab | make a subtask of the task above / move up a level |
+| Tab / Shift+Tab | make a subtask of the task above / move up a level (on a `•` subtask already at its parent's indentation, Shift+Tab removes the `•`) |
 | `n`, `m` | add a task (search first) / create a task straight away |
 | Option+`n` | make a new list |
 | Delete / Backspace | in a list: off the list; elsewhere: delete the task (`$` in the file) |

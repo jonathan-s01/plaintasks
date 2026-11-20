@@ -56,6 +56,18 @@ test('Tab makes a subtask with its notes and children, Shift+Tab undoes it', asy
   await assert.rejects(() => app.action({ id: find(app, 'other').id, op: 'outdent' }), /top level/);
 });
 
+test('Shift+Tab on a • subtask moves it up a level by removing the •, keeping its other markers', async () => {
+  const { notes, app } = setup({ 'a.txt': '@ parent\n•% sub\n\t• deeper\n' });
+  await app.action({ id: find(app, 'deeper').id, op: 'outdent' });
+  assert.equal(read(notes, 'a.txt'), '@ parent\n•% sub\n• deeper\n');
+  assert.equal(find(app, 'deeper').level, 2);
+  await app.action({ id: find(app, 'sub').id, op: 'outdent' });
+  assert.equal(read(notes, 'a.txt'), '@ parent\n% sub\n• deeper\n');
+  assert.equal(find(app, 'sub').level, 1);
+  app.undo();
+  assert.equal(read(notes, 'a.txt'), '@ parent\n•% sub\n• deeper\n');
+});
+
 test('Tab on an unmarked line in triage makes it a subtask of the task above', async () => {
   const { notes, app } = setup({ 'a.txt': '@ parent\nstray idea\n' });
   const stray = items(app, 'triage').find((i) => i.text === 'stray idea');

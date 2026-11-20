@@ -10,7 +10,7 @@ const flagsOf = (i) => Object.keys(i.flags).filter((k) => i.flags[k]).sort();
 const tasks = (r) => r.items.filter((i) => i.kind === 'task');
 
 test('default markers map to flags, and combine', () => {
-  const r = parse('+ done thing\n@ open thing\n< on me\n> on them\n• ongoing\n* important\n% going\n+* both\n+% and\n+• also\n');
+  const r = parse('+ done thing\n@ open thing\n< on me\n> on them\n~ ongoing\n* important\n% going\n+* both\n+% and\n+~ also\n');
   const f = tasks(r).map(flagsOf);
   assert.deepEqual(f[0], ['done']);
   assert.deepEqual(f[1], ['todo']);
@@ -30,10 +30,35 @@ test('markdown bold, "+1" and html tags are not tasks', () => {
 });
 
 test('strong markers work without a following space', () => {
-  const r = parse('+Wayne thing\n+•top 5\n@call Sam\n<go through pages\n>Erin to send\n•check sites\n');
+  const r = parse('+Wayne thing\n+~top 5\n@call Sam\n<go through pages\n>Erin to send\n•check sites\n');
   assert.deepEqual(tasks(r).map((t) => t.text), ['Wayne thing', 'top 5', 'call Sam', 'go through pages', 'Erin to send', 'check sites']);
   assert.equal(tasks(r)[0].flags.done, true);
   assert.equal(tasks(r)[1].flags.ongoing, true);
+  assert.equal(tasks(r)[5].flags.subtask, true);
+});
+
+test('~ needs a space unless joined to a strong marker, so paths, approximations and strikethrough stay plain', () => {
+  const r = parse('~/Documents/notes.txt\n~5 min\n~~strike~~ text\n~~ also strike\n~ real outcome\n');
+  assert.deepEqual(tasks(r).map((t) => t.text), ['real outcome']);
+  assert.equal(tasks(r)[0].flags.ongoing, true);
+});
+
+test('• marks a subtask of the task above, combines with status markers, and indenting nests deeper', () => {
+  const r = parse('@ parent\n• open sub\n•+ done sub\n•% doing sub\n\t•> waiting deeper\n• back up\n@ next top\n');
+  const t = tasks(r);
+  const by = (x) => t.find((i) => i.text === x);
+  assert.equal(by('open sub').parent, by('parent').index);
+  assert.deepEqual(flagsOf(by('open sub')), ['subtask']);
+  assert.equal(by('open sub').flags.done, false);
+  assert.deepEqual(flagsOf(by('done sub')), ['done', 'subtask']);
+  assert.deepEqual(flagsOf(by('doing sub')), ['inProgress', 'subtask']);
+  assert.equal(by('done sub').parent, by('parent').index);
+  assert.equal(by('doing sub').parent, by('parent').index);
+  assert.equal(by('waiting deeper').parent, by('doing sub').index);
+  assert.equal(by('waiting deeper').depth, 2);
+  assert.deepEqual(flagsOf(by('waiting deeper')), ['subtask', 'waitingOnOthers']);
+  assert.equal(by('back up').parent, by('parent').index);
+  assert.equal(by('next top').parent, -1);
 });
 
 test('consecutive marked lines are separate tasks; blank line ends a block', () => {
@@ -84,7 +109,7 @@ test('legend: symbols apply, legend lines are not tasks, and "nothing = to do" d
   assert.equal(t[3].parent, -1);
 });
 
-test('legend: • = ongoing and "% = inprogress" lines are skipped', () => {
+test('legend: a file can still define • = ongoing, and "% = inprogress" lines are skipped', () => {
   const r0 = parse('% = inprogress\n@ real\n');
   assert.deepEqual(tasks(r0).map((x) => x.text), ['real']);
   const r = parse('+ = done\n• = ongoing, major outcome\nnothing = notes\n\n• Big outcome\n\t@ step\n');
@@ -92,6 +117,9 @@ test('legend: • = ongoing and "% = inprogress" lines are skipped', () => {
   const t = tasks(r);
   assert.equal(t[0].flags.ongoing, true);
   assert.equal(t[1].parent, t[0].index);
+  const tl = parse('~ = ongoing\n\n~ Outcome\n');
+  assert.deepEqual(tl.legend.lines, [0]);
+  assert.equal(tasks(tl)[0].flags.ongoing, true);
 });
 
 test('folder-level unmarked mode applies when no legend is present', () => {

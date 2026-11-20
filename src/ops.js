@@ -86,6 +86,12 @@ function applyOp(raw, op, arg, ctx) {
       d.run = ch;
       return compose(d);
     }
+    case 'clearSubtask': {
+      if (!runHas(d.run, 'subtask', symbols)) return raw;
+      d.run = runWithout(d.run, 'subtask', symbols);
+      fixEmptyRun();
+      return compose(d);
+    }
     case 'todo': {
       if (d.run) return raw;
       d.run = todoChar;

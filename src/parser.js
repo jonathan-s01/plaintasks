@@ -7,15 +7,16 @@ const DEFAULT_SYMBOLS = {
   '@': 'todo',
   '<': 'waitingOnMe',
   '>': 'waitingOnOthers',
-  '•': 'ongoing',
+  '•': 'subtask',
+  '~': 'ongoing',
   '*': 'important',
   '%': 'inProgress',
   $: 'excluded',
 };
 
-const MARKER_CHARS = '+@<>•*%$';
-const MARK_RE = /^([ \t]*)([+@<>•*%$]+)([ \t]*)(.*)$/;
-// Without a space after the marker, only these symbols count, so "**bold**", "%" and "$5" stay plain text.
+const MARKER_CHARS = '+@<>•~*%$';
+const MARK_RE = /^([ \t]*)([+@<>•~*%$]+)([ \t]*)(.*)$/;
+// Without a space after the marker, only these symbols count, so "**bold**", "%", "$5", "~/path" and "~~strike~~" stay plain text.
 const STRONG_MARKERS = /[+@<>•]/;
 // A line starting with & is a note of the nearest task above it, however many lines lie between.
 const NOTE_RE = /^[ \t]*&[ \t]*(.*)$/;
@@ -56,6 +57,8 @@ function ampNote(line) {
 function markerInfo(line) {
   const m = MARK_RE.exec(line);
   if (!m || !HAS_WORD_RE.test(m[4])) return null;
+  // "~~" is markdown strikethrough, never a marker.
+  if (m[2].includes('~~')) return null;
   if (!m[3]) {
     // "+1 for that", "<div>" and similar are not markers.
     if (!STRONG_MARKERS.test(m[2]) || /^\d/.test(m[4]) || (m[2] === '<' && /^\/?[a-z][a-z0-9]*(\s[^<>]*)?\/?>/i.test(m[4]))) return null;
@@ -90,7 +93,7 @@ function parseLegend(lines) {
       legendLines.add(i);
       continue;
     }
-    const m = /^\s*(.{1,40}?)\s+=\s+(.{1,80}?)\s*$/.exec(line) || /^\s*([+@<>•*%]{1,3})\s*=\s*(.{1,80}?)\s*$/.exec(line);
+    const m = /^\s*(.{1,40}?)\s+=\s+(.{1,80}?)\s*$/.exec(line) || /^\s*([+@<>•~*%]{1,3})\s*=\s*(.{1,80}?)\s*$/.exec(line);
     if (!m) continue;
     const left = m[1].trim();
     const meaning = classifyMeaning(m[2]);
@@ -105,7 +108,7 @@ function parseLegend(lines) {
     const chars = [...left].filter((c) => MARKER_CHARS.includes(c));
     if (!chars.length || meaning === 'note') continue;
     // The remainder of the left side may only be connective words ("and indenting").
-    const rest = left.replace(/[+@<>•*%\s]/g, '').toLowerCase();
+    const rest = left.replace(/[+@<>•~*%\s]/g, '').toLowerCase();
     if (rest && !/^(and|or|plus)?(indent\w*|tabs?)?$/.test(rest)) continue;
     for (const c of chars) symbols[c] = meaning;
     legendLines.add(i);
