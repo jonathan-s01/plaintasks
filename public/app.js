@@ -4,7 +4,9 @@
   const { api, announce, alertMessage, el } = window.PT;
   const $ = (id) => document.getElementById(id);
   const params = new URLSearchParams(location.search);
-  const listMode = params.get('ui') === 'list';
+  // A plain listbox by default: Chrome and Safari give every tree row an expanded or collapsed state,
+  // so VoiceOver says "collapsed" even on rows with nothing to open. ?ui=tree brings back the ARIA tree.
+  const listMode = params.get('ui') !== 'tree';
   const VIEW_KEYS = { 1: 'open', 2: 'file', 3: 'group', 4: 'schedule', 5: 'waitingMe', 6: 'waitingOthers', 7: 'important', 8: 'inProgress', 9: 'completed', 0: 'triage', '-': 'list:mylist', '=': 'lists' };
   const store = {
     get: (k, d) => {
@@ -138,9 +140,13 @@
         node.setAttribute('aria-setsize', String(setsize.get(pos.key)));
         if (it.hasChildren) node.setAttribute('aria-expanded', st.collapsed.has(it.id) ? 'false' : 'true');
       }
-      if (listMode && it.level > 1) node.append(el('span', { class: 'meta', text: `Level ${it.level}. ` }));
       if (it.words.length) node.append(el('span', { class: 'words', text: `${it.words.join(', ')}. ` }));
       node.append(el('span', { class: 'text', text: `${it.text}. ` }));
+      if (listMode) {
+        // Only rows that can open say so.
+        const state = [it.level > 1 ? `Level ${it.level}.` : '', it.hasChildren ? (st.collapsed.has(it.id) ? 'Collapsed.' : 'Expanded.') : ''].filter(Boolean).join(' ');
+        if (state) node.append(el('span', { class: 'sr-only', text: ` ${state} ` }));
+      }
       if (it.meta.length) {
         const meta = el('span', { class: 'meta', text: `${it.meta.join('. ')}.` });
         // Rows speak only status and name; the details are in the Enter dialog. Group and list rows keep their counts.

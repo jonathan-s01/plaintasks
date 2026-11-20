@@ -182,9 +182,9 @@ The server binds to `127.0.0.1` only, checks the Host and Origin headers, requir
 
 ## Accessibility notes
 
-Semantic HTML first. The list is an ARIA tree (flat, with `aria-level`, `aria-posinset`, `aria-setsize`, `aria-expanded`, roving tabindex) so arrow keys behave like moving through a text file. `?ui=list` loads the same list as a plain listbox in case the tree behaves badly with your VoiceOver setup. Text sizes use relative units and reflow down to 400 % zoom; the design honours dark mode, forced colours/high contrast, and reduced motion. See [docs/VOICEOVER.md](docs/VOICEOVER.md) for a manual test script.
+Semantic HTML first. The list is a plain listbox with roving tabindex, so arrow keys behave like moving through a text file. Subtasks say "Level 2" and only rows that can open say "Collapsed" or "Expanded". It is not an ARIA tree because Chrome and Safari give every tree row an expanded or collapsed state, so VoiceOver said "collapsed" on rows with nothing to open. `?ui=tree` loads the same list as an ARIA tree (`aria-level`, `aria-posinset`, `aria-setsize`, `aria-expanded`). Text sizes use relative units and reflow down to 400 % zoom; the design honours dark mode, forced colours/high contrast, and reduced motion. See [docs/VOICEOVER.md](docs/VOICEOVER.md) for a manual test script.
 
-Task rows are read with just their status and name, for example "Open. Call Sam." Due dates, file and line, notes and the rest stay visible on screen but are hidden from screen readers; press Enter on the task to hear them. Group and list rows still read their counts.
+Task rows are read with just their status and name, for example "Open. Call Sam.", plus the level and Collapsed or Expanded where that applies. Due dates, file and line, notes and the rest stay visible on screen but are hidden from screen readers; press Enter on the task to hear them. Group and list rows still read their counts.
 
 Background, design decisions and the roadmap are in [docs/PLAN.md](docs/PLAN.md).
 

@@ -29,11 +29,11 @@ Automated tests (jsdom and axe-core) cover structure and keyboard logic, but the
 - Tab from the page start: skip link, View, Search, Show completed, Keyboard shortcuts, Settings, then the list.
 
 **The list (the main test)**
-- Tab into the list. Does VoiceOver say it is a tree (or outline) and read the first item as just its status and name (for example "Open. Call Sam.")?
-  - Expected: "Open. write spec. Due Tue Dec 1, in N days. Group Project Alpha. File ..., line 2." plus level and position, e.g. "level 1, 1 of 3, expanded".
-- If VoiceOver says the tree is empty or does not read items, try **VO+Shift+Down** to interact with the tree first.
+- Tab into the list. Does VoiceOver say it is a list and read the first item as just its status and name (for example "Open. Call Sam.")?
+  - Expected: "Open. write spec." plus "Expanded" only if it has subtasks or notes, and its position, e.g. "1 of 3". Rows with nothing to open must not say collapsed.
+- If VoiceOver says the list is empty or does not read items, try **VO+Shift+Down** to interact with the list first.
 - Up/Down arrows: one item per press, status and name read each time, with no dates, file or notes? Does it ever read twice or skip?
-- Right/Left on a task with a subtask: says expanded or collapsed? Left on a subtask goes to its parent?
+- Right/Left on a task with a subtask: says Expanded or Collapsed? Subtasks say Level 2? Left on a subtask goes to its parent?
 - Home/End and PageUp/PageDown.
 - Rotor: does "Landmarks" and "Form controls" look sensible?
 
@@ -79,7 +79,7 @@ Automated tests (jsdom and axe-core) cover structure and keyboard logic, but the
 
 ## If the tree is a problem
 
-Open `http://localhost:4747/?ui=list`. This renders the same data as a plain list box (arrow keys only; levels are spoken as "Level 2" text). Tell me which one speaks better and I will make that the default.
+The list is a plain list box by default (levels are spoken as "Level 2" text, and only rows that can open say "Collapsed" or "Expanded"). Open `http://localhost:4747/?ui=tree` for the ARIA tree version; in Chrome and Safari VoiceOver says "collapsed" on every row there, even rows with nothing to open.
 
 ## What to tell me
 

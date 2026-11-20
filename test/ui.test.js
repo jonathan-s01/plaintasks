@@ -82,10 +82,32 @@ test('server rejects missing tokens, foreign hosts and non-JSON posts', async ()
   }
 });
 
-test('list is a tree with roving tabindex; keyboard moves, collapses and completes', async () => {
+test('default list says collapsed or expanded only on rows that can open', async () => {
+  const env = await boot({ 'a.txt': '@ parent task\n\t@ child task\n@ lone task\n' });
+  try {
+    const { window } = await openPage(env);
+    const doc = window.document;
+    const tree = doc.getElementById('tree');
+    const rows = () => [...tree.querySelectorAll('[role=option]')];
+    await waitFor(() => rows().length === 3, 'items');
+    assert.equal(tree.getAttribute('role'), 'listbox');
+    assert.ok(rows().every((r) => !r.hasAttribute('aria-expanded')));
+    const said = (r) => r.textContent.replace(r.querySelector('.meta') ? r.querySelector('.meta').textContent : '', '').replace(/\s+/g, ' ').trim();
+    assert.equal(said(rows()[0]), 'Open. parent task. Expanded.');
+    assert.equal(said(rows()[1]), 'Open. child task. Level 2.');
+    assert.equal(said(rows()[2]), 'Open. lone task.');
+    key(window, rows()[0], 'ArrowLeft');
+    await waitFor(() => rows().length === 2, 'collapsed');
+    assert.equal(said(rows()[0]), 'Open. parent task. Collapsed.');
+  } finally {
+    await env.close();
+  }
+});
+
+test('?ui=tree is a tree with roving tabindex; keyboard moves, collapses and completes', async () => {
   const env = await boot({ 'a.txt': 'Project\n@ parent task due:2026-11-20\n\t@ child task\n< reply to Sam\n' });
   try {
-    const dom = await openPage(env);
+    const dom = await openPage(env, '/?ui=tree');
     const { window } = dom;
     const doc = window.document;
     const tree = doc.getElementById('tree');
@@ -137,7 +159,7 @@ test('list is a tree with roving tabindex; keyboard moves, collapses and complet
   }
 });
 
-for (const [name, page] of [['list page', '/'], ['settings page', '/setup'], ['list fallback', '/?ui=list']]) {
+for (const [name, page] of [['list page', '/'], ['settings page', '/setup'], ['tree layout', '/?ui=tree']]) {
   test(`axe finds no violations on the ${name}`, async () => {
     const env = await boot({ 'a.txt': 'Project\n@ one\n\t@ two\n' });
     try {
@@ -161,7 +183,7 @@ test('My list: l adds, g grabs, arrows reorder with announcements, Enter drops',
     const { window } = await openPage(env);
     const doc = window.document;
     const tree = doc.getElementById('tree');
-    const rows = () => [...tree.querySelectorAll('[role=treeitem]')];
+    const rows = () => [...tree.querySelectorAll('[role=option]')];
     const live = () => doc.getElementById('live').textContent;
     await waitFor(() => rows().length === 3, 'items');
     for (let i = 0; i < 3; i += 1) {
@@ -199,7 +221,7 @@ test('multiple lists: l opens a chooser, new list is created, [ ] cycle lists, d
     const { window } = await openPage(env);
     const doc = window.document;
     const tree = doc.getElementById('tree');
-    const rows = () => [...tree.querySelectorAll('[role=treeitem]')];
+    const rows = () => [...tree.querySelectorAll('[role=option]')];
     const live = () => doc.getElementById('live').textContent;
     await waitFor(() => rows().length === 2, 'items');
     key(window, doc.activeElement, 'l');
@@ -241,7 +263,7 @@ test('status symbols, add note, add task with master file, sort and dates dialog
     const { window } = await openPage(env);
     const doc = window.document;
     const tree = doc.getElementById('tree');
-    const rows = () => [...tree.querySelectorAll('[role=treeitem]')];
+    const rows = () => [...tree.querySelectorAll('[role=option]')];
     const live = () => doc.getElementById('live').textContent;
     const submit = (id) => doc.getElementById(id).dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
     const rules = { rules: { 'color-contrast': { enabled: false }, region: { enabled: false } } };
@@ -266,7 +288,7 @@ test('status symbols, add note, add task with master file, sort and dates dialog
     await waitFor(() => /Note added/.test(live()) && !doc.getElementById('note-dialog').hasAttribute('open'), 'important with note');
     assert.match(fs.readFileSync(path.join(env.notes, 'a.txt'), 'utf8'), /^@>\* one\n {2}\[2026-11-16\] Important: board asked\n@ two\n$/);
 
-    await waitFor(() => doc.activeElement && doc.activeElement.getAttribute('role') === 'treeitem', 'focus back on the list');
+    await waitFor(() => doc.activeElement && doc.activeElement.getAttribute('role') === 'option', 'focus back on the list');
     key(window, doc.activeElement, 's');
     await waitFor(() => doc.getElementById('note-dialog').hasAttribute('open'), 'note dialog');
     await axeOk('note-dialog');
@@ -322,9 +344,9 @@ test('notes expand under a collapsed task, Delete marks it with $, and Option+n 
     const { window } = await openPage(env);
     const doc = window.document;
     const tree = doc.getElementById('tree');
-    const rows = () => [...tree.querySelectorAll('[role=treeitem]')];
+    const rows = () => [...tree.querySelectorAll('[role=option]')];
     await waitFor(() => rows().length === 2, 'tasks');
-    assert.equal(rows()[0].getAttribute('aria-expanded'), 'false', 'a task with notes starts collapsed');
+    assert.match(rows()[0].textContent, /Collapsed\./, 'a task with notes starts collapsed');
     key(window, doc.activeElement, 'ArrowRight');
     assert.equal(rows().length, 3);
     assert.match(rows()[1].textContent, /Note\. Jaws training/);
@@ -352,7 +374,7 @@ test('goals: y opens a goal chooser that passes axe, saving announces and shows 
     const { window } = await openPage(env);
     const doc = window.document;
     const tree = doc.getElementById('tree');
-    const rows = () => [...tree.querySelectorAll('[role=treeitem]')];
+    const rows = () => [...tree.querySelectorAll('[role=option]')];
     const live = () => doc.getElementById('live').textContent;
     await waitFor(() => rows().length === 3, 'items');
     key(window, doc.activeElement, 'y');
@@ -375,7 +397,7 @@ test('goals: y opens a goal chooser that passes axe, saving announces and shows 
 
     key(window, doc.activeElement, 'G');
     await waitFor(() => /^Goals/.test(doc.getElementById('list-heading').textContent) && rows().length === 3, 'goals view');
-    assert.deepEqual(rows().map((r) => r.getAttribute('aria-level')), ['1', '1', '2']);
+    assert.deepEqual(rows().map((r) => /Level 2\./.test(r.textContent)), [false, false, true]);
     assert.match(rows()[1].textContent, /1 open, 0 done linked task/);
     window.close();
   } finally {
@@ -402,7 +424,7 @@ test('Jira sync: shift and j opens a grouped preview that passes axe; Apply send
     const { window } = await openPage(env);
     const doc = window.document;
     const live = () => doc.getElementById('live').textContent;
-    await waitFor(() => doc.querySelectorAll('#tree [role=treeitem]').length === 1, 'items');
+    await waitFor(() => doc.querySelectorAll('#tree [role=option]').length === 1, 'items');
     key(window, doc.activeElement, 'J');
     await waitFor(() => doc.getElementById('sync-dialog').hasAttribute('open') && !doc.getElementById('sync-form').hidden, 'preview shown');
     const legends = [...doc.querySelectorAll('#sync-sections > fieldset > legend')].map((l) => l.textContent);
