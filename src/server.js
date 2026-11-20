@@ -102,6 +102,8 @@ function createServer(app, { token = crypto.randomBytes(24).toString('hex') } = 
           return send(res, 200, app.searchTasks(q.get('q') || ''));
         case '/api/detail':
           return send(res, 200, app.detail(q.get('id')));
+        case '/api/goals':
+          return send(res, 200, app.goalChoices(q.get('id')));
         case '/api/config':
           return send(res, 200, app.publicConfig());
         case '/api/browse':

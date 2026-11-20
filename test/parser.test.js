@@ -135,3 +135,15 @@ test('CRLF, CR and missing trailing newline are split without losing information
   assert.equal(tasks(r).length, 3);
   assert.deepEqual(r.eols, ['\r\n', '\r', '']);
 });
+
+test('goal: tokens: first on a ~ line is its id, others are links; stripped from text; not inside words', () => {
+  const [g, t, u] = tasks(parse('~ Partner network goal:partner-network goal:Big-1\n@ call Bob goal:partner-network goal:derg goal:derg\n@ see mygoal:x and goal:-bad\n'));
+  assert.equal(g.text, 'Partner network');
+  assert.equal(g.goalId, 'partner-network');
+  assert.deepEqual(g.goalLinks, ['big-1']);
+  assert.equal(t.text, 'call Bob');
+  assert.equal(t.goalId, null);
+  assert.deepEqual(t.goalLinks, ['partner-network', 'derg']);
+  assert.equal(u.text, 'see mygoal:x and goal:-bad');
+  assert.deepEqual(u.goalLinks, []);
+});

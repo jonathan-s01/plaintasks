@@ -21,6 +21,8 @@ const STRONG_MARKERS = /[+@<>•]/;
 // A line starting with & is a note of the nearest task above it, however many lines lie between.
 const NOTE_RE = /^[ \t]*&[ \t]*(.*)$/;
 const JIRA_RE = /(^|\s)jira:([A-Za-z][A-Za-z0-9_]*-\d+)(?![\w-])/;
+// goal:some-id. On a ~ (ongoing) line the first one is that goal's own id; every other one links to a goal.
+const GOAL_RE = /(^|\s)goal:([A-Za-z0-9][A-Za-z0-9-]*)(?![\w-])/g;
 const HAS_WORD_RE = /[\p{L}\p{N}]/u;
 
 function splitLines(text) {
@@ -148,6 +150,11 @@ function stripTokens(body, ref) {
     jira = jm[2].toUpperCase();
     out = out.slice(0, jm.index) + out.slice(jm.index + jm[0].length);
   }
+  const goals = [];
+  out = out.replace(GOAL_RE, (m, pre, id) => {
+    if (!goals.includes(id.toLowerCase())) goals.push(id.toLowerCase());
+    return pre;
+  });
   return {
     text: out.replace(/\s+/g, ' ').trim(),
     due: due ? due.iso : null,
@@ -156,6 +163,7 @@ function stripTokens(body, ref) {
     checkinTime: checkin ? checkin.time : null,
     doneDate: done ? done.iso : null,
     jira,
+    goals,
   };
 }
 
@@ -307,6 +315,8 @@ function makeTask(lineIndex, raw, indent, flags, parsed, groups, implicit) {
     checkinTime: parsed.checkinTime,
     doneDate: parsed.doneDate,
     jira: parsed.jira,
+    goalId: flags.ongoing && parsed.goals.length ? parsed.goals[0] : null,
+    goalLinks: flags.ongoing ? parsed.goals.slice(1) : parsed.goals,
     implicit,
     group: groupPath(groups),
     parent: -1,
@@ -333,4 +343,5 @@ function attach(item, stack, items) {
   stack.push(item);
 }
 
-module.exports = { ampNote, parseText, splitLines, markerInfo, indentWidth, DEFAULT_SYMBOLS, MARKER_CHARS, stripTokens, JIRA_RE };
+module.exports = {
+  GOAL_RE, ampNote, parseText, splitLines, markerInfo, indentWidth, DEFAULT_SYMBOLS, MARKER_CHARS, stripTokens, JIRA_RE };

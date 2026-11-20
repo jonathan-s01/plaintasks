@@ -383,3 +383,55 @@ test('a list using its file only for notes still keeps tasks by hand', async () 
   assert.deepEqual(items(app, `list:${list}`).map((i) => i.text), ['in notes file']);
   assert.equal(read(notes, 'a.txt'), '@ task\n');
 });
+
+test('goals: y links a task to several goals, the goal gets an id from its text, unticking removes it, undo restores both files', async () => {
+  const { notes, app } = setup({ 'goals.txt': '~ Building partner network\n~ DERG work\n', 'a.txt': '@ call Bob\n' });
+  const id = (text) => find(app, text).id;
+  const choices = app.goalChoices(id('call Bob'));
+  assert.deepEqual(choices.goals.map((g) => [g.text, g.linked]), [['Building partner network', false], ['DERG work', false]]);
+  const res = await app.action({ id: id('call Bob'), op: 'goalSet', value: { ids: [id('Building partner network'), id('DERG work')] } });
+  assert.match(res.message, /Linked to goals: Building partner network; DERG work/);
+  assert.equal(read(notes, 'goals.txt'), '~ Building partner network goal:building-partner-network\n~ DERG work goal:derg-work\n');
+  assert.equal(read(notes, 'a.txt'), '@ call Bob goal:building-partner-network goal:derg-work\n');
+  const bob = find(app, 'call Bob');
+  assert.equal(bob.text, 'call Bob');
+  assert.match(bob.meta[0], /^Goals: Building partner network; DERG work$/);
+  assert.equal(res.focusId, bob.id);
+
+  // Untick one goal.
+  await app.action({ id: bob.id, op: 'goalSet', value: { ids: [id('DERG work')] } });
+  assert.equal(read(notes, 'a.txt'), '@ call Bob goal:derg-work\n');
+  app.undo();
+  assert.equal(read(notes, 'a.txt'), '@ call Bob goal:building-partner-network goal:derg-work\n');
+  app.undo();
+  assert.equal(read(notes, 'goals.txt'), '~ Building partner network\n~ DERG work\n');
+  assert.equal(read(notes, 'a.txt'), '@ call Bob\n');
+  await assert.rejects(() => app.action({ id: id('DERG work'), op: 'goalSet', value: { ids: [id('DERG work')] } }), /cannot belong to itself/);
+  await assert.rejects(() => app.action({ id: id('call Bob'), op: 'goalSet', value: { ids: [id('call Bob')] } }), /cannot belong to itself/);
+});
+
+test('goals: links survive rewording the goal, ids stay unique, unknown tokens are kept, Goals view shows counts', async () => {
+  const { notes, app } = setup({
+    'g.txt': '~ Partner network goal:partner-network\n~ Partner network!\n',
+    'a.txt': '@ call Bob goal:partner-network goal:gone\n+ sent email goal:partner-network\n@ plan day\n',
+  });
+  fs.writeFileSync(path.join(notes, 'g.txt'), '~ Grow the partner network goal:partner-network\n~ Partner network!\n');
+  app.index.refresh(NOW());
+  const goal = find(app, 'Grow the partner network');
+  assert.equal(goal.meta.at(-1), '2 linked tasks');
+  assert.match(find(app, 'call Bob').meta[0], /^Goal: Grow the partner network$/);
+
+  await app.action({ id: find(app, 'plan day').id, op: 'goalSet', value: { ids: [find(app, 'Partner network!').id] } });
+  assert.equal(read(notes, 'g.txt'), '~ Grow the partner network goal:partner-network\n~ Partner network! goal:partner-network-2\n');
+  await app.action({ id: find(app, 'call Bob').id, op: 'goalSet', value: { ids: [] } });
+  assert.match(read(notes, 'a.txt'), /^@ call Bob goal:gone\n/);
+
+  const view = items(app, 'goals');
+  assert.deepEqual(view.map((i) => [i.level, i.text]), [[1, 'Grow the partner network'], [1, 'Partner network!'], [2, 'plan day']]);
+  assert.equal(view[0].meta[0], '0 open, 1 done linked task');
+  const all = items(app, 'goals', { showCompleted: true });
+  assert.deepEqual(all.map((i) => i.text), ['Grow the partner network', 'sent email', 'Partner network!', 'plan day']);
+  // A task row under a goal acts on the task.
+  await app.action({ id: view[2].id, op: 'toggleDone' });
+  assert.equal(read(notes, 'a.txt').split('\n')[2], '+@ plan day goal:partner-network-2 done:2026-11-16');
+});

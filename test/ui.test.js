@@ -334,3 +334,40 @@ test('notes expand under a collapsed task, Delete marks it with $, and Option+n 
     env.close();
   }
 });
+
+test('goals: y opens a goal chooser that passes axe, saving announces and shows the goal, G opens the Goals view', async () => {
+  const env = await boot({ 'a.txt': '@ call Bob\n~ Partner network\n~ DERG work\n' });
+  try {
+    const { window } = await openPage(env);
+    const doc = window.document;
+    const tree = doc.getElementById('tree');
+    const rows = () => [...tree.querySelectorAll('[role=treeitem]')];
+    const live = () => doc.getElementById('live').textContent;
+    await waitFor(() => rows().length === 3, 'items');
+    key(window, doc.activeElement, 'y');
+    await waitFor(() => doc.getElementById('goals-dialog').hasAttribute('open'), 'chooser opens');
+    const boxes = () => [...doc.querySelectorAll('#goals-choices input')];
+    assert.deepEqual([...doc.querySelectorAll('#goals-choices label')].map((l) => l.textContent), ['Partner network, 0 tasks, notes/a.txt', 'DERG work, 0 tasks, notes/a.txt']);
+    assert.equal(doc.activeElement, boxes()[0]);
+    window.eval(axe.source);
+    const results = await window.axe.run(doc.getElementById('goals-dialog'), { rules: { 'color-contrast': { enabled: false }, region: { enabled: false } } });
+    assert.equal(results.violations.length, 0, results.violations.map((v) => v.id).join());
+
+    boxes()[1].checked = true;
+    key(window, boxes()[0], 'ArrowDown');
+    assert.equal(doc.activeElement, boxes()[1]);
+    key(window, boxes()[1], 'Enter');
+    await waitFor(() => /Linked to goal: DERG work\. Task: call Bob/.test(live()), 'saved and announced');
+    await waitFor(() => /Goal: DERG work/.test(rows()[0].textContent), 'meta shows the goal');
+    assert.equal(doc.activeElement, rows()[0]);
+    assert.match(fs.readFileSync(path.join(env.notes, 'a.txt'), 'utf8'), /^@ call Bob goal:derg-work\n~ Partner network\n~ DERG work goal:derg-work\n$/);
+
+    key(window, doc.activeElement, 'G');
+    await waitFor(() => /^Goals/.test(doc.getElementById('list-heading').textContent) && rows().length === 3, 'goals view');
+    assert.deepEqual(rows().map((r) => r.getAttribute('aria-level')), ['1', '1', '2']);
+    assert.match(rows()[1].textContent, /1 open, 0 done linked task/);
+    window.close();
+  } finally {
+    env.close();
+  }
+});

@@ -308,6 +308,8 @@ class App {
         return this.reindent(t, 'out');
       case 'listAdd':
         return this.listAdd(t, list);
+      case 'goalSet':
+        return this.goalSet(t, value);
       case 'jira': {
         const key = value ? String(value).trim() : '';
         if (key && !KEY_RE.test(key)) throw new HttpError(400, 'Jira keys look like ABC-123');
@@ -807,5 +809,6 @@ class App {
 
 require('./features').install(App, HttpError);
 require('./filelists').install(App, HttpError);
+require('./goals').install(App, HttpError);
 
 module.exports = { App, HttpError };

@@ -203,7 +203,11 @@
 
     const vis = visibleItems();
     let target = null;
+    // In the goals view a task can show once per goal ("taskId@goalId"): stay under the same goal when possible.
+    const under = st.activeId && st.activeId.includes('@') ? st.activeId.slice(st.activeId.indexOf('@')) : null;
+    const copy = focusId && (vis.find((i) => under && i.id === focusId + under) || vis.find((i) => i.id.startsWith(`${focusId}@`)));
     if (focusId && vis.some((i) => i.id === focusId)) target = focusId;
+    else if (copy) target = copy.id;
     else if (keepIndex != null && vis.length) target = vis[Math.min(keepIndex, vis.length - 1)].id;
     else if (st.activeId && vis.some((i) => i.id === st.activeId)) target = st.activeId;
     st.activeId = target || (vis[0] && vis[0].id) || null;
@@ -883,6 +887,62 @@
   });
   $('lists-cancel').addEventListener('click', () => closeDialog($('lists-dialog')));
 
+  // ---------- goals ----------
+
+  async function openGoals() {
+    const item = currentItem();
+    if (!item || item.type !== 'task') return;
+    let data;
+    try {
+      data = await api(`/api/goals?id=${encodeURIComponent(item.id)}`);
+    } catch (err) {
+      alertMessage(err.message);
+      return;
+    }
+    $('goals-task').textContent = item.text;
+    $('goals-error').textContent = '';
+    $('goals-empty').hidden = data.goals.length > 0;
+    $('goals-choices').replaceChildren(...data.goals.map((g, i) => el('div', { class: 'row' },
+      el('input', { type: 'checkbox', id: `gc-${i}`, value: g.id, checked: g.linked }),
+      el('label', { for: `gc-${i}`, text: `${g.text}${g.done ? ' (done)' : ''}, ${g.count === 1 ? '1 task' : `${g.count} tasks`}, ${g.file}` }))));
+    openDialog($('goals-dialog'), item.id);
+    const first = $('goals-choices').querySelector('input') || $('goals-cancel');
+    first.focus();
+  }
+
+  async function saveGoals(e) {
+    e.preventDefault();
+    const item = currentItem();
+    const idx = activeIndex();
+    const ids = [...$('goals-choices').querySelectorAll('input:checked')].map((c) => c.value);
+    try {
+      const res = await api('/api/action', { method: 'POST', body: { id: item.id, op: 'goalSet', value: { ids } } });
+      closeDialog($('goals-dialog'));
+      announce(res.message);
+      await loadView({ focusId: res.focusId, keepIndex: idx });
+    } catch (err) {
+      $('goals-error').textContent = err.message;
+      const first = $('goals-choices').querySelector('input');
+      if (first) first.focus();
+    }
+  }
+  $('goals-form').addEventListener('submit', saveGoals);
+  // Up and Down move through the goals, Space ticks one, Enter saves.
+  $('goals-form').addEventListener('keydown', (e) => {
+    const stops = [...$('goals-choices').querySelectorAll('input')];
+    const i = stops.indexOf(document.activeElement);
+    if (i < 0) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      const to = stops[i + (e.key === 'ArrowDown' ? 1 : -1)];
+      e.preventDefault();
+      if (to) to.focus();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      $('goals-form').requestSubmit();
+    }
+  });
+  $('goals-cancel').addEventListener('click', () => closeDialog($('goals-dialog')));
+
   // ---------- manage lists ----------
 
   async function manageCall(body, focusSel) {
@@ -1084,6 +1144,7 @@
     '~': () => act('ongoing'),
     d: () => openDue(),
     j: () => openJira(),
+    y: () => openGoals(),
     o: () => act('open'),
     u: () => undo(),
     a: () => markTodo(),
@@ -1169,6 +1230,10 @@
     }
     if (e.key === ']' || e.key === '[') {
       cycleList(e.key === ']' ? 1 : -1);
+      return true;
+    }
+    if (e.key === 'G') {
+      switchView('goals');
       return true;
     }
     if (e.key === 'M') {

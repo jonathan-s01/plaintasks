@@ -65,6 +65,20 @@
     </form>
   </dialog>
 
+  <dialog id="goals-dialog" aria-labelledby="goals-title">
+    <form method="dialog" id="goals-form">
+      <h2 id="goals-title">Link to goals</h2>
+      <p id="goals-task"></p>
+      <fieldset>
+        <legend>This task belongs to</legend>
+        <div id="goals-choices"></div>
+      </fieldset>
+      <p id="goals-empty" hidden>No goals yet. A goal is an ongoing task: start its line with ~.</p>
+      <p id="goals-error" class="error" role="alert"></p>
+      <p><button type="submit" id="goals-save">Save</button> <button type="button" id="goals-cancel">Cancel</button></p>
+    </form>
+  </dialog>
+
   <dialog id="manage-dialog" aria-labelledby="manage-title">
     <h2 id="manage-title">Manage lists</h2>
     <p>Lists are personal and are kept outside your text files. Deleting a list never changes your files. A list can have a folder to group it, and a file: either a notes file for notes that are not tasks, such as meeting notes, or a file the list keeps its tasks in. A list that keeps its tasks in a file shows everything in that file, and moving a task onto it moves the lines in your files.</p>
@@ -219,6 +233,7 @@
         <tr><th scope="row">Shift and Tab</th><td>Move a subtask up a level. A bullet subtask at its parent's indentation loses its bullet instead. Tasks right after it at the old level become its subtasks</td></tr>
         <tr><th scope="row">d</th><td>Set or clear the due date and the check-in date. A time works too: fri 2pm</td></tr>
         <tr><th scope="row">j</th><td>Jira: link, status, create</td></tr>
+        <tr><th scope="row">y</th><td>Link the task to goals (ongoing tasks, marked with ~)</td></tr>
         <tr><th scope="row">o</th><td>Open the source file in your text editor</td></tr>
         <tr><th scope="row">u</th><td>Undo the last change</td></tr>
         <tr><th scope="row">s or &amp;</th><td>On a task: add a note to it, below its other notes in the file. On an unmarked line in triage: mark it as a note by writing "&amp; " in front of it in the file; it attaches to the task above. In a file, any line starting with &amp; is a note of the nearest task above it. Shift and s marks every remaining line in the file as a note</td></tr>
@@ -238,6 +253,7 @@
         <tr><th scope="row">Option and Up, Option and Down</th><td>In a list with manual order: move the item up or down one place</td></tr>
         <tr><th scope="row">minus</th><td>Open My list</td></tr>
         <tr><th scope="row">equals</th><td>Open All lists</td></tr>
+        <tr><th scope="row">shift and g</th><td>Open Goals: each goal with its linked tasks</td></tr>
         <tr><th scope="row">a or @</th><td>Triage: mark the unmarked line as a to-do. The symbol keys also work on unmarked lines</td></tr>
         <tr><th scope="row">f</th><td>Triage: show only files not yet reviewed or changed since review</td></tr>
         <tr><th scope="row">shift and r</th><td>Triage: mark the whole file as reviewed</td></tr>

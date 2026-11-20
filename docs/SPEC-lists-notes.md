@@ -105,11 +105,19 @@ When `+ > < % *` turn a status on (tasks in any view, unmarked lines in triage),
 
 `c` or `h` shows or hides completed tasks in the current view.
 
+## Goals
+
+- A goal is any ongoing task (`~`). A task links to goals with `goal:<id>` tokens on its own line; there can be several. On a `~` line the first `goal:` token is that goal's own id and the rest link it to other goals.
+- `y` on a task opens a checkbox dialog of goals (open goals, plus done goals the task already links to). Saving writes the task's tokens (`goalSet`, value `{ ids: [goal task ids] }`). A goal without an id gets one first: a slug of its text, at most 32 characters, with `-2`, `-3` added if taken by any id or link. All writes from one save are one undo step; if a write fails, the ones already made are rolled back.
+- Links use the id, so rewording a goal keeps them. Tokens that match no indexed goal are kept on the line. A goal cannot link to itself.
+- Tokens are stripped from displayed text, like `jira:` and dates. Task details begin with "Goal: …" (or "Goals: …"); goals elsewhere get "N linked tasks".
+- Goals view (Shift+`g`, view id `goals`): each goal, "N open, M done linked tasks", then its linked tasks from any file at level 2. A task on two goals appears under each, with row id `taskId@goalId`; actions on either row act on the task. Done goals and done tasks show only with `c`.
+
 ## What is stored where
 
 | Data | Location |
 | --- | --- |
-| Tasks, status, due, check-in, notes under a task, subtasks | the original text file |
+| Tasks, status, due, check-in, notes under a task, subtasks, goal links and goal ids | the original text file |
 | To-do marker `@`, deleted marker `$` | the original text file |
 | Marked as a note in triage, attached-to link | `state.json` (keyed by line text) |
 | Lists, order, sort, folder, notes-file path | `state.json` |

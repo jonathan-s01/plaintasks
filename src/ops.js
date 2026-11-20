@@ -1,6 +1,6 @@
 'use strict';
 
-const { markerInfo, DEFAULT_SYMBOLS, JIRA_RE } = require('./parser');
+const { markerInfo, DEFAULT_SYMBOLS, JIRA_RE, GOAL_RE } = require('./parser');
 const { findDateTokens, toISO } = require('./dates');
 
 class OpError extends Error {}
@@ -111,6 +111,15 @@ function applyOp(raw, op, arg, ctx) {
         if (!/^[A-Za-z][A-Za-z0-9_]*-\d+$/.test(arg)) throw new OpError('Jira keys look like ABC-123');
         body = appendToken(body, `jira:${arg.toUpperCase()}`);
       }
+      d.body = body;
+      return compose(d);
+    }
+    case 'goals': {
+      // arg: { own: id of this goal or null, links: ids of goals this task belongs to }. Rewrites every goal: token.
+      const ids = [arg && arg.own, ...((arg && arg.links) || [])].filter(Boolean);
+      if (ids.some((x) => !/^[a-z0-9][a-z0-9-]*$/.test(x))) throw new OpError('Goal ids use lowercase letters, digits and hyphens');
+      let body = d.body.replace(new RegExp(GOAL_RE.source, 'g'), (m, pre) => pre).replace(/[ \t]+$/, '');
+      for (const x of ids) body = appendToken(body, `goal:${x}`);
       d.body = body;
       return compose(d);
     }

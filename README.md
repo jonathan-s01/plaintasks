@@ -47,6 +47,7 @@ Website relaunch
 - **Groups.** An unmarked line (or one ending in `:`) that is followed by tasks becomes a group or project name.
 - **Dates.** `due:2026-11-20` is the stored form. When you set a date in the app, friendly input such as `fri`, `nov 20`, `+3d` or `in 2 weeks` is converted to that form. Completing a task adds `+` and `done:YYYY-MM-DD`.
 - **Jira link.** `jira:ABC-123` ties a task to an issue.
+- **Goal link.** `goal:partner-network` ties a task to a goal (see Goals below). A task can carry several.
 - **Per-file legends.** A file can define its own symbols with lines like `+ = done`, `nothing = to do`, or `• and indenting = subtasks`. Lines such as `nothing = to do` are recognised and skipped (never shown as tasks) but do not change how unmarked lines are treated; that is decided only by the folder and per-file settings. Legend lines are not tasks.
 - **Unmarked lines per folder.** Each watched folder has a setting: unmarked lines are *notes* (default) or *tasks*. Individual files can override it in the settings page. Precedence: per-file setting, then folder setting. A file's own legend does not override either.
 - **Triage (initial review).** The Triage view shows every file that still has unmarked lines, newest file first, with the whole file in order. Lines that already have a marker are shown as "Already a task" and need nothing from you; unmarked lines are read with their position ("3 of 12 to review in this file") and Enter shows the lines around it. `a` or `@` makes the line a `@` to-do; `+`, `<`, `>`, `%` and `*` (or `x`, `w`, `i`, `p`) make it a to-do with that status straight away; `s` or `&` marks it as a note: `& ` is written in front of the line in your file, which attaches it to the nearest task above it (a line with no task above is remembered as a note in `~/.config/plaintasks/state.json` instead). Shift+`s` marks every remaining line in the file as a note, `n` / Shift+`n` jump to the next / previous file, Shift+`r` marks a file as reviewed, and `f` shows only files that are new or changed since you reviewed them.
@@ -59,6 +60,7 @@ Website relaunch
 - **Notes under a task.** A task with notes can be expanded (Right arrow) to show them as rows under it. Tasks with notes start collapsed.
 - **Adding tasks.** `n` opens Add a task: type to search your tasks, Down to a match to put it on a list, or choose the last option to create a new task. `m` creates a task straight away without searching. New tasks are written as `@ text` at the end of the master file, which you choose the first time and can change in Settings. If a list is open the task goes on it.
 - **List sorting.** Shift+`o` in a list sorts it by manual order (remembered, the default), due date, check-in date, date added, type (notes last) or name. Reordering only works in manual order.
+- **Goals.** A goal is any ongoing task (`~`). Press `y` on a task to open a checkbox list of goals: Up and Down move, Space ticks or unticks, Enter saves. Ticking a goal writes a `goal:` token on the task's own line in its file, and unticking removes it; a task can belong to several goals. The first time anything links to a goal, the goal's line gets its own id, made from its text (`~ Building partner network goal:building-partner-network`; `-2`, `-3` are added if that id is taken). Tasks point at that id, so rewording the goal keeps the links, but don't change or delete the goal's own `goal:` token. On a `~` line the first `goal:` token is the goal's id and any others link it to bigger goals. The tokens are hidden from the task text; linked goals are read out in the task's details ("Goal: …"). Press Shift+`g` (or use the View menu) for the Goals view: each goal with "N open, M done linked tasks", then its linked tasks from any file. A task on two goals shows under both. The chooser lists open goals, plus done ones the task is already linked to. Tokens that match no goal are left on the line. All writes in one save are undone together with `u`.
 - **List folders, notes files and list notes.** Manage lists lets a list have a folder (a label that groups lists in the All lists view, `=`) and a notes file. A notes file is created as `<List name>.txt` in a folder you pick inside a watched folder, and is skipped by triage. Shift+`n` in a list adds a note that is not a task to that file, stamped with the date.
 - **Lists that keep their tasks in a file.** In Manage lists, pick a file for a list and tick "Keep tasks in this file". The list then shows every task in that file, main tasks and subtasks, indented as in the file and in file order; you don't add them by hand. Putting a task on another such list (`l`, or the list chooser) moves the task line, its notes (including `&` notes further down) and its subtasks to the end of that list's file, as a main task, and takes them out of the old file. Both files are re-read before writing and written atomically; if either changed, nothing is written. `u` undoes the move in both files. Reordering (`g`, Option+Up/Down) moves the lines within the file, among tasks at the same level, and is refused if it would cross a blank line or heading and change other tasks. Delete in such a list deletes the task (`$`), because the list always shows its whole file. New tasks made in the list go to the end of its file. A task can be kept in only one file, so ticking two such lists with different files is refused. Lists that use a file only for notes are unchanged.
 - **Due and check-in dates with times.** `d` sets the due date and a check-in date: `fri 2pm`, `nov 20 14:30`, `+3d 9am`. Stored as `due:2026-11-20 14:30` and `checkin:...`. `k` opens the same dialog on the check-in field. The Schedule view (`4`) groups tasks as Overdue, Today, This week and Later.
@@ -76,7 +78,7 @@ The full design, including assumptions, is in [docs/SPEC-lists-notes.md](docs/SP
 
 ## Views
 
-All open, by file, by group or project, schedule (overdue, today, this week, later), due soon and overdue, waiting on me, waiting on others, important, in progress, completed, triage, All lists, and each list. Completed tasks are hidden everywhere except the Completed view; `c` shows them in the others. Search filters the current view.
+All open, by file, by group or project, goals and their tasks, schedule (overdue, today, this week, later), due soon and overdue, waiting on me, waiting on others, important, in progress, completed, triage, All lists, and each list. Completed tasks are hidden everywhere except the Completed view; `c` shows them in the others. Search filters the current view.
 
 ## Keyboard
 
@@ -100,12 +102,14 @@ Press `?` in the app for the list. The short version:
 | Shift+`o` | in a list: sort |
 | `d`, `k` | due and check-in dates with times (`k` starts on check-in) |
 | `j` | Jira |
+| `y` | link to goals (checkbox list) |
 | `o` | open the source file in your editor |
 | `u` | undo |
 | `a` or `@` / Shift+`s` | triage: mark as to-do / mark the whole file as notes |
 | `n` / Shift+`n`, Shift+`r`, `f` | triage (`n` elsewhere adds a task): next / previous file, mark file reviewed, only new or changed files |
 | `l` / Shift+`l` | choose lists for the task / quick add or remove on the current or last-used list |
 | `[` / `]`, Shift+`m` | previous / next list, manage lists |
+| Shift+`g` | Goals view |
 | `g`, Option+Up / Down | in a list: pick up and reorder with arrows, or move one place |
 | `1`–`9`, `0`, `-`, `=` | switch view (1 open, 2 file, 3 group, 4 schedule, 5 waiting on me, 6 waiting on others, 7 important, 8 in progress, 9 completed, 0 triage, minus My list, equals All lists; other lists via `[` `]` or the View menu) |
 | `v` | jump to the view menu |

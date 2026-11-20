@@ -213,6 +213,8 @@ class Index extends EventEmitter {
         noteLines: it.notes.map((n) => n.lineIndex),
         doneDate: it.doneDate || null,
         jira: it.jira || null,
+        goalId: it.goalId || null,
+        goalLinks: it.goalLinks || [],
         symbols: parsed.symbols,
         unmarkedMode: parsed.unmarkedMode,
         textHash: sha(it.raw.trim()),
@@ -246,7 +248,8 @@ class Index extends EventEmitter {
   }
 
   get(id) {
-    return this.byId.get(id) || null;
+    // Rows that show a task a second time (a task under each of its goals) use "taskId@where" ids.
+    return this.byId.get(id) || this.byId.get(String(id).split('@')[0]) || null;
   }
 
   watch(intervalMs = 15000) {

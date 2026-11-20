@@ -1,11 +1,13 @@
 'use strict';
 
 const { formatDate, formatTime, relativeDue, daysBetween, toISO } = require('./dates');
+const { goalIndex, goalMembers, linkedGoals } = require('./goals');
 
 const VIEWS = [
   { id: 'open', title: 'All open tasks', hierarchical: true },
   { id: 'file', title: 'By file', hierarchical: true },
   { id: 'group', title: 'By group or project', hierarchical: true },
+  { id: 'goals', title: 'Goals and their tasks', empty: 'No goals yet. A goal is an ongoing task, marked with ~. Press y on any task to link it to one.' },
   { id: 'schedule', title: 'Schedule: overdue, today, this week', empty: 'Nothing has a due date or check-in date. Press d on a task to set one.' },
   { id: 'due', title: 'Due soon and overdue', empty: 'No open tasks are overdue or due within 7 days.' },
   { id: 'waitingMe', title: 'Waiting on me', empty: 'Nothing is waiting on you.' },
@@ -198,6 +200,7 @@ function viewCounts(index, state, today) {
     else if (v.id === 'lists') counts.lists = (state.lists || []).length;
     else if (v.id === 'schedule') counts.schedule = scheduled(index, today).length;
     else if (v.isList) counts[v.id] = listTasks(index, state, v.id.slice(5)).filter((t) => !t.flags.done).length;
+    else if (v.id === 'goals') counts.goals = goalIndex(index).goals.filter((g) => !g.flags.done).length;
     else if (v.id === 'completed') counts.completed = index.tasks.filter(preds.completed).length;
     else counts[v.id] = index.tasks.filter((t) => !t.flags.done && preds[v.id](t)).length;
   }
@@ -327,6 +330,27 @@ function buildView(index, state, opts = {}) {
         items.push({ id: `list:${l.id}`, type: 'list', listId: l.id, level: 2, text: l.name, words: [], meta: [n === 1 ? '1 open item' : `${n} open items`, file ? `${fileBacked(l) ? 'Tasks kept in' : 'Notes file'} ${file.label}` : 'No notes file'], hasChildren: false, flags: {}, notes: [] });
       }
     }
+  } else if (view === 'goals') {
+    // Each goal, then the tasks linked to it from any file. A task on several goals shows under each one.
+    items = [];
+    for (const g of goalIndex(index).goals) {
+      const members = goalMembers(index, g);
+      const shown = members.filter((t) => (showCompleted || !t.flags.done) && match(t));
+      if (g.flags.done && !showCompleted) continue;
+      if (!match(g) && !shown.length) continue;
+      const open = members.filter((t) => !t.flags.done).length;
+      const it = describe(g, today, 1);
+      it.meta.unshift(members.length ? `${open} open, ${members.length - open} done linked ${members.length === 1 ? 'task' : 'tasks'}` : 'No linked tasks');
+      it.hasChildren = shown.length > 0;
+      it.goal = true;
+      items.push(it);
+      for (const t of shown) {
+        const p = t.parentId ? index.get(t.parentId) : null;
+        const c = describe(t, today, 2, { parentText: p ? p.text : null });
+        c.id = `${t.id}@${g.id}`;
+        items.push(c);
+      }
+    }
   } else if (view === 'schedule') {
     const byId = new Map(index.tasks.map((t) => [t.id, t]));
     const all = scheduled(index, today).filter((e) => match(e.t));
@@ -393,7 +417,23 @@ function buildView(index, state, opts = {}) {
       }
     }
   }
-  if (view !== 'triage' && view !== 'lists') items = withNoteRows(items);
+  if (view !== 'triage' && view !== 'lists') {
+    const { byId } = goalIndex(index);
+    for (const i of items) {
+      const t = i.type === 'task' ? index.get(i.id) : null;
+      if (!t) continue;
+      const gs = linkedGoals(index, t, byId);
+      if (gs.length && !(view === 'goals' && i.level === 2 && gs.length === 1)) {
+        i.goals = gs.map((g) => g.id);
+        i.meta.unshift(`${gs.length > 1 ? 'Goals' : 'Goal'}: ${gs.map((g) => g.text).join('; ')}`);
+      }
+      if (t.flags.ongoing && view !== 'goals') {
+        const n = goalMembers(index, t).length;
+        if (n) i.meta.push(n === 1 ? '1 linked task' : `${n} linked tasks`);
+      }
+    }
+    items = withNoteRows(items);
+  }
   if (def.isList) sortedBy = (state.lists || []).find((l) => l.id === view.slice(5)).sort || 'manual';
   const count = view === 'triage' ? items.filter((i) => i.type === 'unmarked' && !i.known).length : items.filter((i) => i.type === 'task' || i.type === 'unmarked').length;
   return { view, title: def.title, items, count: view === 'lists' ? (state.lists || []).length : count, empty: def.empty || 'No open tasks.', rev: index.rev, sortedBy, isList: !!def.isList };
