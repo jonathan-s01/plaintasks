@@ -84,8 +84,7 @@ function install(App, HttpError) {
         if (!g.goalId) {
           const taken = new Set();
           for (const x of this.index.tasks) {
-            if (x.goalId) taken.add(x.goalId);
-            for (const l of x.goalLinks || []) taken.add(l);
+            for (const v of [x.goalId, x.refId, ...(x.goalLinks || []), ...(x.waitsFor || [])]) if (v) taken.add(v);
           }
           const base = slugOf(g.text);
           let slug = base;

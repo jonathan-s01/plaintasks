@@ -1,6 +1,6 @@
 'use strict';
 
-const { markerInfo, DEFAULT_SYMBOLS, JIRA_RE, JIRA_LABEL_RE, GOAL_RE, LATER_BARE_RE } = require('./parser');
+const { markerInfo, DEFAULT_SYMBOLS, JIRA_RE, JIRA_LABEL_RE, GOAL_RE, PRIORITY_RE, ID_RE, AFTER_RE } = require('./parser');
 const { findDateTokens, toISO } = require('./dates');
 
 class OpError extends Error {}
@@ -100,11 +100,11 @@ function applyOp(raw, op, arg, ctx) {
       return compose(d);
     }
     case 'text': {
-      // Rewords the task, keeping its tokens (dates, jira:, jira:label, goal:) in their order.
+      // Rewords the task, keeping its tokens (dates, jira:, jira:label, goal:, p:, id:, after:) in their order.
       const text = String(arg || '').replace(/\s+/g, ' ').trim();
       if (!text) throw new OpError('The new text is empty');
       const spans = findDateTokens(d.body, today).map((t) => [t.start, t.end]);
-      for (const re of [new RegExp(JIRA_RE.source, 'g'), new RegExp(LATER_BARE_RE.source, 'gi'), new RegExp(JIRA_LABEL_RE.source, 'gi'), new RegExp(GOAL_RE.source, 'g')]) {
+      for (const re of [new RegExp(JIRA_RE.source, 'g'), new RegExp(JIRA_LABEL_RE.source, 'gi'), new RegExp(GOAL_RE.source, 'g'), new RegExp(PRIORITY_RE.source, 'gi'), new RegExp(ID_RE.source, 'g'), new RegExp(AFTER_RE.source, 'g')]) {
         let m;
         while ((m = re.exec(d.body))) spans.push([m.index + m[1].length, m.index + m[0].length]);
       }
@@ -125,10 +125,26 @@ function applyOp(raw, op, arg, ctx) {
       if (arg) d.body = appendToken(d.body, `today:${arg}`);
       return compose(d);
     }
-    case 'later': {
-      // arg: false/null clears it, true makes it a bare `later:`, a YYYY-MM-DD string adds a revisit date.
-      d.body = removeTokens(d.body, 'later', today).replace(new RegExp(LATER_BARE_RE.source, 'gi'), () => '').replace(/[ \t]+$/, '');
-      if (arg) d.body = appendToken(d.body, typeof arg === 'string' ? `later:${arg}` : 'later:');
+    case 'priority': {
+      // arg: 'high' or 'low' writes p:high or p:low; anything else (medium) removes the token.
+      d.body = d.body.replace(new RegExp(PRIORITY_RE.source, 'gi'), () => '').replace(/[ \t]+$/, '');
+      if (arg === 'high' || arg === 'low') d.body = appendToken(d.body, `p:${arg}`);
+      return compose(d);
+    }
+    case 'refId': {
+      // arg: the slug for this task's id: token, or null to remove it.
+      if (arg && !/^[a-z0-9][a-z0-9-]*$/.test(arg)) throw new OpError('Task ids use lowercase letters, digits and hyphens');
+      d.body = d.body.replace(new RegExp(ID_RE.source, 'g'), () => '').replace(/[ \t]+$/, '');
+      if (arg) d.body = appendToken(d.body, `id:${arg}`);
+      return compose(d);
+    }
+    case 'after': {
+      // arg: ids of the tasks this one waits for. Rewrites every after: token.
+      const ids = arg || [];
+      if (ids.some((x) => !/^[a-z0-9][a-z0-9-]*$/.test(x))) throw new OpError('Task ids use lowercase letters, digits and hyphens');
+      let body = d.body.replace(new RegExp(AFTER_RE.source, 'g'), () => '').replace(/[ \t]+$/, '');
+      for (const x of ids) body = appendToken(body, `after:${x}`);
+      d.body = body;
       return compose(d);
     }
     case 'jira': {
@@ -146,7 +162,7 @@ function applyOp(raw, op, arg, ctx) {
       // arg: { own: id of this goal or null, links: ids of goals this task belongs to }. Rewrites every goal: token.
       const ids = [arg && arg.own, ...((arg && arg.links) || [])].filter(Boolean);
       if (ids.some((x) => !/^[a-z0-9][a-z0-9-]*$/.test(x))) throw new OpError('Goal ids use lowercase letters, digits and hyphens');
-      let body = d.body.replace(new RegExp(GOAL_RE.source, 'g'), (m, pre) => pre).replace(/[ \t]+$/, '');
+      let body = d.body.replace(new RegExp(GOAL_RE.source, 'g'), () => '').replace(/[ \t]+$/, '');
       for (const x of ids) body = appendToken(body, `goal:${x}`);
       d.body = body;
       return compose(d);

@@ -5,6 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { EventEmitter } = require('node:events');
 const { parseText } = require('./parser');
+const { link: linkBlockers } = require('./blocks');
 const { decode, UnsupportedFileError } = require('./writer');
 
 const TEXT_EXT = new Set(['.txt', '.md', '.text']);
@@ -147,6 +148,7 @@ class Index extends EventEmitter {
     for (const key of this.cache.keys()) if (!seen.has(key)) this.cache.delete(key);
 
     this.files = files;
+    linkBlockers(tasks);
     this.tasks = tasks;
     this.unmarked = unmarked;
     this.problems = problems;
@@ -214,8 +216,9 @@ class Index extends EventEmitter {
         doneDate: it.doneDate || null,
         start: it.start || null,
         picked: it.picked || null,
-        later: !!it.later,
-        revisit: it.revisit || null,
+        priority: it.priority || 'medium',
+        refId: it.refId || null,
+        waitsFor: it.waitsFor || [],
         jira: it.jira || null,
         jiraLabel: !!it.jiraLabel,
         goalId: it.goalId || null,

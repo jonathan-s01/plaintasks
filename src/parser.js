@@ -24,8 +24,10 @@ const JIRA_RE = /(^|\s)jira:([A-Za-z][A-Za-z0-9_]*-\d+)(?![\w-])/;
 // jira:label on a goal line: sync tags linked tasks with a label instead of making the goal an issue.
 const JIRA_LABEL_RE = /(^|\s)jira:label(?![\w-])/i;
 // goal:some-id. On a ~ (ongoing) line the first one is that goal's own id; every other one links to a goal.
-// A bare `later:` counts only at the end of the line or before another token, so "do it later: after lunch" stays text.
-const LATER_BARE_RE = /(^|\s)later:(?=\s*$|\s+(?:due|done|checkin|start|today|jira|goal):)/i;
+// p:high and p:low set the priority (no token means medium). id:slug names a task so others can wait for it with after:slug.
+const PRIORITY_RE = /(^|\s)p:(high|medium|med|low)(?![\w-])/gi;
+const ID_RE = /(^|\s)id:([A-Za-z0-9][A-Za-z0-9-]*)(?![\w-])/g;
+const AFTER_RE = /(^|\s)after:([A-Za-z0-9][A-Za-z0-9-]*)(?![\w-])/g;
 const GOAL_RE = /(^|\s)goal:([A-Za-z0-9][A-Za-z0-9-]*)(?![\w-])/g;
 const HAS_WORD_RE = /[\p{L}\p{N}]/u;
 
@@ -137,11 +139,7 @@ function emptyFlags() {
 }
 
 function stripTokens(origBody, ref) {
-  let later = false;
-  const body = origBody.replace(new RegExp(LATER_BARE_RE.source, 'gi'), (m, pre) => {
-    later = true;
-    return pre;
-  });
+  const body = origBody;
   const toks = findDateTokens(body, ref);
   let out = body;
   for (const t of [...toks].sort((x, y) => y.start - x.start)) {
@@ -155,7 +153,6 @@ function stripTokens(origBody, ref) {
   const checkin = toks.find((t) => t.kind === 'checkin');
   const start = toks.find((t) => t.kind === 'start');
   const picked = toks.find((t) => t.kind === 'today');
-  const revisit = toks.find((t) => t.kind === 'later');
   let jira = null;
   const jm = JIRA_RE.exec(out);
   if (jm) {
@@ -172,6 +169,21 @@ function stripTokens(origBody, ref) {
     if (!goals.includes(id.toLowerCase())) goals.push(id.toLowerCase());
     return pre;
   });
+  let priority = 'medium';
+  out = out.replace(PRIORITY_RE, (m, pre, v) => {
+    if (priority === 'medium') priority = /^low/i.test(v) ? 'low' : /^h/i.test(v) ? 'high' : 'medium';
+    return pre;
+  });
+  let refId = null;
+  out = out.replace(ID_RE, (m, pre, id) => {
+    refId = refId || id.toLowerCase();
+    return pre;
+  });
+  const waitsFor = [];
+  out = out.replace(AFTER_RE, (m, pre, id) => {
+    if (!waitsFor.includes(id.toLowerCase())) waitsFor.push(id.toLowerCase());
+    return pre;
+  });
   return {
     text: out.replace(/\s+/g, ' ').trim(),
     due: due ? due.iso : null,
@@ -181,8 +193,9 @@ function stripTokens(origBody, ref) {
     doneDate: done ? done.iso : null,
     start: start ? start.iso : null,
     picked: picked ? picked.iso : null,
-    later: later || !!revisit,
-    revisit: revisit ? revisit.iso : null,
+    priority,
+    refId,
+    waitsFor,
     jira,
     jiraLabel,
     goals,
@@ -338,8 +351,9 @@ function makeTask(lineIndex, raw, indent, flags, parsed, groups, implicit) {
     doneDate: parsed.doneDate,
     start: parsed.start,
     picked: parsed.picked,
-    later: parsed.later,
-    revisit: parsed.revisit,
+    priority: parsed.priority,
+    refId: parsed.refId,
+    waitsFor: parsed.waitsFor,
     jira: parsed.jira,
     jiraLabel: parsed.jiraLabel,
     goalId: flags.ongoing && parsed.goals.length ? parsed.goals[0] : null,
@@ -371,4 +385,4 @@ function attach(item, stack, items) {
 }
 
 module.exports = {
-  GOAL_RE, ampNote, parseText, splitLines, markerInfo, indentWidth, DEFAULT_SYMBOLS, MARKER_CHARS, stripTokens, JIRA_RE, JIRA_LABEL_RE, LATER_BARE_RE };
+  GOAL_RE, ampNote, parseText, splitLines, markerInfo, indentWidth, DEFAULT_SYMBOLS, MARKER_CHARS, stripTokens, JIRA_RE, JIRA_LABEL_RE, PRIORITY_RE, ID_RE, AFTER_RE };

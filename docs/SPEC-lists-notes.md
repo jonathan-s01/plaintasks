@@ -101,15 +101,16 @@ When `+ > < % *` turn a status on (tasks in any view, unmarked lines in triage),
 - **Schedule view**: overdue, today, this week, later, grouped, including check-ins.
 - The existing "Due soon and overdue" view remains.
 
-## Later, My Day and Next actions
+## Priority, blocked by, My Day and Next actions
 
-- Tokens: `later:` (bare) or `later:YYYY-MM-DD` (revisit date), `today:YYYY-MM-DD`. Both are hidden from text (`text` keeps them). Bare `later:` is a token only at end of line or directly before another known token (`due:`, `done:`, `checkin:`, `start:`, `today:`, `jira:`, `goal:`), so prose like "later: after lunch" is untouched.
-- Keys: `t` op `today` (picks for today, or unpicks when already picked for today or earlier; refused on done tasks), `z` op `later` (toggle), Shift+`z` dialog `later` with `{ later, revisit }` (revisit parsed like due dates). Done tasks keep their tokens.
-- A task is parked while `later` is set, it is not done, and there is no revisit date or the date is still in the future. Parked tasks are marked "Later" (spoken in the row), and details say "Later" plus "revisit <date>".
-- Workable = open, not `~`, not `>`, not parked, not on a not-actionable list. List setting `notActionable` (Manage lists, New list form; persisted in state.json; default off) excludes tasks that `isOnList` for such a list.
-- My Day (Shift+`t`, view `myday`): groups Picked (picked ≤ today; earlier picks roll over at view time, nothing is rewritten), Overdue, Due today, Revisit (revisit ≤ today). A task appears once, in the first group that matches. The list status adds a summary such as "Picked 3, Overdue 1".
-- Next actions (Shift+`a`, view `next`): workable tasks with no open child, grouped by file, `%` first. A parent with any open child is hidden, even if that child is itself excluded.
-- Jira: Later open tasks want label `labels.later` (default `later`), treated like the other managed labels; `today:` is never pushed.
+- Tokens (hidden from text; `text` keeps them): `today:YYYY-MM-DD`, `p:high`/`p:low` (`p:medium`/`p:med` parse as Medium and are dropped on rewrite), `id:<slug>`, `after:<slug>` (repeatable, de-duplicated, lowercased).
+- Keys: `t` op `today` (picks for today, or unpicks when picked for today or earlier; refused on done tasks). Shift+`p` op `priority` cycles medium → high → low → medium, or takes `value` of `high`/`medium`/`low`. Shift+`b` opens a checkbox dialog (`GET /api/blockers?id=`, saved with op `blockSet` and `{ ids }`).
+- Blocked by: targets are tasks with `id:` and `~` goals (their `goalId`). `blockSet` writes `id:` on blockers that lack one (slug from the text, unique across `goalId`, `refId`, goal links and `after:` ids), rewrites the task's `after:` tokens (unknown refs are kept), rejects self and cycles, and is one undo step. A task is `blocked` when any resolved blocker is open. Done blockers keep the link ("Blocked by: x (done)") but do not block. A `$` task is not indexed, so its dependents' tokens become unresolved and do not block.
+- Details add "Priority: High/Low", "Blocked by: …" and "Blocks N task(s)"; speech words add "Blocked" and "High priority"/"Low priority".
+- Workable = open, not `~`, not `>`, not blocked, not on a not-actionable list. List setting `notActionable` (Manage lists, New list form; persisted in state.json; default off) excludes tasks that `isOnList` for such a list.
+- My Day (Shift+`t`, view `myday`): groups Picked (picked ≤ today; earlier picks roll over at view time, nothing is rewritten), Overdue, Due today. A task appears once, in the first group that matches. Each group sorts High, Medium, Low. The list status adds a summary such as "Picked 3, Overdue 1".
+- Next actions (Shift+`a`, view `next`): workable tasks with no open child, grouped by file, sorted by priority then `%` first. A parent with any open child is hidden, even if that child is itself excluded.
+- Jira: `priority` is synced when the issue response has a Priority field, with the same three-way snapshot as status and summary (names in `jira.sync.priorities`, default High/Medium/Low; Medium not sent on create; an unknown Jira name is an unticked push item). Each resolved `after:` becomes a link of type `jira.sync.blockType` (default `Blocks`) created with the blocker as the inward issue; plan item ids `block:<taskId>:<blockerId>` and `unblock:<taskId>:<KEY>`. Unlinking only removes links recorded in the snapshot (`synced[key].blockers`) and never while the task has an unresolved `after:`. `today:` is never pushed.
 
 ## Showing completed
 

@@ -134,13 +134,19 @@ test('text rewords a task and keeps its tokens; done takes the date it was done'
   assert.equal(applyOp('@ a start:2026-01-01', 'start', '2026-02-02', ctx), '@ a start:2026-02-02');
 });
 
-test('today and later ops write and clear their tokens, and text keeps them', () => {
+test('today, priority, id and after ops write and clear their tokens, and text keeps them', () => {
   const o = (line, op, arg) => applyOp(line, op, arg, ctx);
   assert.equal(o('@ call Sam', 'today', '2026-11-16'), '@ call Sam today:2026-11-16');
   assert.equal(o('@ call Sam today:2026-11-13', 'today', '2026-11-16'), '@ call Sam today:2026-11-16');
   assert.equal(o('@ call Sam today:2026-11-13', 'today', null), '@ call Sam');
-  assert.equal(o('@ call Sam', 'later', true), '@ call Sam later:');
-  assert.equal(o('@ call Sam later:', 'later', '2027-01-15'), '@ call Sam later:2027-01-15');
-  assert.equal(o('@ call Sam later:2027-01-15', 'later', false), '@ call Sam');
-  assert.equal(o('@ call Sam later: today:2026-11-16', 'text', 'call Samuel'), '@ call Samuel later: today:2026-11-16');
+  assert.equal(o('@ call Sam', 'priority', 'high'), '@ call Sam p:high');
+  assert.equal(o('@ call Sam p:high', 'priority', 'low'), '@ call Sam p:low');
+  assert.equal(o('@ call Sam p:low due:2026-11-20', 'priority', 'medium'), '@ call Sam due:2026-11-20');
+  assert.equal(o('@ call Sam', 'refId', 'call-sam'), '@ call Sam id:call-sam');
+  assert.equal(o('@ call Sam id:call-sam', 'refId', null), '@ call Sam');
+  assert.throws(() => o('@ call Sam', 'refId', 'Bad Id'), /lowercase/);
+  assert.equal(o('@ ship', 'after', ['a', 'b']), '@ ship after:a after:b');
+  assert.equal(o('@ ship after:a after:b', 'after', ['b']), '@ ship after:b');
+  assert.equal(o('@ ship after:a', 'after', []), '@ ship');
+  assert.equal(o('@ call Sam p:high id:x after:y today:2026-11-16', 'text', 'call Samuel'), '@ call Samuel p:high id:x after:y today:2026-11-16');
 });

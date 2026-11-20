@@ -436,17 +436,17 @@ test('goals: links survive rewording the goal, ids stay unique, unknown tokens a
   assert.equal(read(notes, 'a.txt').split('\n')[2], '+@ plan day goal:partner-network-2 done:2026-11-16');
 });
 
-test('My Day and Next actions: picks roll over, overdue and due today join, Later and exclusions stay out', async () => {
+test('My Day and Next actions: picks roll over, overdue and due today join, priority sorts, blocked and exclusions stay out', async () => {
   const { app } = setup({
     'a.txt': [
       '~ goal thing',
       '@ picked today today:2026-11-16',
       '@ picked old today:2026-11-13',
+      '@ picked high today:2026-11-16 p:high',
       '@ overdue one due:2026-11-10',
       '@ due now due:2026-11-16',
-      '@ parked later:',
-      '@ revisit due later:2026-11-15',
-      '@ revisit future later:2027-01-15',
+      '@ blocked pick today:2026-11-16 after:first-step',
+      '@ first step id:first-step',
       '> waiting on x today:2026-11-16',
       '% doing',
       '@ parent',
@@ -458,24 +458,23 @@ test('My Day and Next actions: picks roll over, overdue and due today join, Late
     'ideas.txt': '@ idea one due:2026-11-10\n@ idea two\n',
   });
   const day = app.view({ view: 'myday', q: '', showCompleted: false });
-  assert.equal(day.summary, 'Picked 2, Overdue 2, Due today 1, Revisit 1');
-  assert.deepEqual(day.items.filter((i) => i.type === 'task').map((i) => i.text), ['picked old', 'picked today', 'overdue one', 'idea one', 'due now', 'revisit due']);
+  assert.equal(day.summary, 'Picked 3, Overdue 2, Due today 1');
+  assert.deepEqual(day.items.filter((i) => i.type === 'task').map((i) => i.text), ['picked high', 'picked old', 'picked today', 'overdue one', 'idea one', 'due now']);
   assert.ok(find(app, 'picked old', 'myday').words.includes('Carried over'));
   assert.match(find(app, 'picked old', 'myday').meta[0], /carried over to today/);
-  assert.ok(find(app, 'revisit due', 'myday').words.includes('Revisit due'));
-  assert.deepEqual(find(app, 'parked').words, ['Open', 'Later']);
-  assert.equal(find(app, 'parked').later.parked, true);
-  assert.match(find(app, 'revisit future').meta[0], /^Later, revisit /);
+  assert.deepEqual(find(app, 'blocked pick').words, ['Open', 'Blocked']);
 
   const next = app.view({ view: 'next', q: '', showCompleted: false });
   const tasks = next.items.filter((i) => i.type === 'task').map((i) => i.text);
-  assert.equal(tasks[0], 'doing');
+  assert.equal(tasks[0], 'picked high', 'High priority first, then in progress');
+  assert.equal(tasks[1], 'doing');
   assert.ok(tasks.includes('child one') && !tasks.includes('parent'), 'subtasks stand in for their parent');
-  for (const hidden of ['goal thing', 'parked', 'revisit future', 'waiting on x', 'finished', 'child done']) assert.ok(!tasks.includes(hidden), hidden);
+  assert.ok(tasks.includes('first step'));
+  for (const hidden of ['goal thing', 'blocked pick', 'waiting on x', 'finished', 'child done']) assert.ok(!tasks.includes(hidden), hidden);
   assert.deepEqual(next.items.filter((i) => i.type === 'group').map((i) => i.text), ['notes/a.txt', 'notes/ideas.txt']);
 });
 
-test('t picks for today and unpicks, z toggles Later, the Later dialog op sets a revisit date, and Later tasks come back in My Day', async () => {
+test('t picks for today and unpicks', async () => {
   const { notes, app } = setup({ 'a.txt': '@ one\n@ two\n+ done one\n' });
   const id = (n) => find(app, n).id;
   let res = await app.action({ id: id('one'), op: 'today' });
@@ -485,18 +484,76 @@ test('t picks for today and unpicks, z toggles Later, the Later dialog op sets a
   res = await app.action({ id: id('one'), op: 'today' });
   assert.equal(read(notes, 'a.txt').split('\n')[0], '@ one');
   await assert.rejects(() => app.action({ id: items(app, 'open', { showCompleted: true }).find((i) => i.text === 'done one').id, op: 'today' }), /done/i);
+});
 
-  res = await app.action({ id: id('two'), op: 'later' });
-  assert.match(res.message, /Later/);
-  assert.equal(read(notes, 'a.txt').split('\n')[1], '@ two later:');
-  res = await app.action({ id: id('two'), op: 'today' });
-  assert.match(res.message, /Later/, 'picking a Later task says it is held back');
-  await app.action({ id: id('two'), op: 'later', value: { later: true, revisit: '2026-11-16' } });
-  assert.equal(read(notes, 'a.txt').split('\n')[1], '@ two today:2026-11-16 later:2026-11-16');
-  assert.deepEqual(items(app, 'myday').filter((i) => i.type === 'task').map((i) => i.text), ['two']);
-  await app.action({ id: id('two'), op: 'later', value: { later: false } });
-  assert.equal(read(notes, 'a.txt').split('\n')[1], '@ two today:2026-11-16');
-  await assert.rejects(() => app.action({ id: id('two'), op: 'later', value: { later: true, revisit: 'banana' } }), /date/i);
+test('priority cycles medium, high, low, medium, shows in details and speech, and undoes', async () => {
+  const { notes, app } = setup({ 'a.txt': '@ one due:2026-11-20\n' });
+  const id = () => find(app, 'one').id;
+  let res = await app.action({ id: id(), op: 'priority' });
+  assert.match(res.message, /Priority high/);
+  assert.equal(read(notes, 'a.txt'), '@ one due:2026-11-20 p:high\n');
+  assert.ok(find(app, 'one').meta.includes('Priority: High'));
+  assert.ok(find(app, 'one').words.includes('High priority'));
+  await app.action({ id: id(), op: 'priority' });
+  assert.equal(read(notes, 'a.txt'), '@ one due:2026-11-20 p:low\n');
+  assert.ok(find(app, 'one').meta.includes('Priority: Low'));
+  await app.action({ id: id(), op: 'priority' });
+  assert.equal(read(notes, 'a.txt'), '@ one due:2026-11-20\n');
+  assert.ok(!find(app, 'one').meta.some((m) => /^Priority/.test(m)));
+  await app.action({ id: id(), op: 'priority', value: 'high' });
+  app.undo();
+  assert.equal(read(notes, 'a.txt'), '@ one due:2026-11-20\n');
+  await assert.rejects(() => app.action({ id: id(), op: 'priority', value: 'urgent' }), /high, medium or low/i);
+});
+
+test('Blocked by: blockSet writes id: and after:, keeps ids unique, rejects cycles, and unblocks when the blocker is done', async () => {
+  const { notes, app } = setup({ 'a.txt': '~ Ship it goal:ship-it\n@ Ship it\n@ write code\n@ review code\n@ release\n' });
+  const id = (n) => find(app, n).id;
+  const choices = app.blockChoices(id('release'));
+  assert.deepEqual(choices.tasks.map((c) => c.text), ['Ship it', 'write code', 'review code']);
+  assert.ok(!choices.tasks.some((c) => c.text === 'release'));
+
+  let res = await app.blockSet(app.task(id('release')), { ids: [id('write code'), id('review code')] });
+  assert.match(res.message, /Blocked by: write code; review code/);
+  assert.equal(read(notes, 'a.txt'), '~ Ship it goal:ship-it\n@ Ship it\n@ write code id:write-code\n@ review code id:review-code\n@ release after:write-code after:review-code\n');
+  const rel = find(app, 'release');
+  assert.deepEqual(rel.words, ['Open', 'Blocked']);
+  assert.ok(rel.meta.includes('Blocked by: write code; review code'));
+  assert.ok(find(app, 'write code').meta.includes('Blocks 1 task'));
+  assert.ok(!items(app, 'next').some((i) => i.text === 'release'));
+
+  // A goal's own id is a valid target, and the task's own slug never clashes with it.
+  res = await app.blockSet(app.task(id('write code')), { ids: [id('Ship it')] });
+  assert.equal(read(notes, 'a.txt').split('\n')[2], '@ write code id:write-code after:ship-it');
+
+  await assert.rejects(async () => app.blockSet(app.task(id('write code')), { ids: [id('release')] }), /already waits/);
+  await assert.rejects(async () => app.blockSet(app.task(id('write code')), { ids: [id('write code')] }), /itself/);
+
+  // One undo step per action, and unblocking when the blockers are done.
+  app.undo();
+  assert.equal(read(notes, 'a.txt').split('\n')[2], '@ write code id:write-code');
+  await app.action({ id: id('write code'), op: 'toggleDone' });
+  assert.ok(find(app, 'release').words.includes('Blocked'), 'one blocker is still open');
+  await app.action({ id: id('review code'), op: 'toggleDone' });
+  assert.ok(!find(app, 'release').words.includes('Blocked'));
+  assert.ok(items(app, 'next').some((i) => i.text === 'release'));
+
+  // Clearing the blockers removes the after: tokens but keeps ids.
+  res = await app.blockSet(app.task(id('release')), { ids: [] });
+  assert.match(res.message, /Not blocked/);
+  assert.equal(read(notes, 'a.txt').split('\n')[4], '@ release');
+});
+
+test('Blocked by: unresolved after: tokens are kept and ignored, and a deleted blocker stops blocking', async () => {
+  const { notes, app } = setup({ 'a.txt': '@ one after:ghost\n@ two id:two-id\n@ three after:two-id\n' });
+  const id = (n) => find(app, n).id;
+  assert.ok(!find(app, 'one').words.includes('Blocked'));
+  assert.ok(find(app, 'three').words.includes('Blocked'));
+  await app.blockSet(app.task(id('one')), { ids: [id('two')] });
+  assert.equal(read(notes, 'a.txt').split('\n')[0], '@ one after:two-id after:ghost');
+  await app.action({ id: id('two'), op: 'delete' }).catch(() => app.action({ id: id('two'), op: 'exclude' }));
+  assert.ok(!items(app, 'open').some((i) => i.text === 'two'));
+  assert.ok(!find(app, 'three').words.includes('Blocked'), 'a deleted blocker no longer blocks');
 });
 
 test('Not actionable lists keep their tasks out of My Day and Next, and still show in the open view', async () => {

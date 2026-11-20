@@ -476,31 +476,39 @@ test('Jira sync: shift and j opens a grouped preview that passes axe; Apply send
   }
 });
 
-test('t picks for today, z toggles Later, shift+z opens the Later dialog (passes axe), shift+t and shift+a open the new views', async () => {
+test('t picks for today, shift+p cycles priority, shift+b opens the blocked-by dialog (passes axe), shift+t and shift+a open the new views', async () => {
   const env = await boot({ 'a.txt': '@ one\n@ two\n' });
   try {
     const { window } = await openPage(env);
     const doc = window.document;
     const rows = () => [...doc.getElementById('tree').querySelectorAll('[role=option]')];
     const live = () => doc.getElementById('live').textContent;
+    const file = () => fs.readFileSync(path.join(env.notes, 'a.txt'), 'utf8');
     await waitFor(() => rows().length === 2, 'items');
     key(window, doc.activeElement, 't');
     await waitFor(() => /picked for today/i.test(live()), 'pick announced');
-    assert.match(fs.readFileSync(path.join(env.notes, 'a.txt'), 'utf8'), /^@ one today:2026-11-16\n/);
-    key(window, doc.activeElement, 'z');
-    await waitFor(() => /Later/.test(live()), 'later announced');
-    await waitFor(() => /Later/.test(rows()[0].textContent), 'row says Later');
+    assert.match(file(), /^@ one today:2026-11-16\n/);
+    key(window, doc.activeElement, 'P');
+    await waitFor(() => /Priority high/i.test(live()), 'priority announced');
+    await waitFor(() => /High priority/.test(rows()[0].textContent), 'row says High priority');
+    assert.match(file(), /^@ one today:2026-11-16 p:high\n/);
 
-    key(window, doc.activeElement, 'Z');
-    await waitFor(() => doc.getElementById('later-dialog').hasAttribute('open'), 'later dialog');
-    assert.equal(doc.activeElement, doc.getElementById('later-revisit'));
+    key(window, doc.activeElement, 'B');
+    await waitFor(() => doc.getElementById('blockers-dialog').hasAttribute('open'), 'blockers dialog');
+    assert.equal(doc.activeElement, doc.getElementById('blockers-filter'));
+    assert.deepEqual([...doc.querySelectorAll('#blockers-choices label')].map((l) => l.textContent), ['two, notes/a.txt, line 2']);
+    assert.match(doc.getElementById('blockers-count').textContent, /0 ticked\. Showing 1 of 1/);
     window.eval(axe.source);
-    const results = await window.axe.run(doc.getElementById('later-dialog'), { rules: { 'color-contrast': { enabled: false }, region: { enabled: false } } });
+    const results = await window.axe.run(doc.getElementById('blockers-dialog'), { rules: { 'color-contrast': { enabled: false }, region: { enabled: false } } });
     assert.equal(results.violations.length, 0, results.violations.map((v) => v.id).join());
-    doc.getElementById('later-revisit').value = '2026-11-20';
-    doc.getElementById('later-form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
-    await waitFor(() => /comes back/i.test(live()), 'revisit announced');
-    assert.match(fs.readFileSync(path.join(env.notes, 'a.txt'), 'utf8'), /^@ one today:2026-11-16 later:2026-11-20\n/);
+    const box = doc.querySelector('#blockers-choices input');
+    box.checked = true;
+    box.dispatchEvent(new window.Event('change', { bubbles: true }));
+    assert.match(doc.getElementById('blockers-count').textContent, /^1 ticked/);
+    doc.getElementById('blockers-form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+    await waitFor(() => /Blocked by: two/.test(live()), 'blocked announced');
+    assert.match(file(), /^@ one today:2026-11-16 p:high after:two\n@ two id:two\n$/);
+    await waitFor(() => /Blocked/.test(rows()[0].textContent), 'row says Blocked');
 
     key(window, doc.activeElement, 'T');
     await waitFor(() => /My Day/.test(doc.getElementById('list-heading').textContent), 'my day');

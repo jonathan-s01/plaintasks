@@ -28,9 +28,11 @@ const SYNC_DEFAULTS = {
   statuses: { open: 'To Do', inProgress: 'In Progress', ongoing: 'In Progress', done: 'Resolved', deleted: 'Resolved' },
   transitions: {},
   resolutions: { done: 'Done', deleted: "Won't Do" },
-  labels: { waiting: 'waiting', ongoing: 'ongoing', later: 'later' },
+  labels: { waiting: 'waiting', ongoing: 'ongoing' },
+  priorities: { high: 'High', medium: 'Medium', low: 'Low' },
   labelPrefix: 'bucket-',
   linkType: 'Relates',
+  blockType: 'Blocks',
 };
 
 const KIND_WORDS = { open: 'to do (@)', inProgress: 'in progress (%)', ongoing: 'ongoing (~)', done: 'done (+)', deleted: 'deleted ($)' };
@@ -66,15 +68,18 @@ function cleanSync(v, prev = {}) {
     assignee: pick('assignee'),
     reporter: pick('reporter'),
     linkType: pick('linkType') || 'Relates',
+    blockType: pick('blockType') || 'Blocks',
     labelPrefix: (pick('labelPrefix') || SYNC_DEFAULTS.labelPrefix).replace(/\s+/g, '-'),
     statuses: { ...SYNC_DEFAULTS.statuses, ...base.statuses },
     resolutions: { ...SYNC_DEFAULTS.resolutions, ...base.resolutions },
     labels: { ...SYNC_DEFAULTS.labels, ...base.labels },
+    priorities: { ...SYNC_DEFAULTS.priorities, ...base.priorities },
     transitions: s.transitions !== undefined ? parseTransitions(s.transitions) : { ...base.transitions },
   };
   for (const k of KINDS) if (s.statuses && s.statuses[k] !== undefined) out.statuses[k] = str(s.statuses[k]) || SYNC_DEFAULTS.statuses[k];
   for (const k of ['done', 'deleted']) if (s.resolutions && s.resolutions[k] !== undefined) out.resolutions[k] = str(s.resolutions[k]) || SYNC_DEFAULTS.resolutions[k];
-  for (const k of ['waiting', 'ongoing', 'later']) if (s.labels && s.labels[k] !== undefined) out.labels[k] = str(s.labels[k]).replace(/\s+/g, '-');
+  for (const k of ['high', 'medium', 'low']) if (s.priorities && s.priorities[k] !== undefined) out.priorities[k] = str(s.priorities[k]) || SYNC_DEFAULTS.priorities[k];
+  for (const k of ['waiting', 'ongoing']) if (s.labels && s.labels[k] !== undefined) out.labels[k] = str(s.labels[k]).replace(/\s+/g, '-');
   if (out.project && !/^[A-Z][A-Z0-9_]*$/.test(out.project)) throw new JiraError('The Jira project key looks like ABC');
   if (out.epic && !KEY_RE.test(out.epic)) throw new JiraError('The epic key looks like ABC-123');
   for (const k of ['taskType', 'subtaskType', 'startField', 'dueField', 'flaggedField']) {
@@ -196,7 +201,7 @@ function listForFile(lists, file) {
 }
 
 function managedLabels(cfg, ctxLists) {
-  return new Set([cfg.labels.waiting, cfg.labels.ongoing, cfg.labels.later, ...ctxLists.flatMap((l) => l.jiraLabels || [])].filter(Boolean));
+  return new Set([cfg.labels.waiting, cfg.labels.ongoing, ...ctxLists.flatMap((l) => l.jiraLabels || [])].filter(Boolean));
 }
 
 const isLabelGoal = (g) => !!(g && g.jiraLabel && g.flags && g.flags.ongoing);
@@ -211,10 +216,29 @@ function wantedLabels(cfg, t, list, goalsById) {
   const out = new Set(list.jiraLabels || []);
   if (t.flags.waitingOnOthers && cfg.labels.waiting) out.add(cfg.labels.waiting);
   if (t.flags.ongoing && cfg.labels.ongoing) out.add(cfg.labels.ongoing);
-  if (t.later && !t.flags.done && cfg.labels.later) out.add(cfg.labels.later);
   for (const l of bucketLabels(cfg, t, goalsById)) out.add(l);
   return out;
 }
+
+/** Which of high, medium, low a Jira priority name means, by the names in Settings. Null for any other name. */
+function priorityKind(cfg, name) {
+  const n = lower(name);
+  return n ? ['high', 'medium', 'low'].find((k) => lower(cfg.priorities[k]) === n) || null : null;
+}
+
+/** Issues a task waits for, as Map(upper-case Jira key or "new:taskId" -> blocker task). Blockers that will not be in Jira are left out. */
+function wantedBlockers(index, t, willCreate = () => false) {
+  const out = new Map();
+  for (const bid of t.blockedBy || []) {
+    const b = index.get(bid);
+    if (!b || b.id === t.id || isLabelGoal(b)) continue;
+    if (b.jira) out.set(b.jira.toUpperCase(), b);
+    else if (willCreate(b.id)) out.set(`new:${b.id}`, b);
+  }
+  return out;
+}
+
+const blockLinksOf = (cfg, issue) => ((issue.fields && issue.fields.issuelinks) || []).filter((l) => lower(l.type && l.type.name) === lower(cfg.blockType) && l.inwardIssue);
 
 /** Per field: the file's value, Jira's value, and whether they agree. Missing fields are left out. */
 function fieldStates(ctx, entry, issue) {
@@ -229,6 +253,11 @@ function fieldStates(ctx, entry, issue) {
   out.summary = { file: t.text, jira: str(f.summary), same: str(f.summary) === t.text };
   const desc = adfToText(f.description);
   out.desc = { file: descOf(t), jira: desc, same: descOf(t) === desc };
+  if (f.priority !== undefined) {
+    const pn = f.priority ? str(f.priority.name) : '';
+    const jk = priorityKind(cfg, pn);
+    out.priority = { file: t.priority || 'medium', jira: jk || pn, pullKind: jk, same: jk ? jk === (t.priority || 'medium') : !pn && (t.priority || 'medium') === 'medium' };
+  }
   if (cfg.dueField) {
     const j = f[cfg.dueField] ? String(f[cfg.dueField]).slice(0, 10) : '';
     out.due = { file: dueOf(t) || '', jira: j, same: (dueOf(t) || '') === j };
@@ -331,7 +360,7 @@ function install(App, HttpError) {
   };
 
   proto.fetchIssues = async function fetchIssues(client, cfg, flaggedField, keys) {
-    const fields = ['summary', 'status', 'resolution', 'resolutiondate', 'description', 'labels', 'issuelinks', 'parent', 'issuetype', cfg.dueField, cfg.startField, flaggedField].filter(Boolean);
+    const fields = ['summary', 'status', 'priority', 'resolution', 'resolutiondate', 'description', 'labels', 'issuelinks', 'parent', 'issuetype', cfg.dueField, cfg.startField, flaggedField].filter(Boolean);
     const issues = new Map();
     for (let i = 0; i < keys.length; i += 50) {
       const chunk = keys.slice(i, i + 50);
@@ -369,7 +398,7 @@ function install(App, HttpError) {
         continue;
       }
       creating.add(t.id);
-      const buckets = [...bucketLabels(cfg, t, ctx.goalsById), ...(t.later && !t.flags.done && cfg.labels.later ? [cfg.labels.later] : [])];
+      const buckets = bucketLabels(cfg, t, ctx.goalsById);
       add({
         id: `create:${t.id}`,
         group: 'create',
@@ -377,7 +406,7 @@ function install(App, HttpError) {
         raw: t.raw,
         field: 'create',
         parentTaskId: sub ? top.id : null,
-        label: `Create ${sub ? `Sub-task of ${top.jira || top.text}` : `Task${cfg.epic ? ` in epic ${cfg.epic}` : ''}`}, status ${wantedStatus(cfg, kind, list)}${buckets.length ? `, ${buckets.length === 1 ? 'label' : 'labels'} ${buckets.join(', ')}` : ''}`,
+        label: `Create ${sub ? `Sub-task of ${top.jira || top.text}` : `Task${cfg.epic ? ` in epic ${cfg.epic}` : ''}`}, status ${wantedStatus(cfg, kind, list)}${t.priority && t.priority !== 'medium' ? `, priority ${cfg.priorities[t.priority]}` : ''}${buckets.length ? `, ${buckets.length === 1 ? 'label' : 'labels'} ${buckets.join(', ')}` : ''}`,
         from: null,
         to: { kind, text: t.text },
         checked: kind !== 'done',
@@ -399,17 +428,22 @@ function install(App, HttpError) {
       const base = { ...where(t), key, raw: t.raw };
 
       // Status and summary can change on either side.
-      for (const field of ['status', 'summary']) {
+      for (const field of ['status', 'summary', 'priority']) {
         const s = states[field];
         if (!s || s.same) continue;
         const sn = snap[field];
         const fileChanged = !sn || sn.file !== s.file;
         const jiraChanged = !sn || sn.jira !== s.jira;
         const isStatus = field === 'status';
-        const fileWords = isStatus ? `${KIND_WORDS[s.file]} → Jira ${wantedStatus(cfg, s.file, list)}` : s.file;
-        const pullKind = isStatus ? jiraKind(cfg, issue) : null;
-        const jiraWords = isStatus ? `${statusWords(issue)} → file ${KIND_WORDS[pullKind]}` : s.jira;
-        const fieldName = isStatus ? 'Status' : 'Summary';
+        const isPriority = field === 'priority';
+        if (isPriority && !s.pullKind) {
+          add({ ...base, id: `${key}:priority`, group: 'push', field, label: `Priority: Jira has "${s.jira || 'none'}", which is not High, Medium or Low in Settings. Send ${cfg.priorities[s.file]} from the file`, from: s.jira, to: s.file, checked: false });
+          continue;
+        }
+        const fileWords = isStatus ? `${KIND_WORDS[s.file]} → Jira ${wantedStatus(cfg, s.file, list)}` : isPriority ? `${s.file} → Jira ${cfg.priorities[s.file]}` : s.file;
+        const pullKind = isStatus ? jiraKind(cfg, issue) : isPriority ? s.pullKind : null;
+        const jiraWords = isStatus ? `${statusWords(issue)} → file ${KIND_WORDS[pullKind]}` : isPriority ? `${issue.fields.priority ? issue.fields.priority.name : 'none'} → file ${pullKind}` : s.jira;
+        const fieldName = isStatus ? 'Status' : isPriority ? 'Priority' : 'Summary';
         if (e.excluded) {
           add({ ...base, id: `${key}:${field}`, group: 'push', field, label: `Close as ${cfg.resolutions.deleted}: the line is deleted ($) in the file`, from: statusWords(issue), to: s.file, checked: true });
         } else if (!sn || (fileChanged && jiraChanged)) {
@@ -431,7 +465,7 @@ function install(App, HttpError) {
           add({
             ...base, id: `${key}:${field}`, group: 'push', field,
             label: `${fieldName} changed in the file: ${fileWords}${!isStatus && !ours ? '. plaintasks did not create this issue' : ''}`,
-            from: s.jira, to: s.file, checked: isStatus || ours,
+            from: s.jira, to: s.file, checked: isStatus || isPriority || ours,
           });
         }
       }
@@ -486,6 +520,41 @@ function install(App, HttpError) {
           goalTaskId: g.id,
           label: `Link to goal ${g.text}${g.jira ? ` (${g.jira})` : ''} as ${cfg.linkType}`,
           from: null, to: g.jira || g.text, checked: true,
+        });
+      }
+    }
+
+    // Blocks links: the task waiting is blocked by each open or done task it waits for, once both are (or will be) in Jira.
+    for (const e of entries) {
+      const { t } = e;
+      if (e.excluded) continue;
+      const issue = t.jira ? issues.get(t.jira.toUpperCase()) : null;
+      if (t.jira && !issue) continue;
+      if (!t.jira && !creating.has(t.id)) continue;
+      const wanted = wantedBlockers(this.index, t, (id) => creating.has(id));
+      const have = issue ? blockLinksOf(cfg, issue) : [];
+      const haveKeys = new Set(have.map((l) => str(l.inwardIssue.key).toUpperCase()));
+      for (const [k, b] of wanted) {
+        if (haveKeys.has(k)) continue;
+        add({
+          ...where(t), key: t.jira || null, raw: t.raw, id: `block:${t.id}:${b.id}`, group: 'push', field: 'block',
+          blockerTaskId: b.id,
+          label: `Blocked by ${b.text}${b.jira ? ` (${b.jira})` : ''}: add a ${cfg.blockType} link`,
+          from: null, to: b.jira || b.text, checked: true,
+        });
+      }
+      // Remove only links plaintasks made, and not while a waiting-for token has no task behind it.
+      const unresolved = (t.waitsFor || []).length > (t.blockedBy || []).length;
+      const ours = ((synced[issue ? issue.key : ''] || {}).blockers) || [];
+      if (!issue || unresolved) continue;
+      for (const l of have) {
+        const k = str(l.inwardIssue.key).toUpperCase();
+        if (wanted.has(k) || !ours.includes(k)) continue;
+        add({
+          ...where(t), key: issue.key, raw: t.raw, id: `unblock:${t.id}:${k}`, group: 'push', field: 'unblock',
+          linkId: l.id, blockerKey: k,
+          label: `No longer blocked by ${k}: remove the ${cfg.blockType} link`,
+          from: k, to: null, checked: true,
         });
       }
     }
@@ -571,6 +640,7 @@ function install(App, HttpError) {
             if (cfg.startField && startOf(t)) fields[cfg.startField] = startOf(t);
             const labels = [...wantedLabels(cfg, t, list, ctx.goalsById)];
             if (labels.length) fields.labels = labels;
+            if (t.priority && t.priority !== 'medium') fields.priority = { name: cfg.priorities[t.priority] };
             const made = await client.create(fields);
             jiraChanges += 1;
             newKeys.set(t.id, made.key);
@@ -593,7 +663,7 @@ function install(App, HttpError) {
 
         // Updates to existing issues, one request per issue, then status.
         const byKey = new Map();
-        for (const it of chosen) if (it.key && it.mode === 'push' && it.field !== 'link' && it.field !== 'create') {
+        for (const it of chosen) if (it.key && it.mode === 'push' && !['link', 'block', 'unblock', 'create'].includes(it.field)) {
           if (!byKey.has(it.key)) byKey.set(it.key, []);
           byKey.get(it.key).push(it);
         }
@@ -606,6 +676,7 @@ function install(App, HttpError) {
           for (const it of its) {
             if (it.field === 'status') status = fileKind(t);
             else if (it.field === 'summary') fields.summary = t.text.slice(0, 250);
+            else if (it.field === 'priority') fields.priority = { name: cfg.priorities[t.priority || 'medium'] };
             else if (it.field === 'desc') fields.description = toAdf(descOf(t));
             else if (it.field === 'due') fields[cfg.dueField] = dueOf(t) || null;
             else if (it.field === 'start') fields[cfg.startField] = startOf(t) || null;
@@ -649,6 +720,28 @@ function install(App, HttpError) {
           }
         }
 
+        for (const it of chosen.filter((x) => x.field === 'block')) {
+          const dep = keyOf(it.taskId);
+          const blocker = keyOf(it.blockerTaskId) || (this.index.get(it.blockerTaskId) || {}).jira;
+          try {
+            if (!dep || !blocker) throw new Error('one of the two tasks is not in Jira');
+            await client.link(cfg.blockType, blocker, dep);
+            jiraChanges += 1;
+            note(true, `${blocker} now blocks ${dep}: ${it.task}`);
+          } catch (err) {
+            note(false, `Could not link ${it.task} to the task it waits for: ${err.message}`);
+          }
+        }
+        for (const it of chosen.filter((x) => x.field === 'unblock')) {
+          try {
+            await client.unlink(it.linkId);
+            jiraChanges += 1;
+            note(true, `Removed the ${cfg.blockType} link from ${it.blockerKey} to ${it.key}: ${it.task}`);
+          } catch (err) {
+            note(false, `Could not remove the link to ${it.blockerKey}: ${err.message}`);
+          }
+        }
+
         // File changes from Jira, one write per line.
         const pulls = new Map();
         for (const it of chosen) if (it.mode === 'pull') {
@@ -661,6 +754,7 @@ function install(App, HttpError) {
           const ops = [];
           for (const it of its) {
             if (it.field === 'summary') ops.push(['text', issue.fields.summary]);
+            if (it.field === 'priority') ops.push(['priority', it.pullKind]);
             if (it.field === 'status') ops.push(...pullOps(t, it.pullKind, issue));
           }
           try {
@@ -722,6 +816,9 @@ function install(App, HttpError) {
             snap.labels = { added: [...new Set([...((snap.labels || {}).added || []).filter((l) => want.has(l)), ...s.file])] };
           } else snap[field] = { file: s.file, jira: s.jira };
         }
+        const have = new Set(blockLinksOf(cfg, issue).map((l) => str(l.inwardIssue.key).toUpperCase()));
+        const want = wantedBlockers(this.index, e.t);
+        snap.blockers = [...new Set([...(snap.blockers || []).filter((k) => have.has(k)), ...[...want.keys()].filter((k) => have.has(k))])];
         this.stateData.jira.synced[issue.key] = snap;
       }
       this.saveState();

@@ -311,8 +311,10 @@ class App {
         return this.listAdd(t, list);
       case 'today':
         return this.pickToday(t);
-      case 'later':
-        return this.setLater(t, value);
+      case 'priority':
+        return this.setPriority(t, value);
+      case 'blockSet':
+        return this.blockSet(t, value);
       case 'goalSet':
         return this.goalSet(t, value);
       case 'jira': {
@@ -819,6 +821,7 @@ class App {
 require('./features').install(App, HttpError);
 require('./filelists').install(App, HttpError);
 require('./goals').install(App, HttpError);
+require('./blocks').install(App, HttpError);
 require('./jirasync').install(App, HttpError);
 
 module.exports = { App, HttpError };

@@ -99,6 +99,10 @@ class JiraClient {
     return this.v3('POST', '/issueLink', { type: { name: type }, inwardIssue: { key: inwardKey }, outwardIssue: { key: outwardKey } });
   }
 
+  unlink(id) {
+    return this.v3('DELETE', `/issueLink/${encodeURIComponent(id)}`);
+  }
+
   issueUrl(key) {
     return `${this.baseUrl}/browse/${key}`;
   }

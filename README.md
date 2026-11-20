@@ -48,7 +48,8 @@ Website relaunch
 - **Dates.** `due:2026-11-20` is the stored form. When you set a date in the app, friendly input such as `fri`, `nov 20`, `+3d` or `in 2 weeks` is converted to that form. Completing a task adds `+` and `done:YYYY-MM-DD`.
 - **Jira link.** `jira:ABC-123` ties a task to an issue.
 - **Start date.** `start:2026-11-02` records when work began. It is hidden from the displayed text and spoken as "Started …". Sync with Jira sends it to the start-date field.
-- **Later.** `later:` parks a task: it is hidden from My Day and Next actions but still shows in the file, list and All open views, spoken as "Later". `later:2027-01-15` adds a revisit date; from that day the task shows in My Day again ("Revisit due"). A bare `later:` only counts at the end of the line or before another token, so "do it later: after lunch" stays text. Sync with Jira labels Later tasks `later` (a setting).
+- **Priority.** `p:high` and `p:low` set a task's priority; no token means Medium (`p:medium` is accepted and ignored). Hidden from the text. Details say "Priority: High" or "Priority: Low", and the row says "High priority" or "Low priority". `Shift+p` cycles Medium, High, Low. My Day and Next actions sort High, then Medium, then Low within each group. Sync with Jira sends it to the Priority field and pulls Jira-side changes back (names are settings).
+- **Blocked by.** `id:write-code` names a task and `after:write-code` says another task waits for it (several `after:` allowed). `Shift+b` opens a checkbox dialog of open tasks to pick the blockers; the blocker gets an `id:` the first time something depends on it (same slug rules as goal ids, and a goal's `goal:` id is also a valid target). A task whose blockers are all done or deleted (`$`) is unblocked. Blocked tasks are left out of My Day and Next actions and spoken "Blocked" elsewhere. Details say "Blocked by: …" and "Blocks N tasks". An `after:` that matches nothing is left alone and does not block. Sync with Jira adds a "Blocks" link from the blocker's issue to the task's issue and removes ones it made when the token goes.
 - **Picked for today.** `today:2026-11-16` is written by `t`. It is hidden from the text. A pick still open on a later day carries over to My Day until you take it out. It is never sent to Jira.
 - **Goal link.** `goal:partner-network` ties a task to a goal (see Goals below). A task can carry several.
 - **Label goal.** `jira:label` on a goal's line makes it a Jira label (bucket) instead of an issue; see Sync with Jira.
@@ -86,10 +87,10 @@ All open, by file, by group or project, goals and their tasks, My Day, Next acti
 
 ## My Day and Next actions
 
-- **My Day** (Shift+`t`) lists, in groups with counts in the heading ("Picked 2, Overdue 1, Due today 1"): tasks you picked with `t` today, picks from earlier days that are still open (spoken "Carried over"), overdue tasks, tasks due today, and Later tasks whose revisit date has arrived. Left out: goals (`~`), tasks waiting on others (`>`), done and deleted tasks, tasks that are Later, and tasks on a not-actionable list. Waiting on me (`<`) stays.
-- **Next actions** (Shift+`a`) lists open tasks with no open subtasks, grouped by file, in progress first. A task with open subtasks is replaced by those subtasks. Same exclusions as My Day.
+- **My Day** (Shift+`t`) lists, in groups with counts in the heading ("Picked 2, Overdue 1, Due today 1"): tasks you picked with `t` today, picks from earlier days that are still open (spoken "Carried over"), overdue tasks and tasks due today. Left out: goals (`~`), tasks waiting on others (`>`), done and deleted tasks, blocked tasks, and tasks on a not-actionable list. Within each group High priority comes first. Waiting on me (`<`) stays.
+- **Next actions** (Shift+`a`) lists open tasks with no open subtasks, grouped by file, High priority first, then in progress. A task with open subtasks is replaced by those subtasks. Same exclusions as My Day.
 - **Not actionable lists.** Manage lists and the New list form have "Not actionable (events, meetings, ideas)", off by default. Tasks on such a list (any list with that setting that holds the task) stay out of My Day and Next actions but still show everywhere else. Tick it on lists such as Ideas, One-off meetings, Recurring meetings and Conferences and events; nothing is guessed from list names.
-- `t` picks or unpicks the task, `z` toggles Later, Shift+`z` opens a Later dialog with a checkbox and a revisit date field.
+- `t` picks or unpicks the task. Shift+`p` cycles priority. Shift+`b` opens the blocked-by dialog.
 
 ## Keyboard
 
@@ -124,7 +125,7 @@ Press `?` in the app for the list (Escape closes it). Every command is also writ
 | Shift+`g` | Goals view |
 | Shift+`t` / Shift+`a` | My Day view / Next actions view |
 | `t` | pick the task for today, or take it out of My Day |
-| `z` / Shift+`z` | toggle Later / Later with a revisit date |
+| Shift+`p` / Shift+`b` | cycle priority (Medium, High, Low) / choose the tasks this one is blocked by |
 | `g`, Option+Up / Down | in a list: pick up and reorder with arrows, or move one place |
 | `1`–`9`, `0`, `-`, `=` | switch view (1 open, 2 file, 3 group, 4 schedule, 5 waiting on me, 6 waiting on others, 7 important, 8 in progress, 9 completed, 0 triage, minus My list, equals All lists; other lists via `[` `]` or the View menu) |
 | `v` | jump to the view menu |
@@ -171,12 +172,13 @@ Sync runs only when you press Shift+`j` or the Sync with Jira button. It covers 
   A Jira status in the same category counts as in sync (In Review matches `%`).
 - **Goals.** `goal:` links become Jira "Relates" links between the task's issue and the goal's issue.
 - **Label goals (buckets).** Put `jira:label` on a goal's line, for example `~ Advisory services goal:advisory-services jira:label`. That goal is never created, updated or closed in Jira and gets no Relates links. Instead every synced task that links to it directly (open or done) gets the label prefix plus the goal id, `bucket-advisory-services` by default; unlinking removes it. Labels starting with the prefix are managed by sync (one no longer wanted is removed even if added in Jira); other labels are left alone. Label updates are ticked even on issues plaintasks didn't create. Tasks indented under a label goal sync as main tasks. The prefix is a setting (default `bucket-`). The token is hidden from the text, and the goal's details say "Jira label goal".
-- **Later.** Open tasks with `later:` get the label `later` (setting `labels.later`, default `later`), also on creation. Removing `later:` removes it, as a ticked Labels update. Status is unchanged. `today:` is never sent.
+- **Priority.** A task's priority goes to the Jira Priority field (High, Medium, Low names are settings; Medium is not sent on create). Three-way like status: Jira-only changes are pulled into the file as `p:` (ticked), file-only changes are pushed, both is a conflict. A Jira priority that is not one of the three names is shown unticked. `today:` is never sent.
+- **Blocks links.** Each `after:` that matches a task becomes a Jira link of the configured type (default `Blocks`), blocker blocks dependent, added once both issues exist. A link is removed only when plaintasks recorded making it and the token is gone.
 - **Per list:** extra labels, and an optional status for open tasks.
 - **Started notes.** If tasks have `& Started 2026-11-02` notes, the dialog offers a one-time button that turns them into `start:` tokens on the task line (all indexed files; `u` undoes).
 - **Undo.** `u` undoes the file changes from one sync. Changes already sent to Jira stay.
 
-Settings (on the settings page, under Jira sync; nothing is hard-coded): label goal prefix, project key, epic key, Task and Sub-task issue type ids, start-date and due-date field ids, Flagged field id (found by name if empty), assignee and reporter accountId, transition ids, status names per marker, resolution names or ids, and the waiting/ongoing labels. Example for a site like alberta.atlassian.net:
+Settings (on the settings page, under Jira sync; nothing is hard-coded): label goal prefix, project key, epic key, Task and Sub-task issue type ids, start-date and due-date field ids, Flagged field id (found by name if empty), assignee and reporter accountId, transition ids, status names per marker, resolution names or ids, the waiting/ongoing labels, the Priority names (High, Medium, Low) and the Blocks link type name. Example for a site like alberta.atlassian.net:
 
 | Setting | Example |
 | --- | --- |

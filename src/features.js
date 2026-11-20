@@ -558,20 +558,17 @@ function install(App, HttpError) {
     return r ? { ok: true, message, undo: true, focusId: r.focusId } : { ok: true, message: `No change: ${t.text}` };
   };
 
-  /** Parks a task as Later (later:, or later:DATE to bring it back on that day). value: undefined toggles; { later, revisit } sets. */
-  proto.setLater = function setLater(t, value) {
-    if (t.kind !== 'task') throw new HttpError(400, 'Only tasks can be marked Later. Mark this line as a to-do first.');
-    const v = value && typeof value === 'object' ? value : {};
-    const on = v.later === undefined ? !t.later : !!v.later;
-    const raw = clean(v.revisit);
-    let iso = null;
-    if (on && raw) {
-      iso = parseFriendly(raw.toLowerCase(), this.now());
-      if (!iso) throw new HttpError(400, `Could not understand "${raw}" as a revisit date. Try fri, nov 20, +3d or 2026-11-20.`, 'bad-date');
-    }
-    const r = this.lineWrite(t, 'later', on ? iso || true : null);
-    const message = !on ? `No longer Later: ${t.text}` : `Later${iso ? `, comes back ${formatDate(iso, this.now())}` : ''}: ${t.text}. It is hidden from My Day and Next actions${iso ? ' until then' : ''}`;
-    return r ? { ok: true, message, undo: true, focusId: r.focusId } : { ok: true, message: `No change: ${t.text}` };
+  /** Sets the priority. value: 'high' | 'medium' | 'low', or undefined to cycle medium, high, low, medium. */
+  proto.setPriority = function setPriority(t, value) {
+    if (t.kind !== 'task') throw new HttpError(400, 'Only tasks have a priority. Mark this line as a to-do first.');
+    const order = ['medium', 'high', 'low'];
+    let next = value == null || value === '' ? order[(order.indexOf(t.priority) + 1) % 3] : String(value).toLowerCase();
+    if (next === 'med' || next === 'normal') next = 'medium';
+    if (!order.includes(next)) throw new HttpError(400, 'Priority is high, medium or low.');
+    if (next === t.priority) return { ok: true, message: `No change. Priority ${next}: ${t.text}` };
+    const r = this.lineWrite(t, 'priority', next);
+    const label = next === 'medium' ? 'Priority medium (no token)' : `Priority ${next}`;
+    return r ? { ok: true, message: `${label}: ${t.text}`, undo: true, focusId: r.focusId } : { ok: true, message: `No change: ${t.text}` };
   };
 
   proto.setDates = function setDates(t, value) {

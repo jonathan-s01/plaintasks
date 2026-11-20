@@ -22,6 +22,8 @@ const SYNC = {
   assignee: '712020:0225302d-62d6-4dc9-ae6f-554569502d94',
   transitions: 'In Discovery=3, To Do=11, In Progress=31, In Review=41, Resolved=61, Awaiting release=71, Reopen=2',
   resolutions: { done: '10000', deleted: '10001' },
+  priorities: { high: 'High', medium: 'Medium', low: 'Low' },
+  blockType: 'Blocks',
 };
 
 const CATEGORY = { 'To Do': 'new', 'In Discovery': 'new', 'In Progress': 'indeterminate', 'In Review': 'indeterminate', 'Awaiting release': 'indeterminate', Resolved: 'done' };
@@ -71,10 +73,15 @@ function mockJira() {
       return reply(204, null);
     }
     if (opts.method === 'POST' && p === '/issueLink') {
-      for (const [a, b] of [[body.inwardIssue.key, body.outwardIssue.key], [body.outwardIssue.key, body.inwardIssue.key]]) {
-        issues.get(a).fields.issuelinks.push({ type: body.type, outwardIssue: { key: b } });
-      }
+      const id = String(next++);
+      issues.get(body.inwardIssue.key).fields.issuelinks.push({ id, type: body.type, outwardIssue: { key: body.outwardIssue.key } });
+      issues.get(body.outwardIssue.key).fields.issuelinks.push({ id, type: body.type, inwardIssue: { key: body.inwardIssue.key } });
       return reply(201, null);
+    }
+    m = /^\/issueLink\/([^/]+)$/.exec(p);
+    if (m && opts.method === 'DELETE') {
+      for (const is of issues.values()) is.fields.issuelinks = is.fields.issuelinks.filter((l) => l.id !== m[1]);
+      return reply(204, null);
     }
     return reply(404, { errorMessages: [`no mock for ${opts.method} ${p}`] });
   };
@@ -301,27 +308,66 @@ test('jira sync: label goals (jira:label) are never issues; linked tasks get pre
   assert.deepEqual(plan2.items.find((i) => i.id === 'A11Y-2591:labels').to, { add: [], remove: ['bucket-advisory-services'] });
 });
 
-test('jira sync: Later tasks get the later label, removing later: removes it, today: is never pushed', async () => {
+test('jira sync: priority is sent on create and update, pulled back, and an unknown Jira name is not ticked', async () => {
   const { notes, app, jira } = setup({
-    'a.txt': '@ Park me later: today:2026-11-16\n@ Linked one jira:A11Y-7 later:2027-01-15\n+ Finished later: jira:A11Y-8 done:2026-11-10\n',
+    'a.txt': '@ Urgent thing p:high\n@ Normal thing\n@ Linked jira:A11Y-7 p:low\n@ Other jira:A11Y-8\n@ Odd jira:A11Y-9\n',
   });
-  jira.add('A11Y-7', { summary: 'Linked one', labels: ['keep'] });
-  jira.add('A11Y-8', { summary: 'Finished', labels: [] });
+  jira.add('A11Y-7', { summary: 'Linked', priority: { name: 'Medium' } });
+  jira.add('A11Y-8', { summary: 'Other', priority: { name: 'High' } });
+  jira.add('A11Y-9', { summary: 'Odd', priority: { name: 'Highest' } });
   await syncedList(app, 'a.txt');
   const plan = await app.syncPreview();
-  const create = plan.items.find((i) => i.group === 'create' && i.task === 'Park me');
-  assert.match(create.label, /, label later$/);
-  const upd = plan.items.find((i) => i.id === 'A11Y-7:labels');
-  assert.deepEqual([upd.to, upd.checked], [{ add: ['later'], remove: [] }, true]);
-  assert.ok(!plan.items.some((i) => i.id === 'A11Y-8:labels'), 'done tasks are not labelled Later');
+  const by = Object.fromEntries(plan.items.map((i) => [i.id, i]));
+  assert.match(plan.items.find((i) => i.group === 'create' && i.task === 'Urgent thing').label, /priority High/);
+  assert.equal(by['A11Y-7:priority'].group, 'conflict', 'first sync with different values is a conflict');
+  assert.deepEqual([by['A11Y-9:priority'].group, by['A11Y-9:priority'].checked], ['push', false]);
+  const res = await app.syncApply({ choices: choose(plan, { 'A11Y-7:priority': 'file', 'A11Y-8:priority': 'jira' }) });
+  assert.ok(res.results.every((r) => r.ok), JSON.stringify(res.results));
+  const made = jira.calls.filter((c) => c.method === 'POST' && c.path === '/issue').map((c) => c.body.fields);
+  assert.deepEqual(made[0].priority, { name: 'High' });
+  assert.equal(made[1].priority, undefined, 'Medium is the default and is not sent');
+  assert.deepEqual(jira.issues.get('A11Y-7').fields.priority, { name: 'Low' });
+  assert.match(read(notes, 'a.txt'), /^@ Other jira:A11Y-8 p:high$/m);
+
+  // Afterwards each side changes once: three-way compare pushes the file, pulls Jira.
+  fs.writeFileSync(path.join(notes, 'a.txt'), read(notes, 'a.txt').replace('Linked jira:A11Y-7 p:low', 'Linked jira:A11Y-7'));
+  jira.issues.get('A11Y-8').fields.priority = { name: 'Low' };
+  const plan2 = await app.syncPreview();
+  const by2 = Object.fromEntries(plan2.items.map((i) => [i.id, i]));
+  assert.deepEqual([by2['A11Y-7:priority'].group, by2['A11Y-7:priority'].to], ['push', 'medium']);
+  assert.deepEqual([by2['A11Y-8:priority'].group, by2['A11Y-8:priority'].to], ['pull', 'low']);
+  await app.syncApply({ choices: choose(plan2) });
+  assert.equal(jira.issues.get('A11Y-7').fields.priority.name, 'Medium');
+  assert.match(read(notes, 'a.txt'), /^@ Other jira:A11Y-8 p:low$/m);
+  assert.ok(!JSON.stringify(jira.calls).includes('today'), 'today: is never sent');
+});
+
+test('jira sync: Blocks links are added when a task waits, removed only when plaintasks made them, and goals still use Relates', async () => {
+  const { notes, app, jira } = setup({
+    'a.txt': '@ Write code id:write-code jira:A11Y-7\n@ Release after:write-code jira:A11Y-8\n@ New dependent after:write-code\n@ Stray after:nobody jira:A11Y-9\n',
+  });
+  jira.add('A11Y-7', { summary: 'Write code' });
+  jira.add('A11Y-8', { summary: 'Release' });
+  jira.add('A11Y-9', { summary: 'Stray', issuelinks: [{ id: '900', type: { name: 'Blocks' }, inwardIssue: { key: 'A11Y-1' } }] });
+  await syncedList(app, 'a.txt');
+  const plan = await app.syncPreview();
+  const blocks = plan.items.filter((i) => i.field === 'block');
+  assert.deepEqual(blocks.map((i) => [i.task, i.checked]), [['Release', true], ['New dependent', true]]);
+  assert.ok(!plan.items.some((i) => i.field === 'unblock'), 'a link plaintasks did not make is left alone');
   const res = await app.syncApply({ choices: choose(plan) });
   assert.ok(res.results.every((r) => r.ok), JSON.stringify(res.results));
-  const made = jira.calls.filter((c) => c.method === 'POST' && c.path === '/issue').map((c) => c.body);
-  assert.deepEqual(made[0].fields.labels, ['later']);
-  assert.ok(!JSON.stringify(jira.calls).includes('today'), 'today: is never sent');
-  assert.deepEqual(jira.issues.get('A11Y-7').fields.labels, ['keep', 'later']);
+  const link = jira.calls.find((c) => c.path === '/issueLink' && c.body.outwardIssue.key === 'A11Y-8');
+  assert.deepEqual([link.body.type, link.body.inwardIssue.key], [{ name: 'Blocks' }, 'A11Y-7']);
+  const newKey = read(notes, 'a.txt').match(/New dependent after:write-code jira:(A11Y-\d+)/)[1];
+  assert.ok(jira.issues.get(newKey).fields.issuelinks.some((l) => l.inwardIssue.key === 'A11Y-7'));
+  assert.equal((await app.syncPreview()).items.filter((i) => i.field === 'block').length, 0);
 
-  fs.writeFileSync(path.join(notes, 'a.txt'), read(notes, 'a.txt').replace(' later:2027-01-15', ''));
+  // Dropping the after: token removes the link plaintasks made.
+  fs.writeFileSync(path.join(notes, 'a.txt'), read(notes, 'a.txt').replace('Release after:write-code', 'Release'));
   const plan2 = await app.syncPreview();
-  assert.deepEqual(plan2.items.find((i) => i.id === 'A11Y-7:labels').to, { add: [], remove: ['later'] });
+  const un = plan2.items.filter((i) => i.field === 'unblock');
+  assert.deepEqual(un.map((i) => [i.task, i.blockerKey]), [['Release', 'A11Y-7']]);
+  await app.syncApply({ choices: choose(plan2) });
+  assert.ok(jira.calls.some((c) => c.method === 'DELETE' && c.path.startsWith('/issueLink/')));
+  assert.equal(jira.issues.get('A11Y-8').fields.issuelinks.filter((l) => l.type.name === 'Blocks').length, 0);
 });

@@ -161,12 +161,16 @@ test('start: is read and hidden like due:', () => {
   assert.equal(t.due, '2026-12-01');
 });
 
-test('later: and today: tokens are hidden; bare later: only counts at the end or before another token', () => {
+test('today:, p:, id: and after: tokens are hidden and parsed', () => {
   const t = (line) => tasks(parse(`${line}\n`))[0];
-  const a = t('@ call Sam later: due:2026-11-20');
-  assert.deepEqual([a.text, a.later, a.revisit || null, a.due], ['call Sam', true, null, '2026-11-20']);
-  const b = t('@ call Sam later:2027-01-15 today:2026-11-16');
-  assert.deepEqual([b.text, b.later, b.revisit, b.picked], ['call Sam', true, '2027-01-15', '2026-11-16']);
-  const c = t('@ do it later: after lunch');
-  assert.deepEqual([c.text, !!c.later], ['do it later: after lunch', false]);
+  const a = t('@ call Sam today:2026-11-16 p:high id:call-sam due:2026-11-20');
+  assert.deepEqual([a.text, a.picked, a.priority, a.refId, a.due], ['call Sam', '2026-11-16', 'high', 'call-sam', '2026-11-20']);
+  const b = t('@ file report P:Low after:call-sam after:budget after:call-sam');
+  assert.deepEqual([b.text, b.priority, b.waitsFor], ['file report', 'low', ['call-sam', 'budget']]);
+  const c = t('@ plain task');
+  assert.deepEqual([c.priority, c.refId, c.waitsFor], ['medium', null, []]);
+  const d = t('@ talk about p:high-level plans and after: lunch');
+  assert.deepEqual([d.text, d.priority, d.waitsFor], ['talk about p:high-level plans and after: lunch', 'medium', []]);
+  const e = t('@ rating p:medium');
+  assert.deepEqual([e.text, e.priority], ['rating', 'medium']);
 });

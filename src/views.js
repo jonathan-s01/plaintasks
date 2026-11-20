@@ -8,7 +8,7 @@ const VIEWS = [
   { id: 'file', title: 'By file', hierarchical: true },
   { id: 'group', title: 'By group or project', hierarchical: true },
   { id: 'myday', title: 'My Day: picked, overdue and due today', empty: 'Nothing is picked, overdue or due today. Press t on a task to pick it for today.' },
-  { id: 'next', title: 'Next actions', empty: 'No next actions. Open tasks that are not goals, not waiting, not Later and not on a not-actionable list show here.' },
+  { id: 'next', title: 'Next actions', empty: 'No next actions. Open tasks that are not goals, not waiting, not blocked and not on a not-actionable list show here.' },
   { id: 'goals', title: 'Goals and their tasks', empty: 'No goals yet. A goal is an ongoing task, marked with ~. Press y on any task to link it to one.' },
   { id: 'schedule', title: 'Schedule: overdue, today, this week', empty: 'Nothing has a due date or check-in date. Press d on a task to set one.' },
   { id: 'due', title: 'Due soon and overdue', empty: 'No open tasks are overdue or due within 7 days.' },
@@ -44,15 +44,14 @@ function matcher(q) {
   };
 }
 
-/** A task parked with later: stays out of My Day and Next actions until its revisit date arrives. */
-function isParked(t, today) {
-  return !!t.later && !t.flags.done && !(t.revisit && t.revisit <= toISO(today));
-}
+const PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
+const byPriority = (a, b) => PRIORITY_RANK[a.priority || 'medium'] - PRIORITY_RANK[b.priority || 'medium'];
 
 function statusWords(t, today = new Date()) {
   const f = t.flags;
   const w = [f.done ? 'Done' : 'Open'];
-  if (t.kind === 'task' && t.later && !f.done) w.push(isParked(t, today) ? 'Later' : 'Revisit due');
+  if (t.kind === 'task' && t.blocked && !f.done) w.push('Blocked');
+  if (t.kind === 'task' && !f.done && t.priority && t.priority !== 'medium') w.push(`${t.priority === 'high' ? 'High' : 'Low'} priority`);
   if (f.important) w.push('Important');
   if (f.waitingOnMe) w.push('Waiting on me');
   if (f.waitingOnOthers) w.push('Waiting on someone else');
@@ -85,7 +84,11 @@ function describe(t, today, level, extra = {}) {
   const checkin = !t.flags.done && checkinText(t, today);
   if (checkin) meta.push(checkin);
   if (t.start) meta.push(`Started ${formatDate(t.start, today)}`);
-  if (t.later && !t.flags.done) meta.push(isParked(t, today) ? `Later${t.revisit ? `, revisit ${formatDate(t.revisit, today)}` : ''}` : `Later, revisit date ${formatDate(t.revisit, today)} has arrived`);
+  if (t.kind === 'task' && t.priority && t.priority !== 'medium') meta.push(`Priority: ${t.priority === 'high' ? 'High' : 'Low'}`);
+  if (t.kind === 'task' && t.blockedBy && t.blockedBy.length) {
+    meta.push(`Blocked by: ${t.blockerNames.join('; ')}`);
+  }
+  if (t.kind === 'task' && t.blocksCount) meta.push(t.blocksCount === 1 ? 'Blocks 1 task' : `Blocks ${t.blocksCount} tasks`);
   if (t.picked && !t.flags.done) meta.push(t.picked === toISO(today) ? 'Picked for today' : t.picked < toISO(today) ? `Picked ${formatDate(t.picked, today)}, carried over to today` : `Picked for ${formatDate(t.picked, today)}`);
   if (t.flags.done && t.doneDate) meta.push(`Completed ${formatDate(t.doneDate, today)}`);
   if (extra.parentText) meta.push(`Subtask of ${extra.parentText}`);
@@ -104,7 +107,8 @@ function describe(t, today, level, extra = {}) {
     due: due ? { iso: due.iso, state: due.state, time: t.dueTime || null } : null,
     checkin: t.checkin ? { iso: t.checkin, time: t.checkinTime || null } : null,
     flags: t.flags,
-    later: t.kind === 'task' && t.later && !t.flags.done ? { revisit: t.revisit || null, parked: isParked(t, today) } : null,
+    priority: t.kind === 'task' ? t.priority || 'medium' : null,
+    blocked: t.kind === 'task' && !!t.blocked && !t.flags.done,
     picked: t.kind === 'task' ? t.picked || null : null,
     pickedNow: t.kind === 'task' && !!t.picked && t.picked <= toISO(today),
     hasChildren: !!extra.hasChildren,
@@ -216,33 +220,31 @@ function onNotActionable(state, t) {
 function heldBack(state, t, today) {
   if (t.flags.ongoing) return 'it is an ongoing goal';
   if (t.flags.waitingOnOthers) return 'it is waiting on someone else';
-  if (isParked(t, today)) return 'it is Later';
+  if (t.blocked) return 'it is blocked by another task';
   if (onNotActionable(state, t)) return 'it is on a not-actionable list';
   return null;
 }
 
-/** Open tasks that could be worked on today: not goals, not waiting on others, not parked as Later, not on a not-actionable list. */
+/** Open tasks that could be worked on today: not goals, not waiting on others, not blocked, not on a not-actionable list. */
 function workable(index, state, today) {
-  return index.tasks.filter((t) => !t.flags.done && !t.flags.ongoing && !t.flags.waitingOnOthers && !isParked(t, today) && !onNotActionable(state, t));
+  return index.tasks.filter((t) => !t.flags.done && !t.flags.ongoing && !t.flags.waitingOnOthers && !t.blocked && !onNotActionable(state, t));
 }
 
 const byFileLine = (a, b) => a.fileLabel.localeCompare(b.fileLabel) || a.lineIndex - b.lineIndex;
 const whenKey = (iso, time) => `${iso} ${time || '00:00'}`;
 
-/** My Day: tasks picked for today (and earlier picks still open), overdue, due today, and Later tasks whose revisit date has come. */
+/** My Day: tasks picked for today (and earlier picks still open), overdue and due today. Each group sorts High, Medium, Low priority first. */
 function myDay(index, state, today) {
   const now = toISO(today);
-  const groups = { picked: [], overdue: [], dueToday: [], revisit: [] };
+  const groups = { picked: [], overdue: [], dueToday: [] };
   for (const t of workable(index, state, today)) {
     if (t.picked && t.picked <= now) groups.picked.push(t);
     else if (t.due && t.due < now) groups.overdue.push(t);
     else if (t.due === now) groups.dueToday.push(t);
-    else if (t.later && t.revisit && t.revisit <= now) groups.revisit.push(t);
   }
-  groups.picked.sort((a, b) => a.picked.localeCompare(b.picked) || byFileLine(a, b));
-  groups.overdue.sort((a, b) => whenKey(a.due, a.dueTime).localeCompare(whenKey(b.due, b.dueTime)) || byFileLine(a, b));
-  groups.dueToday.sort((a, b) => whenKey(a.due, a.dueTime).localeCompare(whenKey(b.due, b.dueTime)) || byFileLine(a, b));
-  groups.revisit.sort((a, b) => a.revisit.localeCompare(b.revisit) || byFileLine(a, b));
+  groups.picked.sort((a, b) => byPriority(a, b) || a.picked.localeCompare(b.picked) || byFileLine(a, b));
+  groups.overdue.sort((a, b) => byPriority(a, b) || whenKey(a.due, a.dueTime).localeCompare(whenKey(b.due, b.dueTime)) || byFileLine(a, b));
+  groups.dueToday.sort((a, b) => byPriority(a, b) || whenKey(a.due, a.dueTime).localeCompare(whenKey(b.due, b.dueTime)) || byFileLine(a, b));
   return groups;
 }
 
@@ -406,13 +408,12 @@ function buildView(index, state, opts = {}) {
       section('picked', 'Picked', g.picked, (t) => (t.picked < now ? { words: [...statusWords(t, today), 'Carried over'] } : {}));
       section('overdue', 'Overdue', g.overdue);
       section('dueToday', 'Due today', g.dueToday);
-      section('revisit', 'Revisit', g.revisit);
       summary = parts.join(', ');
     } else {
       const here = nextActions(index, state, today).filter(match);
       const files = [...new Set(here.map((t) => t.fileLabel))].sort((a, b) => a.localeCompare(b));
       for (const f of files) {
-        const mine = here.filter((t) => t.fileLabel === f).sort((a, b) => (b.flags.inProgress ? 1 : 0) - (a.flags.inProgress ? 1 : 0) || a.lineIndex - b.lineIndex);
+        const mine = here.filter((t) => t.fileLabel === f).sort((a, b) => byPriority(a, b) || (b.flags.inProgress ? 1 : 0) - (a.flags.inProgress ? 1 : 0) || a.lineIndex - b.lineIndex);
         items.push(heading(`next:${f}`, f, mine.length));
         for (const t of mine) items.push(row(t, { hideFile: true }));
       }

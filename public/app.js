@@ -416,8 +416,8 @@
     for (const [flag, on, off, key] of FLAG_LABELS) add(`${item.flags[flag] ? off : on} (${key})`, () => act(flag));
     if (item.type === 'task') {
       add(item.pickedNow ? 'Take out of My Day (t)' : 'Pick for today (t)', () => act('today'));
-      add(item.later ? 'No longer Later (z)' : 'Later: keep out of My Day and Next actions (z)', () => act('later'));
-      add('Later with a revisit date (shift and z)', () => openLater());
+      add(`Priority: ${item.priority === 'high' ? 'High' : item.priority === 'low' ? 'Low' : 'Medium'}. Press to cycle (shift and p)`, () => act('priority'));
+      add('Blocked by other tasks (shift and b)', () => openBlockers());
     }
     add('Due date and check-in (d)', () => openDue());
     add('Open source file (o)', () => act('open'));
@@ -474,34 +474,6 @@
     }
   });
   $('due-cancel').addEventListener('click', () => closeDialog($('due-dialog')));
-
-  function openLater() {
-    const item = currentItem();
-    if (!item || item.type !== 'task') return;
-    $('later-task').textContent = item.text;
-    $('later-on').checked = true;
-    $('later-revisit').value = (item.later && item.later.revisit) || '';
-    $('later-error').textContent = '';
-    openDialog($('later-dialog'), item.id);
-    $('later-revisit').focus();
-    $('later-revisit').select();
-  }
-
-  $('later-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const item = currentItem();
-    const idx = activeIndex();
-    try {
-      const res = await api('/api/action', { method: 'POST', body: { id: item.id, op: 'later', value: { later: $('later-on').checked, revisit: $('later-revisit').value } } });
-      closeDialog($('later-dialog'));
-      announce(res.message);
-      await loadView({ focusId: res.focusId, keepIndex: idx });
-    } catch (err) {
-      $('later-error').textContent = err.message;
-      $('later-revisit').focus();
-    }
-  });
-  $('later-cancel').addEventListener('click', () => closeDialog($('later-dialog')));
 
   async function openJira() {
     const item = currentItem();
@@ -996,6 +968,79 @@
   });
   $('goals-cancel').addEventListener('click', () => closeDialog($('goals-dialog')));
 
+  // ---------- blocked by ----------
+
+  async function openBlockers() {
+    const item = currentItem();
+    if (!item || item.type !== 'task') return;
+    let data;
+    try {
+      data = await api(`/api/blockers?id=${encodeURIComponent(item.id)}`);
+    } catch (err) {
+      alertMessage(err.message);
+      return;
+    }
+    $('blockers-task').textContent = item.text;
+    $('blockers-error').textContent = '';
+    $('blockers-filter').value = '';
+    $('blockers-empty').hidden = data.tasks.length > 0;
+    const rows = [...data.tasks].sort((a, b) => Number(b.linked) - Number(a.linked));
+    $('blockers-choices').replaceChildren(...rows.map((c, i) => el('div', { class: 'row', 'data-text': `${c.text} ${c.file}`.toLowerCase() },
+      el('input', { type: 'checkbox', id: `bc-${i}`, value: c.id, checked: c.linked }),
+      el('label', { for: `bc-${i}`, text: `${c.text}${c.done ? ' (done)' : ''}, ${c.file}, line ${c.line}` }))));
+    updateBlockerCount();
+    openDialog($('blockers-dialog'), item.id);
+    $('blockers-filter').focus();
+  }
+
+  const visibleBlockers = () => [...$('blockers-choices').querySelectorAll('.row:not([hidden]) input')];
+
+  function updateBlockerCount() {
+    const all = $('blockers-choices').querySelectorAll('input').length;
+    const shown = visibleBlockers().length;
+    const ticked = $('blockers-choices').querySelectorAll('input:checked').length;
+    $('blockers-count').textContent = `${ticked} ticked. Showing ${shown} of ${all} tasks.`;
+  }
+
+  $('blockers-filter').addEventListener('input', () => {
+    const terms = $('blockers-filter').value.toLowerCase().split(/\s+/).filter(Boolean);
+    for (const row of $('blockers-choices').querySelectorAll('.row')) row.hidden = !terms.every((t) => row.dataset.text.includes(t));
+    updateBlockerCount();
+  });
+  $('blockers-choices').addEventListener('change', updateBlockerCount);
+
+  async function saveBlockers(e) {
+    e.preventDefault();
+    const item = currentItem();
+    const idx = activeIndex();
+    const ids = [...$('blockers-choices').querySelectorAll('input:checked')].map((c) => c.value);
+    try {
+      const res = await api('/api/action', { method: 'POST', body: { id: item.id, op: 'blockSet', value: { ids } } });
+      closeDialog($('blockers-dialog'));
+      announce(res.message);
+      await loadView({ focusId: res.focusId, keepIndex: idx });
+    } catch (err) {
+      $('blockers-error').textContent = err.message;
+      $('blockers-filter').focus();
+    }
+  }
+  $('blockers-form').addEventListener('submit', saveBlockers);
+  $('blockers-form').addEventListener('keydown', (e) => {
+    const stops = visibleBlockers();
+    const active = document.activeElement;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      const i = stops.indexOf(active);
+      if (i < 0 && active !== $('blockers-filter')) return;
+      const to = active === $('blockers-filter') ? (e.key === 'ArrowDown' ? stops[0] : null) : stops[i + (e.key === 'ArrowDown' ? 1 : -1)] || (e.key === 'ArrowUp' ? $('blockers-filter') : null);
+      e.preventDefault();
+      if (to) to.focus();
+    } else if (e.key === 'Enter' && active.tagName !== 'BUTTON') {
+      e.preventDefault();
+      $('blockers-form').requestSubmit();
+    }
+  });
+  $('blockers-cancel').addEventListener('click', () => closeDialog($('blockers-dialog')));
+
   // ---------- manage lists ----------
 
   async function manageCall(body, focusSel) {
@@ -1220,8 +1265,8 @@
     j: () => openJira(),
     y: () => openGoals(),
     t: () => act('today'),
-    z: () => act('later'),
-    Z: () => openLater(),
+    P: () => act('priority'),
+    B: () => openBlockers(),
     o: () => act('open'),
     u: () => undo(),
     a: () => markTodo(),

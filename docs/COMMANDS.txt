@@ -31,8 +31,8 @@ Pressing a view key says the view name straight away, before the first item is r
 Minus: My list.
 Equals: all lists.
 Shift and g: Goals, each goal followed by its linked tasks.
-Shift and t: My Day. Tasks you picked for today, earlier picks still open (spoken as carried over), overdue tasks, tasks due today, and Later tasks whose revisit date has come. Goals, waiting on others, Later tasks and tasks on not-actionable lists are left out. The status line gives the counts.
-Shift and a: Next actions. Open tasks with no open subtasks, grouped by file, in progress first. A task with subtasks shows its subtasks instead. Same exclusions as My Day.
+Shift and t: My Day. Tasks you picked for today, earlier picks still open (spoken as carried over), overdue tasks and tasks due today, High priority first. Goals, waiting on others, blocked tasks and tasks on not-actionable lists are left out. The status line gives the counts.
+Shift and a: Next actions. Open tasks with no open subtasks, grouped by file, High priority first, then in progress. A task with subtasks shows its subtasks instead. Same exclusions as My Day.
 Left bracket and right bracket: previous or next list.
 v: jump to the view menu.
 c or h: show or hide completed tasks.
@@ -59,8 +59,8 @@ Shift and Tab: move a subtask up one level.
 d: set or clear the due date and the check-in date. A time works too, for example fri 2pm.
 s or ampersand: add a note under the task, after its other notes in the file.
 t: pick the task for today, or take it out of My Day. A pick still open tomorrow carries over. Written as today: and a date.
-z: toggle Later. Later tasks stay out of My Day and Next actions but still show in other views, spoken as Later. Written as later: on the line.
-Shift and z: Later with a revisit date. When the date arrives the task shows in My Day. Written as later: and a date.
+Shift and p: cycle the priority: Medium, High, Low, Medium. Written as p:high or p:low; Medium has no token. Syncs to the Jira Priority field.
+Shift and b: choose the tasks this one is blocked by. A checkbox list opens with a filter field: Up and Down move, Space ticks, Enter saves. Written as after: and the blocker's id:. A task is blocked until its blockers are done. Syncs as Jira Blocks links.
 y: link the task to goals. A checkbox list of goals opens: Up and Down move, Space ticks or unticks, Enter saves.
 o: open the task's file in your text editor.
 u: undo the last change.

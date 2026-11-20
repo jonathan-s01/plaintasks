@@ -222,13 +222,14 @@
   const SYNC_FIELDS = [
     ['js-project', 'project'], ['js-epic', 'epic'], ['js-task-type', 'taskType'], ['js-subtask-type', 'subtaskType'],
     ['js-start-field', 'startField'], ['js-due-field', 'dueField'], ['js-flagged-field', 'flaggedField'],
-    ['js-assignee', 'assignee'], ['js-reporter', 'reporter'], ['js-label-prefix', 'labelPrefix'],
+    ['js-assignee', 'assignee'], ['js-reporter', 'reporter'], ['js-label-prefix', 'labelPrefix'], ['js-block-type', 'blockType'],
   ];
   const SYNC_NESTED = [
     ['js-st-open', 'statuses', 'open'], ['js-st-inprogress', 'statuses', 'inProgress'], ['js-st-ongoing', 'statuses', 'ongoing'],
     ['js-st-done', 'statuses', 'done'], ['js-st-deleted', 'statuses', 'deleted'],
     ['js-res-done', 'resolutions', 'done'], ['js-res-deleted', 'resolutions', 'deleted'],
-    ['js-label-waiting', 'labels', 'waiting'], ['js-label-ongoing', 'labels', 'ongoing'], ['js-label-later', 'labels', 'later'],
+    ['js-label-waiting', 'labels', 'waiting'], ['js-label-ongoing', 'labels', 'ongoing'],
+    ['js-pri-high', 'priorities', 'high'], ['js-pri-medium', 'priorities', 'medium'], ['js-pri-low', 'priorities', 'low'],
   ];
 
   function renderSyncFields(sync) {
@@ -239,7 +240,7 @@
   }
 
   function syncFieldsValue() {
-    const out = { transitions: $('js-transitions').value, statuses: {}, resolutions: {}, labels: {} };
+    const out = { transitions: $('js-transitions').value, statuses: {}, resolutions: {}, labels: {}, priorities: {} };
     for (const [id, k] of SYNC_FIELDS) out[k] = $(id).value.trim();
     for (const [id, g, k] of SYNC_NESTED) out[g][k] = $(id).value.trim();
     return out;
