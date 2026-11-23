@@ -729,13 +729,21 @@ test('Questions view groups by person, a question shows under each person, No pe
   assert.deepEqual(s.items.filter((i) => i.type !== 'group').map((i) => i.text), ['which code', 'which code']);
 });
 
-test('answering a bare ? writes a dated Answer note and marks it done; one undo restores it', async () => {
+test('answering a bare ? writes a dated Answer note and makes it an open to-do; one undo restores it', async () => {
   const { notes, app } = setup({ 'a.txt': '? which code ask:cory\n@ other\n' });
   const res = await app.action({ id: find(app, 'which code').id, op: 'question', value: { answer: 'use 4410' } });
-  assert.match(res.message, /Answered and marked done/);
-  assert.equal(read(notes, 'a.txt'), '+@ which code ask:cory done:2026-11-16\n  [2026-11-16] Answer: use 4410\n@ other\n');
+  assert.match(res.message, /Answered, now a to-do/);
+  assert.equal(read(notes, 'a.txt'), '@ which code ask:cory\n  [2026-11-16] Answer: use 4410\n@ other\n');
   app.undo();
   assert.equal(read(notes, 'a.txt'), '? which code ask:cory\n@ other\n');
+});
+
+test('answering with done ticked completes the line, bare or with other markers', async () => {
+  const { notes, app } = setup({ 'a.txt': '? which code\n>? Sam on dates\n' });
+  const res = await app.action({ id: find(app, 'which code').id, op: 'question', value: { answer: 'use 4410', done: true } });
+  assert.match(res.message, /Answered and marked done/);
+  await app.action({ id: find(app, 'Sam on dates').id, op: 'question', value: { answer: '', done: true } });
+  assert.equal(read(notes, 'a.txt'), '+@ which code done:2026-11-16\n  [2026-11-16] Answer: use 4410\n+> Sam on dates done:2026-11-16\n');
 });
 
 test('answering @? keeps the other marker; an empty answer writes no note', async () => {
@@ -750,7 +758,8 @@ test('in a tasks-mode file an answer is written as an & note', async () => {
   await app.action({ id: find(app, 'which code').id, op: 'question' });
   assert.equal(read(notes, 'a.txt'), '? which code\n');
   await app.action({ id: find(app, 'which code').id, op: 'question', value: { answer: 'ask finance' } });
-  assert.equal(read(notes, 'a.txt'), '+ which code done:2026-11-16\n  & [2026-11-16] Answer: ask finance\n');
+  assert.equal(read(notes, 'a.txt'), 'which code\n  & [2026-11-16] Answer: ask finance\n');
+  assert.ok(find(app, 'which code'), 'still an open task');
 });
 
 test('triage: q marks an unmarked line as a question', async () => {

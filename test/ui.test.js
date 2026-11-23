@@ -664,10 +664,13 @@ test('q marks a question, shift+q opens Open questions grouped by person, q agai
     assert.equal(doc.getElementById('note-label').textContent, 'Answer');
     const r = await window.axe.run(doc.getElementById('note-dialog'), { rules: { 'color-contrast': { enabled: false }, region: { enabled: false } } });
     assert.equal(r.violations.length, 0, r.violations.map((v) => v.id).join());
+    assert.equal(doc.getElementById('note-done').checked, false);
+    assert.equal(doc.getElementById('note-done').parentElement.hidden, false);
+    doc.getElementById('note-done').checked = true;
     doc.getElementById('note-input').value = 'use 4410';
     submit('note-form');
-    await waitFor(() => /Answered/.test(live()), 'answered');
-    assert.equal(file(), '@ which code ask:cory\n  [2026-11-16] Answer: use 4410\n');
+    await waitFor(() => /Answered and marked done/.test(live()), 'answered');
+    assert.equal(file(), '+@ which code ask:cory done:2026-11-16\n  [2026-11-16] Answer: use 4410\n');
   } finally {
     await env.close();
   }

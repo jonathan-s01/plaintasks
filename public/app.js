@@ -826,6 +826,8 @@
     $('note-input').value = '';
     $('note-error').textContent = '';
     $('note-stamp').checked = true;
+    $('note-done').checked = false;
+    if (noteCtx.mode !== 'answer') $('note-done').parentElement.hidden = true;
     if (noteCtx.mode !== 'status' && noteCtx.mode !== 'answer') $('note-save').textContent = 'Add note';
     if (noteCtx.mode !== 'answer') $('note-label').textContent = 'Note';
     openDialog($('note-dialog'), returnId);
@@ -844,8 +846,9 @@
     }
     if (noteCtx.mode === 'answer') {
       const { item } = noteCtx;
+      const done = $('note-done').checked;
       closeDialog($('note-dialog'));
-      await act('question', { answer: text }, item, curListId() || undefined);
+      await act('question', { answer: text, done }, item, curListId() || undefined);
       return;
     }
     try {
@@ -1576,9 +1579,10 @@
     $('note-label').textContent = 'Answer';
     $('note-task').textContent = item.text;
     $('note-hint').textContent = bare
-      ? 'Type the answer, then Enter. It is saved under the task as a dated note starting with Answer, the question mark is removed and the line becomes a done task. Enter with nothing typed does the same without a note. Escape cancels and changes nothing.'
-      : 'Type the answer, then Enter. It is saved under the task as a dated note starting with Answer, and the question mark is removed; other markers stay. Enter with nothing typed only removes the question mark. Escape cancels and changes nothing.';
+      ? 'Type the answer, then Enter. It is saved under the task as a dated note starting with Answer, the question mark is removed and the line becomes an open to-do. Tick Mark as done to complete it instead. Enter with nothing typed does the same without a note. Escape cancels and changes nothing.'
+      : 'Type the answer, then Enter. It is saved under the task as a dated note starting with Answer, and the question mark is removed; other markers stay. Tick Mark as done to complete it as well. Enter with nothing typed does the same without a note. Escape cancels and changes nothing.';
     $('note-stamp').parentElement.hidden = true;
+    $('note-done').parentElement.hidden = false;
     $('note-save').textContent = 'Save answer';
     showNote(item.id);
   }

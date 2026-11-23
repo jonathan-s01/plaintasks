@@ -346,7 +346,8 @@ class App {
 
   /**
    * q: marks a line as an open question, or answers one. Answering removes the ? and saves the typed answer as a dated
-   * note under the task. A line that was only a question (no other marker) becomes a done task. One undo reverses it all.
+   * note under the task. A line that was only a question becomes an open to-do, so it can be actioned later; with
+   * value.done it is completed instead (any line). One undo reverses it all.
    */
   toggleQuestion(t, value, listId) {
     const who = (t.asks || []).length ? `, ask ${askText(t)}` : '';
@@ -355,13 +356,19 @@ class App {
       return r ? { ok: true, message: `Marked as a question${who}: ${t.text}`, undo: true, focusId: r.focusId } : { ok: true, message: `No change: ${t.text}` };
     }
     const answer = value && typeof value.answer === 'string' ? value.answer.replace(/\s+/g, ' ').trim() : '';
+    const complete = !!(value && value.done) && !t.flags.done;
     const mi = markerInfo(t.raw);
     const others = mi ? [...mi.run].filter((c) => (t.symbols || {})[c] !== 'question').join('') : '';
-    const bare = !others && !t.flags.done;
+    const nowTodo = !complete && !others && !t.flags.done;
+    // In tasks-mode files a line with no marker is already an open task, so it needs no @.
+    const toTodo = nowTodo && t.unmarkedMode !== 'tasks';
+    const steps = [['question']];
+    if (complete) steps.push(['done']);
+    else if (toTodo) steps.push(['todo']);
     const before = this.undoStack.length;
-    const r = this.lineWrite(t, bare ? [['question'], ['done']] : 'question');
+    const r = this.lineWrite(t, steps.length > 1 ? steps : 'question');
     if (!r) return { ok: true, message: `No change: ${t.text}` };
-    const message = `${answer ? 'Answered' : 'No longer a question'}${bare ? ' and marked done' : ''}: ${t.text}`;
+    const message = `${answer ? 'Answered' : 'No longer a question'}${complete ? ' and marked done' : nowTodo ? ', now a to-do' : ''}: ${t.text}`;
     if (!answer) return { ok: true, message, undo: true, focusId: r.focusId };
     try {
       const noted = this.addNote(this.task(r.focusId), { text: `Answer: ${answer}`, amp: true }, listId);
