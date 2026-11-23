@@ -100,6 +100,8 @@ function createServer(app, { token = crypto.randomBytes(24).toString('hex') } = 
           return send(res, 200, app.view({ view: q.get('view'), q: q.get('q') || '', showCompleted: q.get('completed') === '1', changedOnly: q.get('changed') === '1' }));
         case '/api/search':
           return send(res, 200, app.searchTasks(q.get('q') || ''));
+        case '/api/subtasks':
+          return send(res, 200, app.subtasks(q.get('id')));
         case '/api/detail':
           return send(res, 200, app.detail(q.get('id')));
         case '/api/buckets':

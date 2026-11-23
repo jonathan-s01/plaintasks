@@ -136,7 +136,8 @@ label {
   outline-offset: 2px;
 }
 
-#tree {
+#tree,
+#sub-tree {
   margin-top: 0.5rem;
   border-top: 1px solid var(--line);
 }
@@ -163,7 +164,8 @@ label {
   content: "\25B8\00a0";
 }
 
-#tree .text {
+#tree .text,
+#sub-tree .text {
   display: inline;
   margin: 0;
   padding: 0;

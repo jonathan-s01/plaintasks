@@ -40,7 +40,8 @@ Automated tests (jsdom and axe-core) cover structure and keyboard logic, but the
 **Actions**
 - `x` on a task: you should hear "Marked done: ..." and focus lands on the next task. Open the file in TextEdit and confirm the line starts with `+` and ends with `done:` and today's date. Only that line should differ.
 - `u` undoes it ("Undid change"), and the file returns to the original.
-- `m`, `w`, `i`, `p`, `b`: each says what was marked and toggles back.
+- `i`: reads everything about the row (dates, status, priority, blockers, list, line, notes). `shift and s` opens a task's subtasks in a box you walk with the arrows, or says there are none.
+- `m`, `w`, shift+`i`, `p`, `b`: each says what was marked and toggles back.
 - `d`: a dialog opens with focus in the date box. Type `fri` and press Enter. Next, try `nonsense`: you should hear an error and stay in the box.
 - `e` on a task: a box opens with the task name, then one field per note. Change the name, press Enter: you hear "Renamed to: ..." and focus stays on the task. `u` undoes it. Enter on a note row opens the same box at that note.
 - Enter on a task: actions menu opens as a dialog; Escape closes it and focus returns to the same task.

@@ -314,6 +314,52 @@ test('e renames a task and edits its notes; Enter on a note row opens the box at
   }
 });
 
+test('i reads details, shift+i marks important, shift+s shows subtasks even when the view hides them', async () => {
+  const env = await boot({ 'a.txt': '@ parent due:2026-12-01\n\t@ child\n\t\t@ grandchild\n@ lone\n' });
+  try {
+    const { window } = await openPage(env);
+    const doc = window.document;
+    const tree = doc.getElementById('tree');
+    const rows = () => [...tree.querySelectorAll('[role=option]')];
+    const live = () => doc.getElementById('live').textContent;
+    window.eval(axe.source);
+    await waitFor(() => rows().length === 4, 'items');
+    key(window, rows()[0], 'i');
+    await waitFor(() => /^parent\. task\. Open\..*Due .*Has 1 subtask/.test(live()), 'info');
+    key(window, rows()[0], 'I');
+    await waitFor(() => /Important/i.test(live()) && rows()[0].textContent.includes('Important'), 'important');
+
+    rows()[3].focus();
+    await waitFor(() => doc.activeElement === rows()[3], 'lone focused');
+    key(window, rows()[3], 'S');
+    await waitFor(() => /lone has no subtasks/.test(live()), 'no subtasks');
+    assert.ok(!doc.getElementById('sub-dialog').hasAttribute('open'));
+
+    window.eval("document.getElementById('view').value = 'important'; document.getElementById('view').dispatchEvent(new Event('change'))");
+    await waitFor(() => rows().length === 1 && /parent/.test(rows()[0].textContent), 'important view shows only the parent');
+    key(window, rows()[0], 'S');
+    await waitFor(() => doc.getElementById('sub-dialog').hasAttribute('open'), 'subtasks dialog');
+    const sub = () => [...doc.querySelectorAll('#sub-tree [role=option]')];
+    assert.equal(sub().length, 2);
+    assert.equal(sub()[0].textContent.replace(/\s+/g, ' ').trim(), 'child. subtask. Expanded. Open.');
+    assert.equal(sub()[1].textContent.replace(/\s+/g, ' ').trim(), 'grandchild. level 2 subtask. Level 2. Open.');
+    assert.equal(doc.activeElement, sub()[0]);
+    const r = await window.axe.run(doc.getElementById('sub-dialog'), { rules: { 'color-contrast': { enabled: false }, region: { enabled: false } } });
+    assert.equal(r.violations.length, 0, r.violations.map((v) => v.id).join());
+    key(window, doc.activeElement, 'ArrowLeft');
+    await waitFor(() => sub().length === 1, 'collapsed');
+    key(window, doc.activeElement, 'ArrowRight');
+    key(window, doc.activeElement, 'ArrowDown');
+    assert.equal(sub()[1], doc.activeElement);
+    key(window, doc.activeElement, 'i');
+    await waitFor(() => /^grandchild\. level 2 subtask/.test(live()), 'sub info');
+    key(window, doc.activeElement, 'Escape');
+    window.close();
+  } finally {
+    env.close();
+  }
+});
+
 test('status symbols, add note, add task with master file, sort and dates dialogs', async () => {
   const env = await boot({ 'a.txt': '@ one\n@ two\n' });
   try {

@@ -47,9 +47,11 @@ Plus or x: mark done or not done. A done task gets done: and today's date.
 Greater than or w: waiting on someone else.
 Less than: waiting on me.
 Percent or p: in progress.
-Asterisk or i: important.
+Asterisk or shift and i: important.
+i: read everything about the selected row (dates, status, priority, blockers, list, line, notes) without opening anything.
+Shift and s, on a task: open its subtasks in a box. Arrows move, right opens, left closes, i reads details, Escape closes. It says so and opens nothing if there are none. In triage, shift and s still marks the rest of the file as notes.
 Tilde or b: ongoing or major outcome, written as a tilde.
-When plus, greater than, less than, percent or asterisk turn a status on, a box asks for an optional note, for example who you are waiting on. Enter with nothing typed sets the status without a note. Escape cancels. The letters x, w, p, i and b set the status straight away with no note box.
+When plus, greater than, less than, percent or asterisk turn a status on, a box asks for an optional note, for example who you are waiting on. Enter with nothing typed sets the status without a note. Escape cancels. The letters x, w, p, shift and i, and b set the status straight away with no note box.
 
 
 EDITING TASKS
@@ -95,7 +97,7 @@ Shift and j: sync with Jira. Shows every change in both directions for the lists
 TRIAGE (press 0)
 
 a or at sign: mark the unmarked line as a to-do.
-Plus, less than, greater than, percent and asterisk (or x, w, i, p): make the line a to-do with that status.
+Plus, less than, greater than, percent and asterisk (or x, w, shift and i, p): make the line a to-do with that status.
 s or ampersand: mark the line as a note of the task above it.
 Shift and s: mark every remaining line in the file as a note.
 l: mark the line as a to-do, then choose its lists.

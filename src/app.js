@@ -11,7 +11,7 @@ const { applyOp, OpError } = require('./ops');
 const { markerInfo, ampNote, parseText } = require('./parser');
 const { replaceLine, replaceLines, removeLines, moveLine, ConflictError } = require('./writer');
 const { formatDate, toISO } = require('./dates');
-const { allViews, buildView, viewCounts, untriaged, listTasks, fileBacked } = require('./views');
+const { subtasksOf, allViews, buildView, viewCounts, untriaged, listTasks, fileBacked } = require('./views');
 const { convertRtfFiles } = require('./rtf');
 const { JiraClient, JiraError, KEY_RE } = require('./jira');
 const { cleanSync } = require('./jirasync');
@@ -95,6 +95,12 @@ class App {
   view(opts) {
     this.stampCreated();
     return buildView(this.index, this.stateData, { ...opts, today: this.now() });
+  }
+
+  subtasks(id) {
+    const res = subtasksOf(this.index, id, this.now());
+    if (!res) throw new HttpError(404, 'That item is no longer in the list. The list has been refreshed.', 'gone');
+    return res;
   }
 
   task(id) {

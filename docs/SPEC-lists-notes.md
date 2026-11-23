@@ -29,7 +29,7 @@ Every status is a toggle. Pressing it again clears it. The key is the same as th
 | `>` (or `w`) | waiting on someone else | `>` |
 | `<` | waiting on me | `<` |
 | `%` (or `p`) | in progress | `%` |
-| `*` (or `i`) | important | `*` |
+| `*` (or Shift+`i`) | important | `*` |
 | `b` or `~` | ongoing / major outcome | `~` |
 | `@` or `a` | to-do (triage only) | `@` |
 

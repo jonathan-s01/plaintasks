@@ -124,6 +124,7 @@ function describe(t, today, level, extra = {}) {
     picked: t.kind === 'task' ? t.picked || null : null,
     pickedNow: t.kind === 'task' && !!t.picked && t.picked <= toISO(today),
     hasChildren: !!extra.hasChildren,
+    kids: t.kind === 'task' ? t.childIds.length : 0,
     notes: t.notes,
     jira: t.jira,
     fileLabel: t.fileLabel,
@@ -573,4 +574,21 @@ function buildView(index, state, opts = {}) {
   return { view, title: def.title, items, count: view === 'lists' ? (state.lists || []).length : count, empty: def.empty || 'No open tasks.', rev: index.rev, sortedBy, summary, isList: !!def.isList };
 }
 
-module.exports = { heldBack, listTasks, fileBacked, isOnList, allViews, VIEWS, buildView, viewCounts, describe, matcher, untriaged, DUE_SOON_DAYS };
+/** Every subtask under one task, nested, whatever the current view hides. Null when the task is gone. */
+function subtasksOf(index, id, today = new Date()) {
+  const root = index.get(id);
+  if (!root) return null;
+  const items = [];
+  const walk = (t, level) => {
+    for (const cid of t.childIds) {
+      const c = index.get(cid);
+      if (!c) continue;
+      items.push(describe(c, today, level, { hasChildren: c.childIds.length > 0, hideFile: true, hideGroup: true }));
+      walk(c, level + 1);
+    }
+  };
+  walk(root, 1);
+  return { title: `Subtasks of ${root.text}`, items, count: items.length };
+}
+
+module.exports = { subtasksOf, heldBack, listTasks, fileBacked, isOnList, allViews, VIEWS, buildView, viewCounts, describe, matcher, untriaged, DUE_SOON_DAYS };

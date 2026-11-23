@@ -355,7 +355,7 @@
   const FLAG_LABELS = [
     ['waitingOnMe', 'Mark waiting on me', 'Clear waiting on me', 'less than'],
     ['waitingOnOthers', 'Mark waiting on someone else', 'Clear waiting on someone else', 'greater than'],
-    ['important', 'Mark important', 'Clear important', 'asterisk'],
+    ['important', 'Mark important', 'Clear important', 'asterisk or shift and i'],
     ['inProgress', 'Mark in progress', 'Clear in progress', 'percent'],
     ['ongoing', 'Mark ongoing', 'Clear ongoing', 'b'],
   ];
@@ -410,6 +410,7 @@
       add('Mark this file as reviewed (shift and r)', () => act('reviewFile'));
     } else {
       add('Rename this task or edit its notes (e)', () => openEdit(item));
+      if (item.type === 'task' && item.kids) add('Show subtasks (shift and s)', () => openSubtasks());
       add('Add a note to this task (s)', () => openNote());
       add('Make a subtask of the task above (tab)', () => act('indent'));
       add('Move up a level (shift and tab)', () => act('outdent'));
@@ -625,6 +626,170 @@
     }
   });
   $('edit-cancel').addEventListener('click', () => closeDialog($('edit-dialog')));
+
+  // ---------- info and subtasks ----------
+
+  // Everything known about a row in one sentence run, so browsing can stay on the list.
+  function infoText(item) {
+    if (!item) return 'Nothing selected.';
+    const kids = item.kids ? [item.kids === 1 ? 'Has 1 subtask' : `Has ${item.kids} subtasks`] : [];
+    const notes = item.notes && item.notes.length ? [`Notes: ${item.notes.join('; ')}`] : [];
+    return `${[item.text, item.typeWord, item.words.join(', '), ...item.meta, ...kids, ...notes].filter(Boolean).join('. ')}.`;
+  }
+
+  function infoKey() {
+    const item = currentItem();
+    if (!item) return;
+    announce(infoText(item));
+  }
+
+  const sub = { items: [], collapsed: new Set(), activeId: null, title: '' };
+  const subTree = $('sub-tree');
+  subTree.setAttribute('role', listMode ? 'listbox' : 'tree');
+  subTree.setAttribute('aria-labelledby', 'sub-title');
+  if (listMode) subTree.setAttribute('aria-orientation', 'vertical');
+
+  function subVisible() {
+    const out = [];
+    let hideBelow = null;
+    for (const it of sub.items) {
+      if (hideBelow !== null && it.level > hideBelow) continue;
+      hideBelow = null;
+      out.push(it);
+      if (it.hasChildren && sub.collapsed.has(it.id)) hideBelow = it.level;
+    }
+    return out;
+  }
+
+  function subRender() {
+    const vis = subVisible();
+    if (!vis.some((i) => i.id === sub.activeId)) sub.activeId = vis.length ? vis[0].id : null;
+    const stack = [];
+    const counts = new Map();
+    const pos = new Map();
+    for (const it of sub.items) {
+      while (stack.length && stack[stack.length - 1].level >= it.level) stack.pop();
+      const key = `${stack.length ? stack[stack.length - 1].id : 'root'}|${it.level}`;
+      counts.set(key, (counts.get(key) || 0) + 1);
+      pos.set(it.id, { n: counts.get(key), key });
+      stack.push(it);
+    }
+    subTree.replaceChildren();
+    for (const it of vis) {
+      const node = el('div', { role: itemRole, 'data-id': it.id, tabindex: it.id === sub.activeId ? '0' : '-1', class: it.flags && it.flags.done ? 'done' : '' });
+      node.style.setProperty('--level', String(it.level));
+      if (listMode) {
+        node.setAttribute('aria-selected', it.id === sub.activeId ? 'true' : 'false');
+      } else {
+        const p = pos.get(it.id);
+        node.setAttribute('aria-level', String(it.level));
+        node.setAttribute('aria-posinset', String(p.n));
+        node.setAttribute('aria-setsize', String(counts.get(p.key)));
+        if (it.hasChildren) node.setAttribute('aria-expanded', sub.collapsed.has(it.id) ? 'false' : 'true');
+      }
+      node.append(el('span', { class: 'text', text: `${it.text}. ` }));
+      if (it.typeWord) node.append(el('span', { class: 'sr-only', text: `${it.typeWord}. ` }));
+      if (listMode) {
+        const state = [it.level > 1 ? `Level ${it.level}.` : '', it.hasChildren ? (sub.collapsed.has(it.id) ? 'Collapsed.' : 'Expanded.') : ''].filter(Boolean).join(' ');
+        if (state) node.append(el('span', { class: 'sr-only', text: ` ${state} ` }));
+      }
+      if (it.words.length) node.append(el('span', { class: 'words', text: `${it.words.join(', ')}. ` }));
+      subTree.append(node);
+    }
+  }
+
+  function subSetActive(id) {
+    sub.activeId = id;
+    let node = null;
+    for (const c of subTree.children) {
+      const on = c.dataset.id === id;
+      c.tabIndex = on ? 0 : -1;
+      if (listMode) c.setAttribute('aria-selected', on ? 'true' : 'false');
+      if (on) node = c;
+    }
+    if (node) node.focus();
+  }
+
+  async function openSubtasks() {
+    const item = currentItem();
+    if (!item || item.type !== 'task') {
+      announce('Select a task to see its subtasks.');
+      return;
+    }
+    if (!item.kids) {
+      announce(`${item.text} has no subtasks.`);
+      return;
+    }
+    let res;
+    try {
+      res = await api(`/api/subtasks?id=${encodeURIComponent(item.id)}`);
+    } catch (err) {
+      alertMessage(err.message);
+      if (err.status === 404) await loadView({ keepIndex: activeIndex() });
+      return;
+    }
+    if (!res.items.length) {
+      announce(`${item.text} has no subtasks.`);
+      return;
+    }
+    sub.items = res.items;
+    sub.collapsed = new Set();
+    sub.activeId = res.items[0].id;
+    $('sub-title').textContent = res.title;
+    $('sub-status').textContent = `${res.count} ${res.count === 1 ? 'subtask' : 'subtasks'}. Up and down move, right opens, left closes, i reads details, Escape closes.`;
+    subRender();
+    openDialog($('sub-dialog'), item.id);
+    subSetActive(sub.activeId);
+  }
+
+  subTree.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const vis = subVisible();
+    const i = vis.findIndex((x) => x.id === sub.activeId);
+    const item = vis[i];
+    const go = (n) => vis.length && subSetActive(vis[Math.max(0, Math.min(vis.length - 1, n))].id);
+    switch (e.key) {
+      case 'ArrowDown': e.preventDefault(); go(i + 1); break;
+      case 'ArrowUp': e.preventDefault(); go(i - 1); break;
+      case 'Home': e.preventDefault(); go(0); break;
+      case 'End': e.preventDefault(); go(vis.length - 1); break;
+      case 'ArrowRight':
+        e.preventDefault();
+        if (item && item.hasChildren && sub.collapsed.has(item.id)) {
+          sub.collapsed.delete(item.id);
+          subRender();
+          subSetActive(item.id);
+        } else if (item && item.hasChildren) go(i + 1);
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        if (!item) break;
+        if (item.hasChildren && !sub.collapsed.has(item.id)) {
+          sub.collapsed.add(item.id);
+          subRender();
+          subSetActive(item.id);
+        } else {
+          for (let j = i - 1; j >= 0; j -= 1) {
+            if (vis[j].level < item.level) {
+              subSetActive(vis[j].id);
+              break;
+            }
+          }
+        }
+        break;
+      case 'Enter':
+      case 'i':
+        e.preventDefault();
+        if (item) announce(infoText(item));
+        break;
+      default:
+    }
+  });
+  subTree.addEventListener('click', (e) => {
+    const node = e.target.closest('[data-id]');
+    if (node) subSetActive(node.dataset.id);
+  });
+  $('sub-close').addEventListener('click', () => closeDialog($('sub-dialog')));
 
   function openNote() {
     const item = currentItem();
@@ -1356,7 +1521,8 @@
     '%': () => statusKey('inProgress', 'inProgress', 'In progress'),
     '*': () => statusKey('important', 'important', 'Important'),
     w: () => act('waitingOnOthers'),
-    i: () => act('important'),
+    i: () => infoKey(),
+    I: () => act('important'),
     p: () => act('inProgress'),
     m: () => openNewTask(false),
     N: () => (st.view === 'triage' ? nextFile(-1) : openListNote()),
@@ -1377,7 +1543,7 @@
     e: () => (currentItem() && ['task', 'tasknote'].includes(currentItem().type) ? openEdit() : announce('Select a task to rename it or edit its notes.')),
     s: () => noteKey(),
     '&': () => noteKey(),
-    S: () => (st.view === 'triage' ? skipFile() : announce('Shift and s marks every remaining line in a file as a note in the triage view. Press 0 to open triage.')),
+    S: () => (st.view === 'triage' ? skipFile() : openSubtasks()),
   };
 
   function markTodo() {

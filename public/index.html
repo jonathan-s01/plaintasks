@@ -153,6 +153,13 @@
     </form>
   </dialog>
 
+  <dialog id="sub-dialog" aria-labelledby="sub-title" aria-describedby="sub-status">
+    <h2 id="sub-title"></h2>
+    <p id="sub-status"></p>
+    <div id="sub-tree"></div>
+    <p><button type="button" id="sub-close">Close</button></p>
+  </dialog>
+
   <dialog id="edit-dialog" aria-labelledby="edit-title">
     <form method="dialog" id="edit-form">
       <h2 id="edit-title">Rename or edit notes</h2>
@@ -284,7 +291,9 @@
         <tr><th scope="row">greater than, w</th><td>Toggle waiting on someone else</td></tr>
         <tr><th scope="row">less than</th><td>Toggle waiting on me</td></tr>
         <tr><th scope="row">percent, p</th><td>Toggle in progress</td></tr>
-        <tr><th scope="row">asterisk, i</th><td>Toggle important</td></tr>
+        <tr><th scope="row">asterisk, shift and i</th><td>Toggle important</td></tr>
+        <tr><th scope="row">i</th><td>Read everything about the selected row: dates, status, priority, blockers, list, line and notes</td></tr>
+        <tr><th scope="row">shift and s</th><td>On a task: open its subtasks in a box you move through with the arrow keys, whatever the current view hides. Says so and opens nothing if there are none. In triage, shift and s still marks the rest of the file as notes</td></tr>
         <tr><th scope="row">b or tilde</th><td>Toggle ongoing or major outcome, written as a tilde</td></tr>
         <tr><th scope="row">Tab</th><td>Make the task a subtask of the task above it, with its notes and subtasks. On an unmarked line it also marks it as a to-do, and if other lines sit between them it moves the line to the end of that task's block</td></tr>
         <tr><th scope="row">Shift and Tab</th><td>Move a subtask up a level. A bullet subtask at its parent's indentation loses its bullet instead. Tasks right after it at the old level become its subtasks</td></tr>
