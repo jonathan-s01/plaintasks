@@ -1,6 +1,6 @@
 'use strict';
 
-const { markerInfo, DEFAULT_SYMBOLS, JIRA_RE, JIRA_LABEL_RE, GOAL_RE, PRIORITY_RE, ID_RE, AFTER_RE, ASK_RE } = require('./parser');
+const { markerInfo, DEFAULT_SYMBOLS, JIRA_RE, JIRA_LABEL_RE, JIRA_SKIP_RE, GOAL_RE, PRIORITY_RE, ID_RE, AFTER_RE, ASK_RE } = require('./parser');
 const { findDateTokens, toISO } = require('./dates');
 
 class OpError extends Error {}
@@ -100,11 +100,11 @@ function applyOp(raw, op, arg, ctx) {
       return compose(d);
     }
     case 'text': {
-      // Rewords the task, keeping its tokens (dates, jira:, jira:label, goal:, p:, id:, after:, ask:) in their order.
+      // Rewords the task, keeping its tokens (dates, jira:, jira:label, jira:skip, goal:, p:, id:, after:, ask:) in their order.
       const text = String(arg || '').replace(/\s+/g, ' ').trim();
       if (!text) throw new OpError('The new text is empty');
       const spans = findDateTokens(d.body, today).map((t) => [t.start, t.end]);
-      for (const re of [new RegExp(JIRA_RE.source, 'g'), new RegExp(JIRA_LABEL_RE.source, 'gi'), new RegExp(GOAL_RE.source, 'g'), new RegExp(PRIORITY_RE.source, 'gi'), new RegExp(ID_RE.source, 'g'), new RegExp(AFTER_RE.source, 'g'), new RegExp(ASK_RE.source, 'gu')]) {
+      for (const re of [new RegExp(JIRA_RE.source, 'g'), new RegExp(JIRA_LABEL_RE.source, 'gi'), new RegExp(JIRA_SKIP_RE.source, 'gi'), new RegExp(GOAL_RE.source, 'g'), new RegExp(PRIORITY_RE.source, 'gi'), new RegExp(ID_RE.source, 'g'), new RegExp(AFTER_RE.source, 'g'), new RegExp(ASK_RE.source, 'gu')]) {
         let m;
         while ((m = re.exec(d.body))) spans.push([m.index + m[1].length, m.index + m[0].length]);
       }
@@ -156,6 +156,12 @@ function applyOp(raw, op, arg, ctx) {
         body = appendToken(body, `jira:${arg.toUpperCase()}`);
       }
       d.body = body;
+      return compose(d);
+    }
+    case 'jiraSkip': {
+      // arg: true adds jira:skip, false removes it.
+      d.body = d.body.replace(new RegExp(JIRA_SKIP_RE.source, 'gi'), () => '').replace(/[ \t]+$/, '');
+      if (arg) d.body = appendToken(d.body, 'jira:skip');
       return compose(d);
     }
     case 'goals': {

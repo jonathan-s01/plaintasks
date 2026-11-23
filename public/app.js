@@ -436,6 +436,7 @@
     add('Due date and check-in (d)', () => openDue());
     add('Open source file (o)', () => act('open'));
     add('Jira (j)', () => openJira());
+    if (item.type === 'task' && item.jiraSkip !== 'inherited') add(item.jiraSkip ? 'Sync to Jira again' : 'Keep out of Jira', () => act('jiraSkip'));
     add('Undo last change (u)', () => undo());
     openDialog(dlg, item.id);
     box.querySelector('button').focus();

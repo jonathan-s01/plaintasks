@@ -95,6 +95,12 @@ function taskTypeWord(t) {
   return n === 0 ? (q ? 'question' : 'task') : `${n === 1 ? 'subtask' : `level ${n} subtask`}${q ? ' question' : ''}`;
 }
 
+/** Details wording for a task kept out of Jira sync by jira:skip. */
+function jiraSkipText(s) {
+  if (!s) return '';
+  return s.own ? 'Not synced to Jira (jira:skip)' : `Not synced to Jira (jira:skip, inherited from ${s.from === 'list' ? 'list' : 'parent'}: ${s.text})`;
+}
+
 function describe(t, today, level, extra = {}) {
   const due = dueInfo(t, today);
   const meta = [];
@@ -114,6 +120,7 @@ function describe(t, today, level, extra = {}) {
   if (t.group && !extra.hideGroup) meta.push(`Group ${t.group}`);
   if (t.jira) meta.push(`Jira ${t.jira}`);
   if (t.jiraLabel && t.kind === 'task') meta.push('Bucket: tasks in it get its Jira label, it is not an issue');
+  if (t.jiraSkip && t.kind === 'task') meta.push(jiraSkipText(t.jiraSkip));
   if (t.notes.length) meta.push(t.notes.length === 1 ? '1 note' : `${t.notes.length} notes`);
   if (!extra.hideFile) meta.push(`List ${t.fileLabel}, line ${t.line}`);
   return {
@@ -138,6 +145,7 @@ function describe(t, today, level, extra = {}) {
     allKids: t.kind === 'task' ? t.descendantCount || 0 : 0,
     notes: t.notes,
     jira: t.jira,
+    jiraSkip: t.kind === 'task' && t.jiraSkip ? (t.jiraSkip.own ? 'own' : 'inherited') : null,
     asks: t.kind === 'task' ? t.asks || [] : [],
     bareQuestion: isQuestion(t) && !['todo', 'waitingOnMe', 'waitingOnOthers', 'important', 'inProgress', 'ongoing', 'subtask'].some((f) => t.flags[f]),
     fileLabel: t.fileLabel,
@@ -634,4 +642,4 @@ function subtasksOf(index, id, today = new Date()) {
   return { title: `Subtasks of ${root.text}`, items, count: items.length };
 }
 
-module.exports = { isQuestion, askText, subtasksOf, heldBack, listTasks, fileBacked, isOnList, allViews, VIEWS, buildView, viewCounts, describe, matcher, untriaged, DUE_SOON_DAYS };
+module.exports = { isQuestion, askText, jiraSkipText, subtasksOf, heldBack, listTasks, fileBacked, isOnList, allViews, VIEWS, buildView, viewCounts, describe, matcher, untriaged, DUE_SOON_DAYS };

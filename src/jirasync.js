@@ -10,6 +10,7 @@ const { applyOp } = require('./ops');
 const { toISO } = require('./dates');
 const { transformFile, ConflictError } = require('./writer');
 const { bucketIndex, isBucket } = require('./buckets');
+const { jiraSkipSources } = require('./parser');
 
 const STARTED_RE = /^started:?\s+(\d{4}-\d{2}-\d{2})\.?$/i;
 const FIELD_RE = /^[A-Za-z0-9_]+$/;
@@ -117,11 +118,14 @@ const BLOCKS = new Set(['paragraph', 'heading', 'codeBlock', 'blockquote', 'list
 function adfToText(doc) {
   if (!doc) return '';
   if (typeof doc === 'string') return normText(doc);
-  const walk = (n) => {
+  // Checklist items read "[x] text" (done) or "[ ] text", with "- " per level of nesting.
+  const walk = (n, d = 0) => {
     if (!n || typeof n !== 'object') return '';
     if (n.type === 'text') return n.text || '';
     if (n.type === 'hardBreak') return '\n';
-    const inner = (n.content || []).map(walk).join('');
+    if (n.type === 'taskList') return (n.content || []).map((c) => walk(c, c.type === 'taskList' ? d + 1 : d)).join('');
+    const inner = (n.content || []).map((c) => walk(c, d)).join('');
+    if (n.type === 'taskItem') return `\n${'- '.repeat(d)}[${n.attrs && n.attrs.state === 'DONE' ? 'x' : ' '}] ${inner}\n`;
     return BLOCKS.has(n.type) ? `${inner}\n` : inner;
   };
   return normText(walk(doc));
@@ -143,6 +147,32 @@ function fileKind(t) {
 
 const startedNote = (n) => { const m = STARTED_RE.exec(str(n)); return m ? m[1] : null; };
 const descOf = (t) => normText((t.notes || []).filter((n) => !startedNote(n)).join('\n'));
+
+/** Checklist rows as text, the same way adfToText reads them back from Jira. */
+const checklistLines = (nodes, d = 0) => nodes.flatMap((n) => [`${'- '.repeat(d)}[${n.done ? 'x' : ' '}] ${n.text}`, ...checklistLines(n.kids, d + 1)]);
+const checklistCount = (nodes) => nodes.reduce((sum, n) => sum + 1 + checklistCount(n.kids), 0);
+const checklistOf = (ctx, t) => (ctx.checklists && ctx.checklists.get(t.id)) || [];
+/** What the description should say: the notes, then a Sub-task's checklist of the tasks nested under it. */
+const descTextOf = (ctx, t) => normText([descOf(t), ...checklistLines(checklistOf(ctx, t))].join('\n'));
+
+function taskListAdf(nodes, ids) {
+  const list = { type: 'taskList', attrs: { localId: `pt-${(ids.n += 1)}` }, content: [] };
+  for (const n of nodes) {
+    list.content.push({ type: 'taskItem', attrs: { localId: `pt-${(ids.n += 1)}`, state: n.done ? 'DONE' : 'TODO' }, content: inline(n.text) });
+    if (n.kids.length) list.content.push(taskListAdf(n.kids, ids));
+  }
+  return list;
+}
+
+function descAdfOf(ctx, t) {
+  const nodes = checklistOf(ctx, t);
+  const doc = toAdf(descOf(t));
+  if (!nodes.length) return doc;
+  const out = doc || { type: 'doc', version: 1, content: [] };
+  out.content.push(taskListAdf(nodes, { n: 0 }));
+  return out;
+}
+
 const startOf = (t) => t.start || (t.notes || []).map(startedNote).find(Boolean) || null;
 const dueOf = (t) => (t.flags.done ? t.doneDate || t.due || null : t.due || null);
 
@@ -226,12 +256,52 @@ function priorityKind(cfg, name) {
   return n ? ['high', 'medium', 'low'].find((k) => lower(cfg.priorities[k]) === n) || null : null;
 }
 
+/** How many parent steps a task is below its main task (0 = Task, 1 = Sub-task, 2+ = checklist item). */
+function levelOf(byTaskId, t) {
+  let n = 0;
+  for (let cur = t; cur.parentId && byTaskId.has(cur.parentId); cur = byTaskId.get(cur.parentId).t) n += 1;
+  return n;
+}
+
+/**
+ * Checklists for Sub-tasks: Map(taskId -> [{ text, done, kids }]) of the tasks nested under each one, in file order.
+ * Lines already in Jira sync on their own (their children move up a level); open questions stay out with their subtasks.
+ */
+function checklistsFor(entries) {
+  const byTaskId = new Map(entries.map((e) => [e.t.id, e]));
+  const nodes = (t) => {
+    const out = [];
+    for (const cid of t.childIds || []) {
+      const e = byTaskId.get(cid);
+      if (!e) continue;
+      const c = e.t;
+      if (c.jira) out.push(...nodes(c));
+      else if (!c.flags.question) out.push({ text: c.text, done: !!c.flags.done, kids: nodes(c) });
+    }
+    return out;
+  };
+  const out = new Map();
+  for (const e of entries) {
+    if (e.excluded || levelOf(byTaskId, e.t) !== 1) continue;
+    const list = nodes(e.t);
+    if (list.length) out.set(e.t.id, list);
+  }
+  return out;
+}
+
+function descWords(t, n) {
+  const notes = !!descOf(t);
+  const items = n === 1 ? '1 checklist item' : `${n} checklist items`;
+  if (!n) return notes ? 'from the notes' : 'clear it';
+  return notes ? `from the notes and ${items}` : items;
+}
+
 /** Issues a task waits for, as Map(upper-case Jira key or "new:taskId" -> blocker task). Blockers that will not be in Jira are left out. */
 function wantedBlockers(index, t, willCreate = () => false) {
   const out = new Map();
   for (const bid of t.blockedBy || []) {
     const b = index.get(bid);
-    if (!b || b.id === t.id || isBucket(b)) continue;
+    if (!b || b.id === t.id || isBucket(b) || b.jiraSkip) continue;
     if (b.jira) out.set(b.jira.toUpperCase(), b);
     else if (willCreate(b.id)) out.set(`new:${b.id}`, b);
   }
@@ -252,7 +322,8 @@ function fieldStates(ctx, entry, issue) {
   if (kind === 'deleted') return out;
   out.summary = { file: t.text, jira: str(f.summary), same: str(f.summary) === t.text };
   const desc = adfToText(f.description);
-  out.desc = { file: descOf(t), jira: desc, same: descOf(t) === desc };
+  const descWant = descTextOf(ctx, t);
+  out.desc = { file: descWant, jira: desc, same: descWant === desc };
   if (f.priority !== undefined) {
     const pn = f.priority ? str(f.priority.name) : '';
     const jk = priorityKind(cfg, pn);
@@ -338,15 +409,20 @@ function install(App, HttpError) {
     for (const file of files) {
       const list = listForFile(this.stateData.lists, file);
       // Buckets (jira:label) are never issues; the tasks in them get a label instead.
-      for (const t of this.index.tasks) if (t.file === file && !isBucket(t)) entries.push({ t, list });
+      for (const t of this.index.tasks) if (t.file === file && !isBucket(t)) entries.push({ t, list, skip: t.jiraSkip });
       // Deleted ($) lines are not in the index, but a linked one still closes its issue as Won't Do.
       const parsed = this.parsedFor(file);
       const label = this.fileEntry(file).label;
-      for (const it of parsed.items) {
-        if (it.kind !== 'excluded' || !it.jira || it.jiraLabel) continue;
-        entries.push({ t: { ...it, id: `x:${file}:${it.lineIndex}`, file, fileLabel: label, line: it.lineIndex + 1, notes: [], symbols: parsed.symbols, unmarkedMode: parsed.unmarkedMode }, list, excluded: true });
-      }
+      const skips = jiraSkipSources(parsed);
+      parsed.items.forEach((it, i) => {
+        if (it.kind !== 'excluded' || !it.jira || it.jiraLabel) return;
+        entries.push({ t: { ...it, id: `x:${file}:${it.lineIndex}`, file, fileLabel: label, line: it.lineIndex + 1, notes: [], symbols: parsed.symbols, unmarkedMode: parsed.unmarkedMode }, list, excluded: true, skip: skips[i] });
+      });
     }
+    // jira:skip lines (and everything under them) stay out: never created, never updated. A linked one is reported.
+    const skipped = entries.filter((e) => e.skip && e.t.jira).map((e) => e.t);
+    for (let i = entries.length - 1; i >= 0; i -= 1) if (entries[i].skip) entries.splice(i, 1);
+    const checklists = checklistsFor(entries);
     const keys = [...new Set(entries.map((e) => e.t.jira).filter(Boolean))];
     let flaggedField = cfg.flaggedField;
     if (!flaggedField) {
@@ -356,7 +432,7 @@ function install(App, HttpError) {
     }
     const issues = await this.fetchIssues(client, cfg, flaggedField, keys);
     const jstate = this.stateData.jira;
-    return { cfg, client, lists, files, entries, issues, flaggedField, bucketsById: bucketIndex(this.index).byId, created: new Set(jstate.created), synced: jstate.synced };
+    return { cfg, client, lists, files, entries, issues, flaggedField, bucketsById: bucketIndex(this.index).byId, checklists, skipped, created: new Set(jstate.created), synced: jstate.synced };
   };
 
   proto.fetchIssues = async function fetchIssues(client, cfg, flaggedField, keys) {
@@ -385,11 +461,14 @@ function install(App, HttpError) {
       return cur;
     };
     const creating = new Set();
+    for (const t of ctx.skipped || []) info.push({ ...where(t), key: t.jira, text: `Not synced: skipped (jira:skip); linked issue ${t.jira} left in Jira.` });
 
     for (const e of entries) {
       const { t, list } = e;
       if (t.jira) continue;
       if (e.excluded) continue;
+      // Two levels only: Tasks and their Sub-tasks. Deeper tasks are the Sub-task's checklist, quietly.
+      if (levelOf(byTaskId, t) >= 2) continue;
       const kind = fileKind(t);
       const sub = t.depth > 0 && t.parentId && byTaskId.has(t.parentId);
       const top = sub ? topOf(t) : null;
@@ -408,6 +487,7 @@ function install(App, HttpError) {
       }
       creating.add(t.id);
       const buckets = bucketLabels(cfg, t, ctx.bucketsById);
+      const items0 = checklistCount(checklistOf(ctx, t));
       add({
         id: `create:${t.id}`,
         group: 'create',
@@ -415,7 +495,7 @@ function install(App, HttpError) {
         raw: t.raw,
         field: 'create',
         parentTaskId: sub ? top.id : null,
-        label: `Create ${sub ? `Sub-task of ${top.jira || top.text}` : `Task${cfg.epic ? ` in epic ${cfg.epic}` : ''}`}, status ${wantedStatus(cfg, kind, list)}${t.priority && t.priority !== 'medium' ? `, priority ${cfg.priorities[t.priority]}` : ''}${buckets.length ? `, ${buckets.length === 1 ? 'label' : 'labels'} ${buckets.join(', ')}` : ''}`,
+        label: `Create ${sub ? `Sub-task of ${top.jira || top.text}` : `Task${cfg.epic ? ` in epic ${cfg.epic}` : ''}`}, status ${wantedStatus(cfg, kind, list)}${t.priority && t.priority !== 'medium' ? `, priority ${cfg.priorities[t.priority]}` : ''}${buckets.length ? `, ${buckets.length === 1 ? 'label' : 'labels'} ${buckets.join(', ')}` : ''}${items0 ? `, includes ${items0 === 1 ? '1 checklist item' : `${items0} checklist items`}` : ''}`,
         from: null,
         to: { kind, text: t.text },
         checked: kind !== 'done',
@@ -493,7 +573,7 @@ function install(App, HttpError) {
         const shown = (v) => (field === 'flagged' ? (v ? 'flagged' : 'not flagged') : v || 'none');
         add({
           ...base, id: `${key}:${field}`, group: 'push', field,
-          label: `${names[field]}: ${field === 'desc' ? (s.file ? 'from the notes' : 'clear it') : shown(s.file)}${field === 'desc' && !ours ? '. plaintasks did not create this issue' : ''}${!unchanged && !jiraEmpty ? '. It was changed in Jira' : ''}`,
+          label: `${names[field]}: ${field === 'desc' ? descWords(t, checklistCount(checklistOf(ctx, t))) : shown(s.file)}${field === 'desc' && !ours ? '. plaintasks did not create this issue' : ''}${!unchanged && !jiraEmpty ? '. It was changed in Jira' : ''}`,
           from: s.jira, to: s.file, checked,
         });
       }
@@ -615,7 +695,7 @@ function install(App, HttpError) {
               summary: t.text.slice(0, 250),
             };
             if (parent) fields.parent = { key: parent };
-            const desc = toAdf(descOf(t));
+            const desc = descAdfOf(ctx, t);
             if (desc) fields.description = desc;
             if (cfg.assignee) fields.assignee = { accountId: cfg.assignee };
             if (cfg.reporter) fields.reporter = { accountId: cfg.reporter };
@@ -660,7 +740,7 @@ function install(App, HttpError) {
             if (it.field === 'status') status = fileKind(t);
             else if (it.field === 'summary') fields.summary = t.text.slice(0, 250);
             else if (it.field === 'priority') fields.priority = { name: cfg.priorities[t.priority || 'medium'] };
-            else if (it.field === 'desc') fields.description = toAdf(descOf(t));
+            else if (it.field === 'desc') fields.description = descAdfOf(ctx, t);
             else if (it.field === 'due') fields[cfg.dueField] = dueOf(t) || null;
             else if (it.field === 'start') fields[cfg.startField] = startOf(t) || null;
             else if (it.field === 'flagged') fields[ctx.flaggedField] = t.flags.waitingOnOthers ? [{ value: 'Impediment' }] : null;

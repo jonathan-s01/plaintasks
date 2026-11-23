@@ -675,3 +675,43 @@ test('q marks a question, shift+q opens Open questions grouped by person, q agai
     await env.close();
   }
 });
+
+test('the Enter menu offers Keep out of Jira and Sync to Jira again (passes axe), and details say why a task is not synced', async () => {
+  const env = await boot({ 'a.txt': '@ admin\n\t@ expenses\n' });
+  try {
+    const { window } = await openPage(env, '/?ui=tree');
+    const doc = window.document;
+    const rows = () => [...doc.getElementById('tree').querySelectorAll('[role=treeitem]')];
+    const live = () => doc.getElementById('live').textContent;
+    const file = () => fs.readFileSync(path.join(env.notes, 'a.txt'), 'utf8');
+    const menuButton = (label) => [...doc.getElementById('actions-dialog').querySelectorAll('button')].find((b) => b.textContent === label);
+    window.eval(axe.source);
+    await waitFor(() => rows().length === 2, 'items');
+
+    key(window, doc.activeElement, 'Enter');
+    await waitFor(() => doc.getElementById('actions-dialog').hasAttribute('open'), 'menu');
+    const r = await window.axe.run(doc.getElementById('actions-dialog'), { rules: { 'color-contrast': { enabled: false }, region: { enabled: false } } });
+    assert.equal(r.violations.length, 0, r.violations.map((v) => v.id).join());
+    menuButton('Keep out of Jira').click();
+    await waitFor(() => /Kept out of Jira/.test(live()), 'kept out');
+    assert.equal(file(), '@ admin jira:skip\n\t@ expenses\n');
+
+    await waitFor(() => rows().length === 2 && doc.activeElement === rows()[0], 'focus back');
+    key(window, rows()[0], 'ArrowDown');
+    key(window, doc.activeElement, 'i');
+    await waitFor(() => /Not synced to Jira \(jira:skip, inherited from parent: admin\)/.test(live()), 'details');
+    key(window, doc.activeElement, 'Enter');
+    await waitFor(() => doc.getElementById('actions-dialog').hasAttribute('open'), 'menu 2');
+    assert.ok(!menuButton('Keep out of Jira') && !menuButton('Sync to Jira again'), 'an inherited skip is changed on the line that holds it');
+    doc.getElementById('actions-close').click();
+    await waitFor(() => !doc.getElementById('actions-dialog').hasAttribute('open'), 'closed');
+    rows()[0].focus();
+    key(window, rows()[0], 'Enter');
+    await waitFor(() => doc.getElementById('actions-dialog').hasAttribute('open'), 'menu 3');
+    menuButton('Sync to Jira again').click();
+    await waitFor(() => /Syncs to Jira again/.test(live()), 'synced again');
+    assert.equal(file(), '@ admin\n\t@ expenses\n');
+  } finally {
+    await env.close();
+  }
+});

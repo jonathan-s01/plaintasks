@@ -204,3 +204,11 @@ test('legend can define ? as question', () => {
   assert.equal(tasks(r).length, 1);
   assert.equal(tasks(r)[0].flags.question, true);
 });
+
+test('jira:skip is hidden from the text, on task lines and the title line, and only as a whole token', () => {
+  const r = parseText('Admin list jira:skip goal:ops\n@ file expenses jira:skip\n@ note jira:skipped\n');
+  assert.deepEqual([r.title.text, r.title.skip, r.title.buckets], ['Admin list', true, ['ops']]);
+  const [a, b] = r.items.filter((i) => i.kind === 'task');
+  assert.deepEqual([a.text, a.jiraSkip], ['file expenses', true]);
+  assert.deepEqual([b.text, b.jiraSkip], ['note jira:skipped', false]);
+});

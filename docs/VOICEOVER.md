@@ -47,6 +47,7 @@ Automated tests (jsdom and axe-core) cover structure and keyboard logic, but the
 - `d`: a dialog opens with focus in the date box. Type `fri` and press Enter. Next, try `nonsense`: you should hear an error and stay in the box.
 - `e` on a task: a box opens with the task name, then one field per note. Change the name, press Enter: you hear "Renamed to: ..." and focus stays on the task. `u` undoes it. Enter on a note row opens the same box at that note.
 - Enter on a task: actions menu opens as a dialog; Escape closes it and focus returns to the same task.
+- Enter on a task with a subtask, then "Keep out of Jira": you hear "Kept out of Jira, with everything under it". `i` on the subtask says "Not synced to Jira (jira:skip, inherited from parent: …)", and its Enter menu has no Jira skip button. Enter on the parent again shows "Sync to Jira again". `u` undoes either.
 - `o`: opens the file in your text editor.
 
 **Views and filtering**

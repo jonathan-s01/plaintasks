@@ -24,6 +24,8 @@ const NOTE_RE = /^[ \t]*&[ \t]*(.*)$/;
 const JIRA_RE = /(^|\s)jira:([A-Za-z][A-Za-z0-9_]*-\d+)(?![\w-])/;
 // jira:label makes the line a bucket: sync tags the tasks in it with a label instead of making the bucket an issue.
 const JIRA_LABEL_RE = /(^|\s)jira:label(?![\w-])/i;
+// jira:skip keeps the line and everything under it out of Jira sync. On a file's title line it covers the whole list.
+const JIRA_SKIP_RE = /(^|\s)jira:skip(?![\w-])/i;
 // goal:some-id. On a bucket line (jira:label) the first one is the bucket's own id; on any other line each one puts
 // the task in that bucket. On a file's title line they are the file's default buckets. goal:none means "no bucket".
 // p:high and p:low set the priority (no token means medium). id:slug names a task so others can wait for it with after:slug.
@@ -172,6 +174,11 @@ function stripTokens(origBody, ref) {
     jiraLabel = true;
     return pre;
   });
+  let jiraSkip = false;
+  out = out.replace(new RegExp(JIRA_SKIP_RE.source, 'gi'), (m, pre) => {
+    jiraSkip = true;
+    return pre;
+  });
   const goals = [];
   out = out.replace(GOAL_RE, (m, pre, id) => {
     if (!goals.includes(id.toLowerCase())) goals.push(id.toLowerCase());
@@ -212,6 +219,7 @@ function stripTokens(origBody, ref) {
     waitsFor,
     jira,
     jiraLabel,
+    jiraSkip,
     goals,
   };
 }
@@ -245,7 +253,11 @@ function parseText(text, options = {}) {
     break;
   }
   const defaultBuckets = [];
-  const titleText = (t) => t.replace(GOAL_RE, (m, pre, id) => {
+  let titleSkip = false;
+  const titleText = (t) => t.replace(new RegExp(JIRA_SKIP_RE.source, 'gi'), (m, pre) => {
+    titleSkip = true;
+    return pre;
+  }).replace(GOAL_RE, (m, pre, id) => {
     if (!defaultBuckets.includes(id.toLowerCase())) defaultBuckets.push(id.toLowerCase());
     return pre;
   }).replace(/\s+/g, ' ').trim();
@@ -360,7 +372,23 @@ function parseText(text, options = {}) {
   // A title line that is itself a task (unmarked lines are tasks in this file) holds no defaults.
   if (titleLine >= 0 && items.some((it) => it.lineIndex === titleLine && it.kind !== 'unmarked')) titleLine = -1;
 
-  return { lines, eols, items, legend: { symbols, unmarked: legend.unmarked, hasLegend: legend.hasLegend, lines: [...legend.legendLines] }, unmarkedMode, symbols, title: titleLine >= 0 ? { lineIndex: titleLine, buckets: defaultBuckets, raw: lines[titleLine], text: titleText(lines[titleLine]) || lines[titleLine].trim() } : null };
+  return { lines, eols, items, legend: { symbols, unmarked: legend.unmarked, hasLegend: legend.hasLegend, lines: [...legend.legendLines] }, unmarkedMode, symbols, title: titleLine >= 0 ? { lineIndex: titleLine, buckets: defaultBuckets, skip: titleSkip, raw: lines[titleLine], text: titleText(lines[titleLine]) || lines[titleLine].trim() } : null };
+}
+
+/**
+ * Why each parsed item is kept out of Jira, by item index: null, { own: true }, { from: 'parent', text }
+ * (the nearest line up the tree holding jira:skip) or { from: 'list', text } (the file's title line).
+ */
+function jiraSkipSources(parsed) {
+  const out = [];
+  const list = parsed.title && parsed.title.skip ? { from: 'list', text: parsed.title.text } : null;
+  parsed.items.forEach((it, i) => {
+    const p = it.parent >= 0 && it.parent < i ? out[it.parent] : null;
+    if (it.jiraSkip) out.push({ own: true });
+    else if (p) out.push(p.own ? { from: 'parent', text: parsed.items[it.parent].text } : p);
+    else out.push(list);
+  });
+  return out;
 }
 
 function groupPath(groups) {
@@ -388,6 +416,7 @@ function makeTask(lineIndex, raw, indent, flags, parsed, groups, implicit) {
     asks: parsed.asks,
     jira: parsed.jira,
     jiraLabel: parsed.jiraLabel,
+    jiraSkip: parsed.jiraSkip,
     goalId: parsed.jiraLabel && parsed.goals.length ? parsed.goals[0] : null,
     goalLinks: parsed.jiraLabel ? parsed.goals.slice(1) : parsed.goals,
     implicit,
@@ -417,4 +446,4 @@ function attach(item, stack, items) {
 }
 
 module.exports = {
-  GOAL_RE, ampNote, parseText, splitLines, markerInfo, indentWidth, DEFAULT_SYMBOLS, MARKER_CHARS, stripTokens, JIRA_RE, JIRA_LABEL_RE, PRIORITY_RE, ID_RE, AFTER_RE, ASK_RE };
+  GOAL_RE, ampNote, parseText, splitLines, markerInfo, indentWidth, DEFAULT_SYMBOLS, MARKER_CHARS, stripTokens, jiraSkipSources, JIRA_RE, JIRA_LABEL_RE, JIRA_SKIP_RE, PRIORITY_RE, ID_RE, AFTER_RE, ASK_RE };

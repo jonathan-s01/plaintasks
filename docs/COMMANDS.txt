@@ -93,7 +93,8 @@ Option and Up arrow, Option and Down arrow: move the item up or down one place i
 JIRA
 
 j: Jira for this task: link it to an issue, see its status, or create an issue.
-Shift and j: sync with Jira. Shows every change in both directions for the lists that sync to Jira, grouped as conflicts, new issues, updates to Jira and updates to files. Tick what you want, then Apply. Nothing is sent or written before that. Open questions that are not linked to Jira are not created; they are listed under Not synced as open question. Once you answer them they sync like other tasks.
+Shift and j: sync with Jira. Shows every change in both directions for the lists that sync to Jira, grouped as conflicts, new issues, updates to Jira and updates to files. Tick what you want, then Apply. Nothing is sent or written before that. Open questions that are not linked to Jira are not created; they are listed under Not synced as open question. Once you answer them they sync like other tasks. Only two levels go to Jira: main tasks as Tasks and their direct subtasks as Sub-tasks; tasks nested deeper become a checklist in the Sub-task's description. A line with jira:skip, and everything under it, never goes to Jira; on a file's first line it covers the whole list.
+Enter, then Keep out of Jira (or Sync to Jira again): add or remove jira:skip on the task. u undoes it. Details (i) say when a task is not synced and where the skip comes from.
 
 
 TRIAGE (press 0)

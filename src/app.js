@@ -11,7 +11,7 @@ const { applyOp, OpError } = require('./ops');
 const { markerInfo, ampNote, parseText } = require('./parser');
 const { replaceLine, replaceLines, removeLines, moveLine, ConflictError } = require('./writer');
 const { formatDate, toISO } = require('./dates');
-const { askText, subtasksOf, allViews, buildView, viewCounts, untriaged, listTasks, fileBacked } = require('./views');
+const { askText, jiraSkipText, subtasksOf, allViews, buildView, viewCounts, untriaged, listTasks, fileBacked } = require('./views');
 const { convertRtfFiles } = require('./rtf');
 const { JiraClient, JiraError, KEY_RE } = require('./jira');
 const { cleanSync } = require('./jirasync');
@@ -111,7 +111,7 @@ class App {
 
   detail(id) {
     const t = this.task(id);
-    return { id: t.id, text: t.text, notes: t.notes, file: t.fileLabel, line: t.line, group: t.group, jira: t.jira, raw: t.raw, kind: t.kind, flags: t.flags, due: t.due, question: !!t.flags.question && !t.flags.done, asks: t.asks || [] };
+    return { id: t.id, text: t.text, notes: t.notes, file: t.fileLabel, line: t.line, group: t.group, jira: t.jira, raw: t.raw, kind: t.kind, flags: t.flags, due: t.due, question: !!t.flags.question && !t.flags.done, asks: t.asks || [], jiraSkip: t.jiraSkip ? jiraSkipText(t.jiraSkip) : null };
   }
 
   // ---- writing ----
@@ -329,6 +329,13 @@ class App {
         return this.bucketSet(t, value);
       case 'question':
         return this.toggleQuestion(t, value, list);
+      case 'jiraSkip': {
+        const on = value == null ? !(t.jiraSkip && t.jiraSkip.own) : !!value;
+        const res = done(this.lineWrite(t, 'jiraSkip', on), on ? `Kept out of Jira, with everything under it: ${t.text}` : `Syncs to Jira again: ${t.text}`);
+        const after = !on && res.focusId ? this.index.get(res.focusId) : null;
+        if (after && after.jiraSkip) res.message = `Removed jira:skip, but it is still ${jiraSkipText(after.jiraSkip).replace(/^Not synced/, 'not synced')}: ${t.text}`;
+        return res;
+      }
       case 'jira': {
         const key = value ? String(value).trim() : '';
         if (key && !KEY_RE.test(key)) throw new HttpError(400, 'Jira keys look like ABC-123');

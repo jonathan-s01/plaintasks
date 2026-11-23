@@ -768,3 +768,22 @@ test('triage: q marks an unmarked line as a question', async () => {
   await app.action({ id: line.id, op: 'question' });
   assert.equal(read(notes, 'a.txt'), '@ task\n\n? loose thought\n');
 });
+
+test('jiraSkip toggles the token (kept through a rename), says when a parent still skips it, and undo reverses it', async () => {
+  const { notes, app } = setup({ 'a.txt': '@ admin p:high\n\t@ expenses\n' });
+  let res = await app.action({ id: find(app, 'admin').id, op: 'jiraSkip' });
+  assert.match(res.message, /^Kept out of Jira, with everything under it: admin$/);
+  assert.equal(read(notes, 'a.txt'), '@ admin p:high jira:skip\n\t@ expenses\n');
+  assert.equal(find(app, 'expenses').jiraSkip, 'inherited');
+  await app.action({ id: find(app, 'admin').id, op: 'edit', value: { text: 'admin work' } });
+  assert.equal(read(notes, 'a.txt'), '@ admin work p:high jira:skip\n\t@ expenses\n');
+  app.undo();
+  res = await app.action({ id: find(app, 'expenses').id, op: 'jiraSkip' });
+  res = await app.action({ id: find(app, 'expenses').id, op: 'jiraSkip' });
+  assert.match(res.message, /still not synced to Jira \(jira:skip, inherited from parent: admin\)/);
+  res = await app.action({ id: find(app, 'admin').id, op: 'jiraSkip' });
+  assert.equal(res.message, 'Syncs to Jira again: admin');
+  assert.equal(read(notes, 'a.txt'), '@ admin p:high\n\t@ expenses\n');
+  app.undo();
+  assert.equal(read(notes, 'a.txt'), '@ admin p:high jira:skip\n\t@ expenses\n');
+});

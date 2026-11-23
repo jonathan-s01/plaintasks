@@ -139,12 +139,14 @@ test('jira sync: lists sync only when ticked, and need a file', async () => {
 
 test('jira sync: creates Tasks under the epic and Sub-tasks under their main task, writes jira: back, and a ~ line is an ordinary task with no Relates links', async () => {
   const { notes, app, jira } = setup({
-    'a.txt': '~ Build partner network goal:partner-network\n@ Write scan due:2026-12-01 goal:partner-network\n\t& see https://x.test/doc\n\t& Started 2026-11-02\n\t@ sub step\n\t\t> deeper step\n+ Old thing done:2026-11-01\n',
+    'a.txt': '~ Build partner network goal:partner-network\n@ Write scan due:2026-12-01 goal:partner-network\n\t& see https://x.test/doc\n\t& Started 2026-11-02\n\t> sub step\n\t\t& ask legal\n\t\t@ deeper step p:high\n\t\t\t+ deepest done:2026-11-10\n+ Old thing done:2026-11-01\n',
   });
   await syncedList(app, 'a.txt', { jiraLabels: 'a11y' });
   const plan = await app.syncPreview();
   const creates = plan.items.filter((i) => i.group === 'create');
-  assert.deepEqual(creates.map((i) => [i.task, i.checked]), [['Build partner network', true], ['Write scan', true], ['sub step', true], ['deeper step', true], ['Old thing', false]]);
+  assert.deepEqual(creates.map((i) => [i.task, i.checked]), [['Build partner network', true], ['Write scan', true], ['sub step', true], ['Old thing', false]]);
+  assert.match(creates[2].label, /^Create Sub-task of Write scan, .*includes 2 checklist items$/);
+  assert.ok(!plan.info.some((i) => /deeper|deepest/.test(i.task)), 'checklist items are not listed as not synced');
   assert.ok(!plan.items.some((i) => i.field === 'link'), 'no Relates links: ~ is only a status');
   const before = read(notes, 'a.txt');
   assert.equal(jira.calls.filter((c) => c.method !== 'GET' && c.path !== '/search/jql').length, 0, 'the preview sends nothing');
@@ -155,8 +157,8 @@ test('jira sync: creates Tasks under the epic and Sub-tasks under their main tas
   const text = read(notes, 'a.txt');
   assert.match(text, /^~ Build partner network goal:partner-network jira:A11Y-100$/m);
   assert.match(text, /^@ Write scan due:2026-12-01 goal:partner-network jira:A11Y-101$/m);
-  assert.match(text, /^\t@ sub step jira:A11Y-102$/m);
-  assert.match(text, /^\t\t> deeper step jira:A11Y-103$/m);
+  assert.match(text, /^\t> sub step jira:A11Y-102$/m);
+  assert.match(text, /^\t\t@ deeper step p:high$/m, 'the third level is not an issue');
   assert.match(text, /^\+ Old thing done:2026-11-01$/m);
 
   const made = (key) => jira.issues.get(key).fields;
@@ -170,10 +172,16 @@ test('jira sync: creates Tasks under the epic and Sub-tasks under their main tas
   assert.equal(adfToText(made('A11Y-101').description), 'see https://x.test/doc');
   assert.equal(made('A11Y-101').description.content[0].content[1].marks[0].attrs.href, 'https://x.test/doc');
   assert.deepEqual([made('A11Y-102').issuetype, made('A11Y-102').parent], [{ id: '10003' }, { key: 'A11Y-101' }]);
-  // Jira cannot nest deeper: a sub-sub-task becomes a Sub-task of the top-level task.
-  assert.deepEqual(made('A11Y-103').parent, { key: 'A11Y-101' });
-  assert.ok(made('A11Y-103').labels.includes('waiting'));
-  assert.deepEqual(made('A11Y-103').customfield_10021, [{ value: 'Impediment' }]);
+  assert.ok(made('A11Y-102').labels.includes('waiting'));
+  assert.deepEqual(made('A11Y-102').customfield_10021, [{ value: 'Impediment' }]);
+  // Two levels only: deeper tasks are the Sub-task's checklist, after its notes, nested as in the file.
+  assert.ok(!jira.issues.has('A11Y-103'));
+  const desc = made('A11Y-102').description;
+  assert.deepEqual(desc.content.map((n) => n.type), ['paragraph', 'taskList']);
+  const tl = desc.content[1].content;
+  assert.deepEqual([tl[0].type, tl[0].attrs.state, tl[0].content[0].text], ['taskItem', 'TODO', 'deeper step']);
+  assert.deepEqual([tl[1].type, tl[1].content[0].attrs.state, tl[1].content[0].content[0].text], ['taskList', 'DONE', 'deepest']);
+  assert.equal(adfToText(desc), 'ask legal\n[ ] deeper step\n- [x] deepest');
   assert.ok(!jira.calls.some((c) => c.path === '/issueLink'));
 
   // Everything is in sync now, so a second run has nothing but the done task that was left out.
@@ -386,4 +394,52 @@ test('jira sync: open questions without a key are not created, nor their subtask
   assert.ok(plan.items.some((i) => i.key === 'A11Y-7'), 'the linked question is still compared');
   assert.ok(plan.info.some((i) => /open question\.$/.test(i.text) && i.task === 'which code'), JSON.stringify(plan.info));
   assert.ok(plan.info.some((i) => /main task, which code, is an open question/.test(i.text)), JSON.stringify(plan.info));
+});
+
+test('jira sync: two levels only; deeper tasks are the Sub-task checklist, changes to them update its description, and a linked deep task still syncs', async () => {
+  const { notes, app, jira } = setup({
+    'a.txt': '@ Main\n\t@ Sub\n\t\t@ step one\n\t\t@ linked deep jira:A11Y-3\n\t\t\t@ under linked\n\t\t? open q\n\t\t\t@ under q\n',
+  });
+  jira.add('A11Y-3', { summary: 'linked deep, renamed in Jira' });
+  await syncedList(app, 'a.txt');
+  const plan = await app.syncPreview();
+  const creates = plan.items.filter((i) => i.group === 'create');
+  assert.deepEqual(creates.map((i) => i.task), ['Main', 'Sub']);
+  assert.match(creates[1].label, /includes 2 checklist items$/);
+  assert.equal(plan.items.find((i) => i.id === 'A11Y-3:summary').group, 'conflict', 'a deep line already in Jira keeps syncing');
+  assert.deepEqual(plan.info.map((i) => i.task), [], 'deeper unlinked lines and questions are not listed as not synced');
+  await app.syncApply({ choices: choose(plan) });
+  assert.equal(adfToText(jira.issues.get('A11Y-101').fields.description), '[ ] step one\n[ ] under linked');
+
+  const file = path.join(notes, 'a.txt');
+  fs.writeFileSync(file, read(notes, 'a.txt').replace('\t\t@ step one', '\t\t+ step one done:2026-11-16') + '\t\t@ step two\n');
+  const again = await app.syncPreview();
+  const desc = again.items.find((i) => i.id === 'A11Y-101:desc');
+  assert.deepEqual([desc.group, desc.checked, desc.label], ['push', true, 'Description: 3 checklist items']);
+  assert.ok(!again.items.some((i) => i.group === 'create'));
+  await app.syncApply({ choices: choose(again) });
+  assert.equal(adfToText(jira.issues.get('A11Y-101').fields.description), '[x] step one\n[ ] under linked\n[ ] step two');
+  assert.ok(!(await app.syncPreview()).items.some((i) => i.id === 'A11Y-101:desc'), 'in sync after the update');
+});
+
+test('jira sync: jira:skip keeps a line and everything under it out; a linked one is reported and its issue left alone', async () => {
+  const { app, jira } = setup({
+    'a.txt': '@ Keep me\n@ Admin stuff id:adm jira:skip\n\t@ child admin\n\t@ linked child jira:A11Y-5\n@ Blocked thing after:adm\n',
+    'b.txt': 'Personal jira:skip\n@ errand\n',
+  });
+  jira.add('A11Y-5', { summary: 'something else' });
+  await syncedList(app, 'a.txt');
+  await app.action({ op: 'listCreate', value: { name: 'Home', file: fileOf(app, 'b.txt'), fileTasks: true, jiraSync: true } });
+  const plan = await app.syncPreview();
+  assert.deepEqual(plan.items.filter((i) => i.group === 'create').map((i) => i.task), ['Keep me', 'Blocked thing']);
+  assert.ok(!plan.items.some((i) => i.field === 'block' || i.key === 'A11Y-5'));
+  assert.deepEqual(plan.info.map((i) => [i.task, i.text]), [['linked child', 'Not synced: skipped (jira:skip); linked issue A11Y-5 left in Jira.']]);
+  await app.syncApply({ choices: choose(plan) });
+  assert.ok(!jira.calls.some((c) => c.method !== 'GET' && c.path.includes('A11Y-5')));
+  assert.equal(jira.issues.get('A11Y-5').fields.summary, 'something else');
+
+  const meta = (text) => app.view({ view: 'open', q: '', showCompleted: false }).items.find((i) => i.text === text).meta;
+  assert.ok(meta('Admin stuff').includes('Not synced to Jira (jira:skip)'));
+  assert.ok(meta('child admin').includes('Not synced to Jira (jira:skip, inherited from parent: Admin stuff)'));
+  assert.ok(meta('errand').includes('Not synced to Jira (jira:skip, inherited from list: Personal)'));
 });

@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { EventEmitter } = require('node:events');
-const { parseText } = require('./parser');
+const { parseText, jiraSkipSources } = require('./parser');
 const { computeBuckets } = require('./buckets');
 const { link: linkBlockers } = require('./blocks');
 const { decode, UnsupportedFileError } = require('./writer');
@@ -248,6 +248,7 @@ class Index extends EventEmitter {
       return sha(`${file.file}\0${it.text}\0${n}`);
     });
     const unmarkedItems = parsed.items.filter((it) => it.kind === 'unmarked');
+    const skips = jiraSkipSources(parsed);
     parsed.items.forEach((it, i) => {
       if (it.kind === 'excluded') return;
       const nearby = (from, step) => {
@@ -293,6 +294,7 @@ class Index extends EventEmitter {
         asks: it.asks || [],
         jira: it.jira || null,
         jiraLabel: !!it.jiraLabel,
+        jiraSkip: skips[i] || null,
         goalId: it.goalId || null,
         goalLinks: it.goalLinks || [],
         symbols: parsed.symbols,
