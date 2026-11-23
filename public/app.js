@@ -141,6 +141,8 @@
         if (it.hasChildren) node.setAttribute('aria-expanded', st.collapsed.has(it.id) ? 'false' : 'true');
       }
       node.append(el('span', { class: 'text', text: `${it.text}. ` }));
+      // The kind of row (list, task, subtask, bucket, group, section) is spoken right after the name.
+      if (it.typeWord) node.append(el('span', { class: 'sr-only', text: `${it.typeWord}. ` }));
       if (listMode) {
         // Only rows that can open say so.
         const state = [it.level > 1 ? `Level ${it.level}.` : '', it.hasChildren ? (st.collapsed.has(it.id) ? 'Collapsed.' : 'Expanded.') : ''].filter(Boolean).join(' ');
@@ -1023,7 +1025,7 @@
     const rows = [...data.tasks].sort((a, b) => Number(b.linked) - Number(a.linked));
     $('blockers-choices').replaceChildren(...rows.map((c, i) => el('div', { class: 'row', 'data-text': `${c.text} ${c.file}`.toLowerCase() },
       el('input', { type: 'checkbox', id: `bc-${i}`, value: c.id, checked: c.linked }),
-      el('label', { for: `bc-${i}`, text: `${c.text}${c.done ? ' (done)' : ''}, ${c.file}, line ${c.line}` }))));
+      el('label', { for: `bc-${i}`, text: `${c.text}${c.done ? ' (done)' : ''}, list ${c.file}, line ${c.line}` }))));
     updateBlockerCount();
     openDialog($('blockers-dialog'), item.id);
     $('blockers-filter').focus();

@@ -15,6 +15,62 @@ const SKIP_DIRS = new Set(['node_modules']);
 
 const sha = (s, n = 12) => crypto.createHash('sha1').update(s).digest('hex').slice(0, n);
 
+const nameOf = (rel) => path.basename(rel, path.extname(rel));
+
+/**
+ * Gives each file the name people know it by: its title line, else its file name without folder or extension.
+ * Two files that would show the same name get the folder added, then more of the path, so no two match.
+ * Tasks and notes carry the name as fileLabel; the folder/path form stays on pathLabel and filePath for ids and search.
+ */
+function nameFiles(files, tasks, unmarked) {
+  const names = new Map(files.map((f) => [f, (f.title && f.title.text) || nameOf(f.rel)]));
+  const dir = (f) => {
+    const d = path.dirname(f.rel);
+    return d === '.' ? f.folderName : `${f.folderName}/${d}`;
+  };
+  const tiers = [
+    (f) => names.get(f),
+    (f) => `${names.get(f)} (${f.folderName})`,
+    (f) => `${names.get(f)} (${dir(f)})`,
+    (f) => `${names.get(f)} (${dir(f)}/${path.basename(f.rel)})`,
+  ];
+  const label = new Map();
+  let pending = files;
+  for (const tier of tiers) {
+    const count = new Map();
+    for (const f of pending) count.set(tier(f).toLowerCase(), (count.get(tier(f).toLowerCase()) || 0) + 1);
+    const next = [];
+    for (const f of pending) {
+      if (tier === tiers[tiers.length - 1] || count.get(tier(f).toLowerCase()) === 1) label.set(f, tier(f));
+      else next.push(f);
+    }
+    pending = next;
+    if (!pending.length) break;
+  }
+  const byFile = new Map();
+  for (const f of files) {
+    f.label = label.get(f);
+    byFile.set(f.file, f);
+  }
+  for (const t of [...tasks, ...unmarked]) {
+    const f = byFile.get(t.file);
+    if (f) {
+      t.fileLabel = f.label;
+      t.filePath = f.pathLabel;
+    }
+  }
+}
+
+/** How many ancestors a task has that are not buckets: 0 for a task, 1 for a subtask, 2 for a level 2 subtask. */
+function setSubLevels(tasks) {
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  for (const t of tasks) {
+    let n = 0;
+    for (let p = t.parentId ? byId.get(t.parentId) : null; p; p = p.parentId ? byId.get(p.parentId) : null) if (!p.isBucket) n += 1;
+    t.subLevel = n;
+  }
+}
+
 function isExcluded(rel, excluded) {
   return excluded.some((ex) => rel === ex || rel.startsWith(`${ex}/`));
 }
@@ -118,7 +174,7 @@ class Index extends EventEmitter {
         const mode = modeFor(folder, e.rel);
         sig.push(`${e.abs}|${st.mtimeMs}|${st.size}|${mode}`);
         if (st.size > MAX_BYTES) {
-          problems.push({ file: e.abs, label, message: 'Skipped: file is larger than 5 MB' });
+          problems.push({ file: e.abs, label: nameOf(e.rel), message: 'Skipped: file is larger than 5 MB' });
           return;
         }
         const key = `${st.mtimeMs}|${st.size}|${mode}|${today.toDateString()}`;
@@ -134,15 +190,16 @@ class Index extends EventEmitter {
           this.cache.set(e.abs, entry);
         }
         if (entry.error) {
-          problems.push({ file: e.abs, label, message: entry.error });
+          problems.push({ file: e.abs, label: nameOf(e.rel), message: entry.error });
           return;
         }
-        const file = { file: e.abs, label, rel: e.rel, folderIndex, folderName, mtimeMs: st.mtimeMs, unmarkedMode: entry.parsed.unmarkedMode, hasLegend: entry.parsed.legend.hasLegend, taskCount: 0, title: entry.parsed.title };
+        const file = { file: e.abs, label, pathLabel: label, rel: e.rel, folderIndex, folderName, mtimeMs: st.mtimeMs, unmarkedMode: entry.parsed.unmarkedMode, hasLegend: entry.parsed.legend.hasLegend, taskCount: 0, title: entry.parsed.title };
         files.push(file);
         this.collect(entry.parsed, file, tasks, unmarked);
       });
     });
 
+    nameFiles(files, tasks, unmarked);
     const signature = sig.join('\n') + `\n${problems.length}|${rtf.length}`;
     const changed = signature !== this.signature || JSON.stringify(cfg.folders) !== this.cfgSig;
     this.cfgSig = JSON.stringify(cfg.folders);
@@ -151,6 +208,7 @@ class Index extends EventEmitter {
     this.files = files;
     linkBlockers(tasks);
     this.buckets = computeBuckets(tasks, files);
+    setSubLevels(tasks);
     this.tasks = tasks;
     this.unmarked = unmarked;
     this.problems = problems;

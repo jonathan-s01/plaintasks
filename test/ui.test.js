@@ -93,12 +93,12 @@ test('default list says collapsed or expanded only on rows that can open', async
     assert.equal(tree.getAttribute('role'), 'listbox');
     assert.ok(rows().every((r) => !r.hasAttribute('aria-expanded')));
     const said = (r) => r.textContent.replace(r.querySelector('.meta') ? r.querySelector('.meta').textContent : '', '').replace(/\s+/g, ' ').trim();
-    assert.equal(said(rows()[0]), 'parent task. Expanded. Open.');
-    assert.equal(said(rows()[1]), 'child task. Level 2. Open.');
-    assert.equal(said(rows()[2]), 'lone task. Open.');
+    assert.equal(said(rows()[0]), 'parent task. task. Expanded. Open.');
+    assert.equal(said(rows()[1]), 'child task. subtask. Level 2. Open.');
+    assert.equal(said(rows()[2]), 'lone task. task. Open.');
     key(window, rows()[0], 'ArrowLeft');
     await waitFor(() => rows().length === 2, 'collapsed');
-    assert.equal(said(rows()[0]), 'parent task. Collapsed. Open.');
+    assert.equal(said(rows()[0]), 'parent task. task. Collapsed. Open.');
   } finally {
     await env.close();
   }
@@ -136,7 +136,7 @@ test('?ui=tree is a tree with roving tabindex; keyboard moves, collapses and com
     assert.equal(doc.activeElement, rows()[0]);
     assert.match(rows()[0].textContent, /parent task\. .*Open\. .*Due .*Nov 20/);
     const meta = rows()[0].querySelector('.meta');
-    assert.match(meta.textContent, /Due .*File .*a\.txt/);
+    assert.match(meta.textContent, /Due .*List Project, line 2/);
     assert.equal(meta.getAttribute('aria-hidden'), 'true', 'rows speak only status and name');
     assert.equal(doc.getElementById('actions-dialog').getAttribute('aria-describedby'), 'actions-details');
 
@@ -501,7 +501,7 @@ test('t picks for today, shift+p cycles priority, shift+b opens the blocked-by d
     key(window, doc.activeElement, 'B');
     await waitFor(() => doc.getElementById('blockers-dialog').hasAttribute('open'), 'blockers dialog');
     assert.equal(doc.activeElement, doc.getElementById('blockers-filter'));
-    assert.deepEqual([...doc.querySelectorAll('#blockers-choices label')].map((l) => l.textContent), ['two, notes/a.txt, line 2']);
+    assert.deepEqual([...doc.querySelectorAll('#blockers-choices label')].map((l) => l.textContent), ['two, list a, line 2']);
     assert.match(doc.getElementById('blockers-count').textContent, /0 ticked\. Showing 1 of 1/);
     window.eval(axe.source);
     const results = await window.axe.run(doc.getElementById('blockers-dialog'), { rules: { 'color-contrast': { enabled: false }, region: { enabled: false } } });

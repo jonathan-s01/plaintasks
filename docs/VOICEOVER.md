@@ -29,7 +29,7 @@ Automated tests (jsdom and axe-core) cover structure and keyboard logic, but the
 - Tab from the page start: skip link, View, Search, Show completed, Keyboard shortcuts, Settings, then the list.
 
 **The list (the main test)**
-- Tab into the list. Does VoiceOver say it is a list and read the first item as just its status and name (for example "Call Sam. Open.")?
+- Tab into the list. Does VoiceOver say it is a list and read the first item as just its status and name (for example "Call Sam. task. Open.")? Rows say what they are after the name: task, subtask, level 2 subtask, bucket, list, group or section. Lists should be named like "Assessment system", never "organized slash Assessment system dot t x t".
   - Expected: "write spec." then "Expanded" only if it has subtasks or notes, then "Open.", and its position, e.g. "1 of 3". Rows with nothing to open must not say collapsed.
 - If VoiceOver says the list is empty or does not read items, try **VO+Shift+Down** to interact with the list first.
 - Up/Down arrows: one item per press, status and name read each time, with no dates, file or notes? Does it ever read twice or skip?

@@ -1,7 +1,7 @@
 plaintasks keyboard commands
 
 Single-letter keys work while the task list has focus. Press question mark in the app for the same help; Escape closes it.
-Each task row reads its name, then its status (for example "Call Sam. Open."). Press Enter on a task to hear its full details.
+Each task row reads its name, then what it is (task, subtask, level 2 subtask, bucket, list, group or section), then its status (for example "Call Sam. task. Open."). Lists are named by their title line or file name, never by their path. Press Enter on a task to hear its full details.
 
 
 MOVING AROUND

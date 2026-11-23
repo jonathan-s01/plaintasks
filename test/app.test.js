@@ -211,13 +211,13 @@ test('triage: context, progress, flags on unmarked lines, and reviewed-file filt
   await app.action({ id: second.id, op: 'important' });
   assert.match(fs.readFileSync(path.join(notes, 'a.txt'), 'utf8'), /^\*.*second thought$/m);
 
-  const group = tri().find((i) => i.type === 'group' && /b\.txt/.test(i.text));
+  const group = tri().find((i) => i.type === 'group' && i.id.endsWith('b.txt'));
   await app.action({ id: group.id, op: 'reviewFile' });
-  assert.ok(!tri().some((i) => /b\.txt/.test(i.text)), 'reviewed file is hidden in changed-only');
-  assert.ok(items(app, 'triage').some((i) => /b\.txt/.test(i.text)), 'but still listed without the filter');
+  assert.ok(!tri().some((i) => i.id.endsWith('b.txt')), 'reviewed file is hidden in changed-only');
+  assert.ok(items(app, 'triage').some((i) => i.id.endsWith('b.txt')), 'but still listed without the filter');
   fs.appendFileSync(path.join(notes, 'b.txt'), 'new idea\n');
   app.index.refresh(NOW());
-  assert.ok(tri().some((i) => /b\.txt/.test(i.text)), 'a changed file returns');
+  assert.ok(tri().some((i) => i.id.endsWith('b.txt')), 'a changed file returns');
   app.undo();
 });
 

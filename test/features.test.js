@@ -365,7 +365,7 @@ test('file list moves refuse when a file changed on disk, and new tasks go into 
   assert.equal(read(notes, 'a.txt'), '@ task\n');
   assert.equal(read(notes, 'b.txt'), '@ b1\n@ added outside\n');
   const res = await app.action({ op: 'newTask', value: { text: 'fresh' }, list: a });
-  assert.match(res.message, /Created task in Alpha, at the end of notes\/a\.txt: fresh/);
+  assert.match(res.message, /Created task in Alpha, at the end of a: fresh/);
   assert.equal(read(notes, 'a.txt'), '@ task\n@ fresh\n');
 });
 
@@ -377,7 +377,7 @@ test('a list using its file only for notes still keeps tasks by hand', async () 
   assert.equal(read(notes, 'a.txt'), '@ task\n');
   assert.deepEqual(items(app, `list:${list}`).map((i) => i.text), ['task']);
   const edit = await app.action({ op: 'listEdit', list, value: { fileTasks: true } });
-  assert.match(edit.message, /shows every task in notes\/n\.txt/);
+  assert.match(edit.message, /shows every task in n/);
   assert.deepEqual(items(app, `list:${list}`).map((i) => i.text), ['in notes file', 'task']);
   await app.action({ id: find(app, 'task').id, op: 'listToggle', list });
   assert.deepEqual(items(app, `list:${list}`).map((i) => i.text), ['in notes file']);
@@ -488,7 +488,7 @@ test('buckets: a task inherits from its parent, else from the list title line; a
 test('buckets: a file without a title line refuses defaults; the By file row carries its defaults', async () => {
   const { notes, app } = setup({ 'b.txt': '~ Ops goal:ops jira:label\n', 'a.txt': 'Team goal:ops\n\n@ one\n' });
   await assert.rejects(() => app.action({ id: `f:${path.join(notes, 'b.txt')}`, op: 'listBucketSet', value: { ids: [] } }), /no title line/);
-  const row = items(app, 'file').find((i) => i.type === 'group' && i.text === 'notes/a.txt');
+  const row = items(app, 'file').find((i) => i.type === 'group' && i.text === 'Team');
   assert.equal(row.file, path.join(notes, 'a.txt'));
   assert.ok(row.meta.includes('Default bucket: Ops'));
 });
@@ -558,7 +558,7 @@ test('My Day and Next actions: picks roll over, overdue and due today join, prio
   assert.ok(tasks.includes('child one') && !tasks.includes('parent'), 'subtasks stand in for their parent');
   assert.ok(tasks.includes('first step'));
   for (const hidden of ['goal thing', 'blocked pick', 'waiting on x', 'finished', 'child done']) assert.ok(!tasks.includes(hidden), hidden);
-  assert.deepEqual(next.items.filter((i) => i.type === 'group').map((i) => i.text), ['notes/a.txt', 'notes/ideas.txt']);
+  assert.deepEqual(next.items.filter((i) => i.type === 'group').map((i) => i.text), ['a', 'ideas']);
 });
 
 test('t picks for today and unpicks', async () => {
@@ -656,4 +656,24 @@ test('Not actionable lists keep their tasks out of My Day and Next, and still sh
   assert.deepEqual(items(app, 'next').filter((i) => i.type === 'task').map((i) => i.text).sort(), ['real work', 'team lunch']);
   await app.action({ op: 'listEdit', list, value: { notActionable: true } });
   assert.equal(items(app, 'myday').filter((i) => i.type === 'task').length, 1);
+});
+
+test('lists show their title or file name, not the path, and rows carry a type word', async () => {
+  const { notes, app } = setup({
+    'org.txt': 'Assessment system\n\n~ Ops goal:ops jira:label\n\t@ under bucket\n@ top\n\t@ sub\n\t\t@ deep\n\t\t\t@ deeper\n',
+    'plain.txt': '@ one\n',
+  });
+  fs.mkdirSync(path.join(notes, 'x'));
+  fs.writeFileSync(path.join(notes, 'x', 'plain.txt'), '@ two\n');
+  app.index.refresh(NOW());
+  const word = (text, view = 'open') => find(app, text, view).typeWord;
+  assert.deepEqual(['under bucket', 'top', 'sub', 'deep', 'deeper'].map((t) => word(t)), ['task', 'task', 'subtask', 'level 2 subtask', 'level 3 subtask']);
+  assert.equal(word('Ops'), 'bucket');
+  const groups = items(app, 'file').filter((i) => i.type === 'group');
+  assert.deepEqual(groups.map((g) => [g.text, g.typeWord]), [['Assessment system', 'list'], ['plain (notes)', 'list'], ['plain (notes/x)', 'list']]);
+  assert.ok(!items(app, 'file').some((i) => /\.txt/.test(i.text)));
+  assert.deepEqual(items(app, 'next').filter((i) => i.type === 'group').map((i) => [i.text, i.typeWord]), [['Assessment system', 'list'], ['plain (notes)', 'list'], ['plain (notes/x)', 'list']]);
+  assert.ok(items(app, 'open').find((i) => i.text === 'one').meta.includes('List plain (notes), line 1'));
+  assert.equal(items(app, 'group').find((i) => i.type === 'group').typeWord, 'group');
+  assert.ok(app.view({ view: 'myday', q: '', showCompleted: false }).items.every((i) => i.type !== 'group' || i.typeWord === 'section'));
 });

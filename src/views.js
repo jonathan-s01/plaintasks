@@ -39,7 +39,7 @@ function matcher(q) {
   const terms = String(q || '').toLowerCase().split(/\s+/).filter(Boolean);
   if (!terms.length) return () => true;
   return (t) => {
-    const hay = `${t.text} ${t.group} ${t.fileLabel} ${t.notes.join(' ')} ${t.jira || ''} ${t.due || ''} ${t.checkin || ''}`.toLowerCase();
+    const hay = `${t.text} ${t.group} ${t.fileLabel} ${t.filePath || ''} ${t.notes.join(' ')} ${t.jira || ''} ${t.due || ''} ${t.checkin || ''}`.toLowerCase();
     return terms.every((x) => hay.includes(x));
   };
 }
@@ -77,6 +77,14 @@ function checkinText(t, today) {
   return `Check in ${formatDate(t.checkin, today)}${atTime(t.checkinTime)}, ${rel.text.replace(/^due /, '')}`;
 }
 
+/** The word spoken after a row's name: bucket, task, subtask, level 2 subtask, and so on. Unmarked lines and notes get none. */
+function taskTypeWord(t) {
+  if (t.kind !== 'task') return '';
+  if (t.isBucket) return 'bucket';
+  const n = t.subLevel || 0;
+  return n === 0 ? 'task' : n === 1 ? 'subtask' : `level ${n} subtask`;
+}
+
 function describe(t, today, level, extra = {}) {
   const due = dueInfo(t, today);
   const meta = [];
@@ -96,12 +104,13 @@ function describe(t, today, level, extra = {}) {
   if (t.jira) meta.push(`Jira ${t.jira}`);
   if (t.jiraLabel && t.kind === 'task') meta.push('Bucket: tasks in it get its Jira label, it is not an issue');
   if (t.notes.length) meta.push(t.notes.length === 1 ? '1 note' : `${t.notes.length} notes`);
-  if (!extra.hideFile) meta.push(`File ${t.fileLabel}, line ${t.line}`);
+  if (!extra.hideFile) meta.push(`List ${t.fileLabel}, line ${t.line}`);
   return {
     id: t.id,
     type: t.kind === 'unmarked' ? 'unmarked' : 'task',
     level,
     text: t.text,
+    typeWord: taskTypeWord(t),
     words: t.kind === 'unmarked' ? ['Unmarked'] : (extra.words || statusWords(t, today)),
     meta,
     due: due ? { iso: due.iso, state: due.state, time: t.dueTime || null } : null,
@@ -314,8 +323,8 @@ function buildHierarchy(index, ctx, groupKeyOf) {
   }
   const buckets = new Map();
   for (const r of roots) {
-    const { key, label } = groupKeyOf(r);
-    if (!buckets.has(key)) buckets.set(key, { label, file: groupKeyOf(r).file, roots: [] });
+    const { key, label, typeWord } = groupKeyOf(r);
+    if (!buckets.has(key)) buckets.set(key, { label, typeWord, file: groupKeyOf(r).file, roots: [] });
     buckets.get(key).roots.push(r);
   }
   const ordered = [...buckets.entries()].sort(([a], [b]) => (a === '' ? 1 : 0) - (b === '' ? 1 : 0));
@@ -329,6 +338,7 @@ function buildHierarchy(index, ctx, groupKeyOf) {
       type: 'group',
       level: 1,
       text: b.label,
+      typeWord: b.typeWord,
       words: [],
       meta: [n === 1 ? '1 task' : `${n} tasks`, ...(b.file ? defaultsMeta(index, b.file) : [])],
       hasChildren: true,
@@ -360,7 +370,7 @@ function buildView(index, state, opts = {}) {
     for (const first of files) {
       const todo = list.filter((x) => x.file === first.file);
       const total = todo.length;
-      items.push({ id: `f:${first.file}`, type: 'group', level: 1, text: first.fileLabel, words: [], meta: [total === 1 ? '1 line to review' : `${total} lines to review`], hasChildren: true, file: first.file });
+      items.push({ id: `f:${first.file}`, type: 'group', level: 1, text: first.fileLabel, typeWord: 'list', words: [], meta: [total === 1 ? '1 line to review' : `${total} lines to review`], hasChildren: true, file: first.file });
       // Lines that are already tasks are not listed: they need nothing here. Reviewed notes stay, in file order.
       const lines = index.unmarked.filter((u) => u.file === first.file).sort((a, b) => a.lineIndex - b.lineIndex);
       let pos = 0;
@@ -391,12 +401,12 @@ function buildView(index, state, opts = {}) {
       for (const l of here) {
         const n = listTasks(index, state, l.id).filter((x) => !x.flags.done).length;
         const file = l.file ? index.files.find((x) => x.file === l.file) : null;
-        items.push({ id: `list:${l.id}`, type: 'list', listId: l.id, level: 2, text: l.name, words: [], meta: [n === 1 ? '1 open item' : `${n} open items`, file ? `${fileBacked(l) ? 'Tasks kept in' : 'Notes file'} ${file.label}` : 'No notes file', ...(file ? defaultsMeta(index, file.file) : [])], hasChildren: false, flags: {}, notes: [], ...(file ? { file: file.file } : {}) });
+        items.push({ id: `list:${l.id}`, type: 'list', listId: l.id, level: 2, text: l.name, typeWord: 'list', words: [], meta: [n === 1 ? '1 open item' : `${n} open items`, file ? `${fileBacked(l) ? 'Tasks kept in' : 'Notes file'} ${file.label}` : 'No notes file', ...(file ? defaultsMeta(index, file.file) : [])], hasChildren: false, flags: {}, notes: [], ...(file ? { file: file.file } : {}) });
       }
     }
   } else if (view === 'myday' || view === 'next') {
     const parentOf = (t) => (t.parentId ? index.get(t.parentId) : null);
-    const heading = (id, text, n) => ({ id: `g:${id}`, type: 'group', level: 1, text, words: [], meta: [n === 1 ? '1 task' : `${n} tasks`], hasChildren: true });
+    const heading = (id, text, n, typeWord) => ({ id: `g:${id}`, type: 'group', level: 1, text, typeWord, words: [], meta: [n === 1 ? '1 task' : `${n} tasks`], hasChildren: true });
     const row = (t, extra = {}) => {
       const p = parentOf(t);
       return describe(t, today, 2, { parentText: p ? p.text : null, ...extra });
@@ -410,7 +420,7 @@ function buildView(index, state, opts = {}) {
         const here = list.filter(match);
         if (!here.length) return;
         parts.push(`${text} ${here.length}`);
-        items.push(heading(id, text, here.length));
+        items.push(heading(id, text, here.length, 'section'));
         for (const t of here) items.push(row(t, extraFor ? extraFor(t) : {}));
       };
       section('picked', 'Picked', g.picked, (t) => (t.picked < now ? { words: [...statusWords(t, today), 'Carried over'] } : {}));
@@ -419,10 +429,10 @@ function buildView(index, state, opts = {}) {
       summary = parts.join(', ');
     } else {
       const here = nextActions(index, state, today).filter(match);
-      const files = [...new Set(here.map((t) => t.fileLabel))].sort((a, b) => a.localeCompare(b));
-      for (const f of files) {
-        const mine = here.filter((t) => t.fileLabel === f).sort((a, b) => byPriority(a, b) || (b.flags.inProgress ? 1 : 0) - (a.flags.inProgress ? 1 : 0) || a.lineIndex - b.lineIndex);
-        items.push(heading(`next:${f}`, f, mine.length));
+      const files = [...new Map(here.map((t) => [t.filePath, t.fileLabel]))].sort((a, b) => a[1].localeCompare(b[1]) || a[0].localeCompare(b[0]));
+      for (const [path, name] of files) {
+        const mine = here.filter((t) => t.filePath === path).sort((a, b) => byPriority(a, b) || (b.flags.inProgress ? 1 : 0) - (a.flags.inProgress ? 1 : 0) || a.lineIndex - b.lineIndex);
+        items.push(heading(`next:${path}`, name, mine.length, 'list'));
         for (const t of mine) items.push(row(t, { hideFile: true }));
       }
     }
@@ -468,7 +478,7 @@ function buildView(index, state, opts = {}) {
     }
     if (bx.none.length) {
       const rows = members(bx.none, 'nobucket');
-      items.push({ id: 'g:nobucket', type: 'group', level: 1, text: 'No bucket', words: [], meta: [tally(bx.none)], hasChildren: rows.length > 0 }, ...rows);
+      items.push({ id: 'g:nobucket', type: 'group', level: 1, text: 'No bucket', typeWord: 'bucket', words: [], meta: [tally(bx.none)], hasChildren: rows.length > 0 }, ...rows);
     }
   } else if (view === 'schedule') {
     const byId = new Map(index.tasks.map((t) => [t.id, t]));
@@ -495,7 +505,7 @@ function buildView(index, state, opts = {}) {
         prev = level;
         if (t.kind !== 'task') {
           const n = describe(t, today, 1, { hideGroup: true });
-          return { ...n, type: 'note', words: ['Note'], meta: n.meta.filter((m) => !/^File /.test(m)).concat(`File ${t.fileLabel}, line ${t.line}`) };
+          return { ...n, type: 'note', words: ['Note'], meta: n.meta.filter((m) => !/^List /.test(m)).concat(`List ${t.fileLabel}, line ${t.line}`) };
         }
         const p = t.parentId ? index.get(t.parentId) : null;
         // In file order, subtasks are indented under their task the same way as in the file.
@@ -508,12 +518,12 @@ function buildView(index, state, opts = {}) {
   } else if (view === 'open') {
     items = buildHierarchy(index, ctx, null);
   } else if (view === 'file') {
-    items = buildHierarchy(index, ctx, (t) => ({ key: t.fileLabel, label: t.fileLabel, file: t.file }));
+    items = buildHierarchy(index, ctx, (t) => ({ key: t.filePath, label: t.fileLabel, file: t.file, typeWord: 'list' }));
     items.forEach((i) => {
-      if (i.type === 'task') i.meta = i.meta.filter((m) => !m.startsWith('File '));
+      if (i.type === 'task') i.meta = i.meta.filter((m) => !m.startsWith('List '));
     });
   } else if (view === 'group') {
-    items = buildHierarchy(index, ctx, (t) => ({ key: t.group.toLowerCase(), label: t.group || 'No group' }));
+    items = buildHierarchy(index, ctx, (t) => ({ key: t.group.toLowerCase(), label: t.group || 'No group', typeWord: 'group' }));
   } else {
     const pred = predicates(today)[view];
     let list = index.tasks.filter((t) => pred(t) && match(t) && (view === 'completed' || showCompleted || !t.flags.done));

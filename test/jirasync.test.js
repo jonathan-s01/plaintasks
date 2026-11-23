@@ -105,7 +105,7 @@ function setup(files) {
 }
 
 const read = (notes, f) => fs.readFileSync(path.join(notes, f), 'utf8');
-const fileOf = (app, name) => app.publicConfig().files.find((f) => f.label.endsWith(name)).file;
+const fileOf = (app, name) => app.publicConfig().files.find((f) => f.file.endsWith(name)).file;
 async function syncedList(app, file, extra = {}) {
   return (await app.action({ op: 'listCreate', value: { name: 'Work', file: fileOf(app, file), fileTasks: true, jiraSync: true, ...extra } })).listId;
 }
