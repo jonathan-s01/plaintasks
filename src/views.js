@@ -111,6 +111,7 @@ function describe(t, today, level, extra = {}) {
     level,
     text: t.text,
     typeWord: taskTypeWord(t),
+    subLevel: t.kind === 'task' ? t.subLevel || 0 : null,
     words: t.kind === 'unmarked' ? ['Unmarked'] : (extra.words || statusWords(t, today)),
     meta,
     due: due ? { iso: due.iso, state: due.state, time: t.dueTime || null } : null,

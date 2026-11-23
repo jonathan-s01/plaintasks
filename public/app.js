@@ -99,6 +99,14 @@
 
   // ---------- rendering ----------
 
+  // Experiment: the row name is a heading so VoiceOver heading navigation can find it. Lists, groups and buckets h2, tasks h3, subtasks h4, deeper h5 then h6.
+  function nameTag(it) {
+    if (it.type === 'group' || it.typeWord === 'bucket') return 'h2';
+    if (it.type === 'list') return 'h3';
+    if (it.type === 'task') return `h${Math.min(3 + (it.subLevel || 0), 6)}`;
+    return 'span';
+  }
+
   function render() {
     const items = st.model.items;
     const vis = visibleItems();
@@ -140,7 +148,7 @@
         node.setAttribute('aria-setsize', String(setsize.get(pos.key)));
         if (it.hasChildren) node.setAttribute('aria-expanded', st.collapsed.has(it.id) ? 'false' : 'true');
       }
-      node.append(el('span', { class: 'text', text: `${it.text}. ` }));
+      node.append(el(nameTag(it), { class: 'text', text: `${it.text}. ` }));
       // The kind of row (list, task, subtask, bucket, group, section) is spoken right after the name.
       if (it.typeWord) node.append(el('span', { class: 'sr-only', text: `${it.typeWord}. ` }));
       if (listMode) {

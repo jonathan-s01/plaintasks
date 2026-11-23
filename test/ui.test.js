@@ -135,6 +135,7 @@ test('?ui=tree is a tree with roving tabindex; keyboard moves, collapses and com
     assert.equal(rows().filter((r) => r.tabIndex === 0).length, 1, 'exactly one tab stop');
     assert.equal(doc.activeElement, rows()[0]);
     assert.match(rows()[0].textContent, /parent task\. .*Open\. .*Due .*Nov 20/);
+    assert.equal(rows()[0].querySelector('.text').tagName, 'H3', 'task names are headings (experiment)');
     const meta = rows()[0].querySelector('.meta');
     assert.match(meta.textContent, /Due .*List Project, line 2/);
     assert.equal(meta.getAttribute('aria-hidden'), 'true', 'rows speak only status and name');
