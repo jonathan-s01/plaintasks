@@ -468,10 +468,13 @@ function install(App, HttpError) {
       if (t.jira) continue;
       if (e.excluded) continue;
       // Two levels only: Tasks and their Sub-tasks. Deeper tasks are the Sub-task's checklist, quietly.
-      if (levelOf(byTaskId, t) >= 2) continue;
+      const level = levelOf(byTaskId, t);
+      if (level >= 2) continue;
       const kind = fileKind(t);
       const sub = t.depth > 0 && t.parentId && byTaskId.has(t.parentId);
       const top = sub ? topOf(t) : null;
+      // Opt-in: a main task goes only when marked jira:yes; a subtask goes when its main task is marked or linked.
+      if (level === 0 ? !t.jiraYes : !(top && (top.jira || top.jiraYes))) continue;
       // An open question (?) is not created until it is answered. A task linked to Jira keeps syncing either way.
       if (t.flags.question) {
         info.push({ ...where(t), text: 'Not synced: open question.' });
@@ -710,7 +713,7 @@ function install(App, HttpError) {
             this.stateData.jira.created = [...new Set([...this.stateData.jira.created, made.key])];
             this.saveState();
             try {
-              writeLine(t, [['jira', made.key]]);
+              writeLine(t, [['jira', made.key], ['jiraYes', false]]);
             } catch (err) {
               note(false, `Created ${made.key} but could not write jira:${made.key} into ${t.fileLabel} line ${t.line}: ${err.message}. Add it by hand: ${t.text}`);
               continue;

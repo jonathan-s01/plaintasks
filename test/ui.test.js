@@ -11,7 +11,7 @@ const axe = require('axe-core');
 const { App } = require('../src/app');
 const { createServer } = require('../src/server');
 
-async function boot(files) {
+async function boot(files, { askMylist = false } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pt-ui-'));
   const notes = path.join(root, 'notes');
   fs.mkdirSync(notes);
@@ -20,6 +20,7 @@ async function boot(files) {
   fs.mkdirSync(cfg);
   const app = new App({ dir: cfg, now: () => new Date(2026, 10, 16, 9), opener: () => {}, secretApi: { getJiraToken: () => null, setJiraToken() {}, clearJiraToken() {} } });
   app.setFolders([{ path: notes }]);
+  if (!askMylist) app.stateData.mylistAsked = true;
   const server = createServer(app, { token: 'test-token' });
   await server.listen(0);
   const port = server.address().port;
@@ -58,7 +59,7 @@ async function waitFor(fn, what) {
     if (v) return v;
     await new Promise((r) => setTimeout(r, 20));
   }
-  throw new Error(`Timed out waiting for ${what}`);
+  throw new Error(`Timed out waiting for ${typeof what === "function" ? what() : what}`);
 }
 
 function key(win, target, k) {
@@ -711,6 +712,68 @@ test('the Enter menu offers Keep out of Jira and Sync to Jira again (passes axe)
     menuButton('Sync to Jira again').click();
     await waitFor(() => /Syncs to Jira again/.test(live()), 'synced again');
     assert.equal(file(), '@ admin\n\t@ expenses\n');
+  } finally {
+    await env.close();
+  }
+});
+
+test('j sends a main task to Jira and back, the Enter menu labels follow, and subtasks are told to use the main task', async () => {
+  const env = await boot({ 'a.txt': '@ admin\n\t@ expenses\n' });
+  try {
+    const { window } = await openPage(env, '/?ui=tree');
+    const doc = window.document;
+    const rows = () => [...doc.getElementById('tree').querySelectorAll('[role=treeitem]')];
+    const live = () => doc.getElementById('live').textContent;
+    const file = () => fs.readFileSync(path.join(env.notes, 'a.txt'), 'utf8');
+    const menuButton = (label) => [...doc.getElementById('actions-dialog').querySelectorAll('button')].find((b) => b.textContent === label);
+    await waitFor(() => rows().length === 2, 'items');
+
+    key(window, doc.activeElement, 'Enter');
+    await waitFor(() => doc.getElementById('actions-dialog').hasAttribute('open'), 'menu');
+    assert.ok(menuButton('Send to Jira (j)') && menuButton('Jira: link, status, create'));
+    doc.getElementById('actions-close').click();
+    await waitFor(() => !doc.getElementById('actions-dialog').hasAttribute('open'), 'closed');
+    rows()[0].focus();
+    key(window, rows()[0], 'j');
+    await waitFor(() => /Will go to Jira: admin/.test(live()), 'will go');
+    assert.equal(file(), '@ admin jira:yes\n\t@ expenses\n');
+
+    await waitFor(() => rows().length === 2 && doc.activeElement === rows()[0], 'focus back');
+    key(window, rows()[0], 'Enter');
+    await waitFor(() => doc.getElementById('actions-dialog').hasAttribute('open'), 'menu 2');
+    assert.ok(menuButton("Don't send to Jira (j)"));
+    doc.getElementById('actions-close').click();
+    await waitFor(() => !doc.getElementById('actions-dialog').hasAttribute('open'), 'closed 2');
+    rows()[1].focus();
+    key(window, rows()[1], 'j');
+    await waitFor(() => /Sub-task of admin already/.test(live()), 'subtask refusal');
+    assert.equal(file(), '@ admin jira:yes\n\t@ expenses\n');
+    rows()[0].focus();
+    key(window, rows()[0], 'j');
+    await waitFor(() => /Won't go to Jira: admin/.test(live()), "won't go");
+    assert.equal(file(), '@ admin\n\t@ expenses\n');
+  } finally {
+    await env.close();
+  }
+});
+
+test('first run asks where to save mylist.txt (passes axe) and creates it with jira:skip', async () => {
+  const env = await boot({ 'a.txt': '@ admin\n' }, { askMylist: true });
+  try {
+    const { window } = await openPage(env, '/?ui=tree');
+    const doc = window.document;
+    const dlg = doc.getElementById('mylist-dialog');
+    await waitFor(() => dlg.hasAttribute('open'), 'mylist dialog');
+    await waitFor(() => doc.getElementById('mylist-where').options.length === 1, 'folders');
+    assert.equal(doc.activeElement, doc.getElementById('mylist-where'));
+    window.eval(axe.source);
+    const r = await window.axe.run(dlg, { rules: { 'color-contrast': { enabled: false }, region: { enabled: false } } });
+    assert.equal(r.violations.length, 0, r.violations.map((v) => v.id).join());
+    doc.getElementById('mylist-save').click();
+    await waitFor(() => !dlg.hasAttribute('open'), 'closed');
+    await waitFor(() => /mylist\.txt/.test(doc.getElementById('live').textContent), () => `announced: ${doc.getElementById('live').textContent}`);
+    assert.equal(fs.readFileSync(path.join(env.notes, 'mylist.txt'), 'utf8'), 'My list jira:skip\n');
+    assert.equal(env.app.summary().mylistAsk, false);
   } finally {
     await env.close();
   }

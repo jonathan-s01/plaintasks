@@ -28,7 +28,7 @@ VIEWS
 9: completed.
 0: triage, for reviewing unmarked lines. Lines that are already tasks are not listed.
 Pressing a view key says the view name straight away, before the first item is read.
-Minus: My list.
+Minus: My list. It keeps its tasks in mylist.txt. The first time the app runs, it asks which watched folder to create mylist.txt in (Not now asks no more; Manage lists has "Save My list in a file called mylist.txt"). The file's first line is My list jira:skip, so nothing on it goes to Jira. Tasks you added to My list from other files stay on it.
 Equals: all lists.
 Shift and g: Buckets, each bucket followed by its tasks, then No bucket: how many open and done tasks have no bucket, and the open ones.
 Shift and q: Open questions. Every open question from all files, grouped by the person to ask (from ask:), then No person. A question for two people shows under both. Each row says which list it is from, for example "Which budget code. question. Open, ask Cory. from Budget".
@@ -92,8 +92,9 @@ Option and Up arrow, Option and Down arrow: move the item up or down one place i
 
 JIRA
 
-j: Jira for this task: link it to an issue, see its status, or create an issue.
-Shift and j: sync with Jira. Shows every change in both directions for the lists that sync to Jira, grouped as conflicts, new issues, updates to Jira and updates to files. Tick what you want, then Apply. Nothing is sent or written before that. Open questions that are not linked to Jira are not created; they are listed under Not synced as open question. Once you answer them they sync like other tasks. Only two levels go to Jira: main tasks as Tasks and their direct subtasks as Sub-tasks; tasks nested deeper become a checklist in the Sub-task's description. A line with jira:skip, and everything under it, never goes to Jira; on a file's first line it covers the whole list.
+j: send the task to Jira, or stop it going. Adds or removes jira:yes (hidden from the text). Only main tasks marked this way, or already linked, go to Jira; their direct subtasks go along as Sub-tasks, including new subtasks of tasks already in Jira. You hear "Will go to Jira" or "Won't go to Jira". u undoes it. On a subtask, j tells you to mark its main task. Once the task is created in Jira, jira:yes is replaced by its jira: key.
+Enter, then Jira: link, status, create: link the task to an issue, see its status, or create an issue now.
+Shift and j: sync with Jira. Shows every change in both directions for the lists that sync to Jira, grouped as conflicts, new issues, updates to Jira and updates to files. Tick what you want, then Apply. Nothing is sent or written before that. Open questions that are not linked to Jira are not created; they are listed under Not synced as open question. Once you answer them they sync like other tasks. Unmarked main tasks stay out quietly (not listed). Only two levels go to Jira: main tasks as Tasks and their direct subtasks as Sub-tasks; tasks nested deeper become a checklist in the Sub-task's description. A line with jira:skip, and everything under it, never goes to Jira; on a file's first line it covers the whole list.
 Enter, then Keep out of Jira (or Sync to Jira again): add or remove jira:skip on the task. u undoes it. Details (i) say when a task is not synced and where the skip comes from.
 
 

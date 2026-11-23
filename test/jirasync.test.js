@@ -139,7 +139,7 @@ test('jira sync: lists sync only when ticked, and need a file', async () => {
 
 test('jira sync: creates Tasks under the epic and Sub-tasks under their main task, writes jira: back, and a ~ line is an ordinary task with no Relates links', async () => {
   const { notes, app, jira } = setup({
-    'a.txt': '~ Build partner network goal:partner-network\n@ Write scan due:2026-12-01 goal:partner-network\n\t& see https://x.test/doc\n\t& Started 2026-11-02\n\t> sub step\n\t\t& ask legal\n\t\t@ deeper step p:high\n\t\t\t+ deepest done:2026-11-10\n+ Old thing done:2026-11-01\n',
+    'a.txt': '~ Build partner network goal:partner-network jira:yes\n@ Write scan due:2026-12-01 goal:partner-network jira:yes\n\t& see https://x.test/doc\n\t& Started 2026-11-02\n\t> sub step\n\t\t& ask legal\n\t\t@ deeper step p:high\n\t\t\t+ deepest done:2026-11-10\n+ Old thing done:2026-11-01 jira:yes\n',
   });
   await syncedList(app, 'a.txt', { jiraLabels: 'a11y' });
   const plan = await app.syncPreview();
@@ -159,7 +159,7 @@ test('jira sync: creates Tasks under the epic and Sub-tasks under their main tas
   assert.match(text, /^@ Write scan due:2026-12-01 goal:partner-network jira:A11Y-101$/m);
   assert.match(text, /^\t> sub step jira:A11Y-102$/m);
   assert.match(text, /^\t\t@ deeper step p:high$/m, 'the third level is not an issue');
-  assert.match(text, /^\+ Old thing done:2026-11-01$/m);
+  assert.match(text, /^\+ Old thing done:2026-11-01 jira:yes$/m, 'not created, so it keeps its mark');
 
   const made = (key) => jira.issues.get(key).fields;
   assert.deepEqual(made('A11Y-100').parent, { key: 'A11Y-2108' });
@@ -244,18 +244,18 @@ test('jira sync: existing keys update, never create; first-sync differences are 
 });
 
 test('jira sync: a list can send open tasks as another status, and Started notes convert to start:', async () => {
-  const { notes, app, jira } = setup({ 'ideas.txt': '@ Try a thing\n\t& Started 2026-10-01\n' });
+  const { notes, app, jira } = setup({ 'ideas.txt': '@ Try a thing jira:yes\n\t& Started 2026-10-01\n' });
   await syncedList(app, 'ideas.txt', { jiraStatus: 'In Discovery' });
   const plan = await app.syncPreview();
   assert.equal(plan.startedNotes, 1);
   const res = app.convertStarted();
   assert.match(res.message, /Converted 1/);
-  assert.equal(read(notes, 'ideas.txt'), '@ Try a thing start:2026-10-01\n');
+  assert.equal(read(notes, 'ideas.txt'), '@ Try a thing jira:yes start:2026-10-01\n');
   const t = app.view({ view: 'open', q: '', showCompleted: false }).items[0];
   assert.equal(t.text, 'Try a thing');
   assert.ok(t.meta.some((m) => /^Started /.test(m)));
   app.undo();
-  assert.equal(read(notes, 'ideas.txt'), '@ Try a thing\n\t& Started 2026-10-01\n');
+  assert.equal(read(notes, 'ideas.txt'), '@ Try a thing jira:yes\n\t& Started 2026-10-01\n');
   app.convertStarted();
 
   const p2 = await app.syncPreview();
@@ -278,9 +278,9 @@ test('jira sync: buckets (jira:label) are never issues; tasks and sub-tasks get 
   const { notes, app, jira } = setup({
     'a.txt': [
       '~ Advisory services goal:advisory-services jira:label',
-      '\t@ Under the bucket',
-      '~ Partner network goal:partner-network',
-      '@ Review site goal:advisory-services goal:partner-network',
+      '\t@ Under the bucket jira:yes',
+      '~ Partner network goal:partner-network jira:yes',
+      '@ Review site goal:advisory-services goal:partner-network jira:yes',
       '\t@ Review sub',
       '+ Jurisdictional scan jira:A11Y-2591 goal:advisory-services done:2026-11-10',
       '@ Other thing jira:A11Y-5',
@@ -323,7 +323,7 @@ test('jira sync: buckets (jira:label) are never issues; tasks and sub-tasks get 
 
 test('jira sync: priority is sent on create and update, pulled back, and an unknown Jira name is not ticked', async () => {
   const { notes, app, jira } = setup({
-    'a.txt': '@ Urgent thing p:high\n@ Normal thing\n@ Linked jira:A11Y-7 p:low\n@ Other jira:A11Y-8\n@ Odd jira:A11Y-9\n',
+    'a.txt': '@ Urgent thing p:high jira:yes\n@ Normal thing jira:yes\n@ Linked jira:A11Y-7 p:low\n@ Other jira:A11Y-8\n@ Odd jira:A11Y-9\n',
   });
   jira.add('A11Y-7', { summary: 'Linked', priority: { name: 'Medium' } });
   jira.add('A11Y-8', { summary: 'Other', priority: { name: 'High' } });
@@ -357,7 +357,7 @@ test('jira sync: priority is sent on create and update, pulled back, and an unkn
 
 test('jira sync: Blocks links are added when a task waits, removed only when plaintasks made them', async () => {
   const { notes, app, jira } = setup({
-    'a.txt': '@ Write code id:write-code jira:A11Y-7\n@ Release after:write-code jira:A11Y-8\n@ New dependent after:write-code\n@ Stray after:nobody jira:A11Y-9\n',
+    'a.txt': '@ Write code id:write-code jira:A11Y-7\n@ Release after:write-code jira:A11Y-8\n@ New dependent after:write-code jira:yes\n@ Stray after:nobody jira:A11Y-9\n',
   });
   jira.add('A11Y-7', { summary: 'Write code' });
   jira.add('A11Y-8', { summary: 'Release' });
@@ -386,7 +386,7 @@ test('jira sync: Blocks links are added when a task waits, removed only when pla
 });
 
 test('jira sync: open questions without a key are not created, nor their subtasks; linked questions still sync', async () => {
-  const { app, jira } = setup({ 'a.txt': '? which code\n\t@ sub of question\n@? linked question jira:A11Y-7\n@ normal\n' });
+  const { app, jira } = setup({ 'a.txt': '? which code jira:yes\n\t@ sub of question\n@? linked question jira:A11Y-7\n@ normal jira:yes\n' });
   jira.add('A11Y-7', { summary: 'Linked question renamed' });
   await syncedList(app, 'a.txt');
   const plan = await app.syncPreview();
@@ -398,7 +398,7 @@ test('jira sync: open questions without a key are not created, nor their subtask
 
 test('jira sync: two levels only; deeper tasks are the Sub-task checklist, changes to them update its description, and a linked deep task still syncs', async () => {
   const { notes, app, jira } = setup({
-    'a.txt': '@ Main\n\t@ Sub\n\t\t@ step one\n\t\t@ linked deep jira:A11Y-3\n\t\t\t@ under linked\n\t\t? open q\n\t\t\t@ under q\n',
+    'a.txt': '@ Main jira:yes\n\t@ Sub\n\t\t@ step one\n\t\t@ linked deep jira:A11Y-3\n\t\t\t@ under linked\n\t\t? open q\n\t\t\t@ under q\n',
   });
   jira.add('A11Y-3', { summary: 'linked deep, renamed in Jira' });
   await syncedList(app, 'a.txt');
@@ -424,8 +424,8 @@ test('jira sync: two levels only; deeper tasks are the Sub-task checklist, chang
 
 test('jira sync: jira:skip keeps a line and everything under it out; a linked one is reported and its issue left alone', async () => {
   const { app, jira } = setup({
-    'a.txt': '@ Keep me\n@ Admin stuff id:adm jira:skip\n\t@ child admin\n\t@ linked child jira:A11Y-5\n@ Blocked thing after:adm\n',
-    'b.txt': 'Personal jira:skip\n@ errand\n',
+    'a.txt': '@ Keep me jira:yes\n@ Admin stuff id:adm jira:skip jira:yes\n\t@ child admin\n\t@ linked child jira:A11Y-5\n@ Blocked thing after:adm jira:yes\n',
+    'b.txt': 'Personal jira:skip\n@ errand jira:yes\n',
   });
   jira.add('A11Y-5', { summary: 'something else' });
   await syncedList(app, 'a.txt');
@@ -442,4 +442,44 @@ test('jira sync: jira:skip keeps a line and everything under it out; a linked on
   assert.ok(meta('Admin stuff').includes('Not synced to Jira (jira:skip)'));
   assert.ok(meta('child admin').includes('Not synced to Jira (jira:skip, inherited from parent: Admin stuff)'));
   assert.ok(meta('errand').includes('Not synced to Jira (jira:skip, inherited from list: Personal)'));
+});
+
+test('jira sync: opt-in; only main tasks marked jira:yes are created, subtasks of marked or linked tasks go along, and j toggles the mark', async () => {
+  const { notes, app, jira } = setup({
+    'a.txt': '@ Unmarked\n\t@ unmarked child\n@ Marked jira:yes\n\t@ auto child\n\t\t@ deep\n@ Linked jira:A11Y-7\n\t@ new under linked\n? q unmarked\n',
+  });
+  jira.add('A11Y-7', { summary: 'Linked' });
+  await syncedList(app, 'a.txt');
+  const items = () => app.view({ view: 'open', q: '', showCompleted: false }).items;
+  const item = (text) => items().find((i) => i.text === text);
+  assert.ok(item('Marked').meta.includes('Goes to Jira (jira:yes)'));
+  assert.ok(item('auto child').meta.includes('Goes to Jira as a Sub-task of Marked'));
+  assert.ok(item('deep').meta.includes('Goes to Jira as a checklist item in auto child'));
+  assert.ok(item('new under linked').meta.includes('Goes to Jira as a Sub-task of Linked'));
+  assert.ok(!item('Unmarked').meta.some((m) => /Jira/.test(m)), 'unmarked lines stay quiet');
+  assert.equal(item('Marked').text, 'Marked', 'the token is hidden');
+
+  const plan = await app.syncPreview();
+  assert.deepEqual(plan.items.filter((i) => i.group === 'create').map((i) => i.task), ['Marked', 'auto child', 'new under linked']);
+  assert.deepEqual(plan.info, [], 'unmarked main tasks and their subtasks are not listed');
+  await app.syncApply({ choices: choose(plan) });
+  const text = read(notes, 'a.txt');
+  assert.match(text, /^@ Marked jira:A11Y-100$/m, 'jira:yes is dropped once the line has a key');
+  assert.match(text, /^\t@ new under linked jira:A11Y-\d+$/m);
+  assert.match(text, /^@ Unmarked$/m);
+
+  const before = read(notes, 'a.txt');
+  const on = await app.action({ id: item('Unmarked').id, op: 'jiraYes' });
+  assert.equal(on.message, 'Will go to Jira: Unmarked');
+  assert.match(read(notes, 'a.txt'), /^@ Unmarked jira:yes$/m);
+  const off = await app.action({ id: item('Unmarked').id, op: 'jiraYes' });
+  assert.equal(off.message, "Won't go to Jira: Unmarked");
+  await app.action({ id: item('Unmarked').id, op: 'jiraYes' });
+  app.undo();
+  app.undo();
+  app.undo();
+  assert.equal(read(notes, 'a.txt'), before, 'each toggle is undoable');
+  assert.match((await app.action({ id: item('unmarked child').id, op: 'jiraYes' })).message, /Press j on the main task instead: Unmarked$/);
+  assert.match((await app.action({ id: item('Linked').id, op: 'jiraYes' })).message, /^Already in Jira as A11Y-7/);
+  assert.equal(read(notes, 'a.txt'), before, 'refusals write nothing');
 });

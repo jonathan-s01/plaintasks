@@ -80,6 +80,26 @@ function setSubLevels(tasks) {
     return total;
   };
   for (const t of tasks) t.descendantCount = count(t);
+  setJiraGo(tasks, byId);
+}
+
+/**
+ * What Jira sync will do with each unlinked, unskipped task, as details wording (or null when it stays out quietly):
+ * a main task goes when marked jira:yes, a subtask goes as a Sub-task when its main task is marked or linked, and
+ * deeper tasks become checklist items in that Sub-task.
+ */
+function setJiraGo(tasks, byId) {
+  for (const t of tasks) {
+    t.jiraGo = null;
+    if (t.isBucket || t.jira || t.jiraSkip) continue;
+    const chain = [t];
+    for (let p = t.parentId ? byId.get(t.parentId) : null; p; p = p.parentId ? byId.get(p.parentId) : null) if (!p.isBucket) chain.unshift(p);
+    const top = chain[0];
+    const goes = !!(top.jira || top.jiraYes);
+    if (t.subLevel === 0) t.jiraGo = t.jiraYes ? 'Goes to Jira (jira:yes)' : null;
+    else if (t.subLevel === 1) t.jiraGo = goes ? `Goes to Jira as a Sub-task of ${top.text}` : t.jiraYes ? `jira:yes does nothing on a subtask: mark its main task, ${top.text}` : null;
+    else if (goes || chain[1].jira) t.jiraGo = `Goes to Jira as a checklist item in ${chain[1].text}`;
+  }
 }
 
 function isExcluded(rel, excluded) {
@@ -295,6 +315,7 @@ class Index extends EventEmitter {
         jira: it.jira || null,
         jiraLabel: !!it.jiraLabel,
         jiraSkip: skips[i] || null,
+        jiraYes: !!it.jiraYes,
         goalId: it.goalId || null,
         goalLinks: it.goalLinks || [],
         symbols: parsed.symbols,

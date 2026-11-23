@@ -787,3 +787,31 @@ test('jiraSkip toggles the token (kept through a rename), says when a parent sti
   app.undo();
   assert.equal(read(notes, 'a.txt'), '@ admin p:high jira:skip\n\t@ expenses\n');
 });
+
+test('mylistSetup creates mylist.txt with jira:skip, keeps old My list tasks, undoes, and reuses an existing file', async () => {
+  const { notes, app } = setup({ 'a.txt': '@ call bank\n@ other\n' });
+  assert.equal(app.summary().mylistAsk, true);
+  await app.action({ id: find(app, 'call bank').id, op: 'listToggle', value: 'mylist' });
+  await assert.rejects(() => app.action({ op: 'mylistSetup', value: { folder: os.tmpdir() } }), /inside one of your watched folders/);
+  const res = await app.action({ op: 'mylistSetup', value: { folder: notes } });
+  assert.match(res.message, /^Created mylist\.txt\. My list keeps its tasks there\. Nothing in it goes to Jira\. The task you added from another file stays on My list\./);
+  assert.equal(read(notes, 'mylist.txt'), 'My list jira:skip\n');
+  assert.equal(app.summary().mylistAsk, false);
+  const list = app.stateData.lists.find((l) => l.id === 'mylist');
+  assert.equal(list.file, path.join(notes, 'mylist.txt'));
+  assert.deepEqual(items(app, 'list:mylist').filter((i) => i.type === 'task').map((i) => i.text), ['call bank']);
+  assert.equal(items(app, 'triage').filter((i) => i.type === 'unmarked').length, 0, 'the title line is not left in triage');
+
+  app.undo();
+  assert.ok(!app.stateData.lists.find((l) => l.id === 'mylist').fileTasks);
+  assert.ok(fs.existsSync(path.join(notes, 'mylist.txt')), 'undo keeps the file');
+  const again = await app.action({ op: 'mylistSetup', value: { folder: notes } });
+  assert.match(again.message, /now uses the existing/);
+  assert.equal(read(notes, 'mylist.txt'), 'My list jira:skip\n');
+});
+
+test('mylistLater stops the first-run question', async () => {
+  const { app } = setup({ 'a.txt': '@ x\n' });
+  await app.action({ op: 'mylistLater' });
+  assert.equal(app.summary().mylistAsk, false);
+});

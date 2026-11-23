@@ -537,6 +537,59 @@ function install(App, HttpError) {
     return { ok: true, message: `${target.name}: ${bits.join(', ') || 'no change'}${v.notesFolder ? '. Undo keeps the file on disk.' : ''}`, undo: true };
   };
 
+  /**
+   * Backs My list with mylist.txt in the chosen folder: creates it (title "My list jira:skip", so nothing in it goes to
+   * Jira) or reuses an existing one. Tasks added to My list from other files stay on it by key.
+   */
+  proto.mylistSetup = function mylistSetup(value) {
+    const target = this.getList(cfgMod.DEFAULT_LIST);
+    const input = clean(value && value.folder);
+    if (!input) throw new HttpError(400, 'Choose a folder for mylist.txt.');
+    const dir = path.resolve(cfgMod.expandHome(input));
+    const where = this.watchedFolderFor(dir);
+    if (!where) throw new HttpError(400, 'Choose a folder inside one of your watched folders, so the app can read mylist.txt back.');
+    const file = path.join(dir, 'mylist.txt');
+    const probe = where.rel ? `${where.rel}/mylist.txt` : 'mylist.txt';
+    let created = false;
+    if (!fs.existsSync(file)) {
+      if (modeFor(where.folder, probe) === 'tasks') throw new HttpError(400, 'That folder treats every plain line as a task, so the list title would become a task. Choose another folder.');
+      try {
+        createTextFile(file, ['My list jira:skip']);
+      } catch (err) {
+        throw new HttpError(500, `Could not create mylist.txt: ${err.message}`);
+      }
+      created = true;
+    }
+    this.index.refresh(this.now());
+    const entry = this.fileEntry(file);
+    if (!entry) throw new HttpError(400, 'mylist.txt is in an excluded part of that folder, so the app cannot read it. Choose another folder.');
+    if (created) {
+      const dismissed = (this.stateData.dismissed[file] = this.stateData.dismissed[file] || []);
+      for (const u of this.index.unmarked.filter((x) => x.file === file)) if (!dismissed.includes(u.textHash)) dismissed.push(u.textHash);
+      this.index.refresh(this.now());
+    }
+    this.stateData.mylistAsked = true;
+    this.mutateLists((lists) => {
+      const l = lists.find((x) => x.id === target.id);
+      l.file = file;
+      l.fileTasks = true;
+    }, target.name);
+    const parsed = this.parsedFor(file);
+    const skip = !!(parsed.title && parsed.title.skip);
+    const shown = where.rel ? `${where.rel}/mylist.txt` : 'mylist.txt';
+    const bits = [created ? `Created ${shown}. ${target.name} keeps its tasks there` : `${target.name} now uses the existing ${shown}`];
+    bits.push(skip ? 'Nothing in it goes to Jira' : 'Its first line has no jira:skip, so its tasks can go to Jira when marked');
+    if (target.keys.length) bits.push(target.keys.length === 1 ? `The task you added from another file stays on ${target.name}` : `The ${target.keys.length} tasks you added from other files stay on ${target.name}`);
+    return { ok: true, message: `${bits.join('. ')}. Undo keeps the file on disk.`, undo: true };
+  };
+
+  /** "Not now" on the first-run question: do not ask again; Manage lists (M) can set it up later. */
+  proto.mylistLater = function mylistLater() {
+    this.stateData.mylistAsked = true;
+    this.saveState();
+    return { ok: true, message: 'Not now. You can set up mylist.txt later in Manage lists (press M).' };
+  };
+
   /** A note on a list that is not a task: written into the list's notes file. */
   proto.listNote = function listNote(value, listId) {
     const target = this.getList(listId);

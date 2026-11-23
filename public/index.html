@@ -80,6 +80,17 @@
     </form>
   </dialog>
 
+  <dialog id="mylist-dialog" aria-labelledby="mylist-title" aria-describedby="mylist-about">
+    <form method="dialog" id="mylist-form">
+      <h2 id="mylist-title">Where should My list be saved?</h2>
+      <p id="mylist-about">My list keeps its tasks in a text file called mylist.txt. Choose the watched folder to create it in. If mylist.txt is already there, the app uses it. The file starts with the title My list jira:skip, so nothing in it goes to Jira.</p>
+      <p><label for="mylist-where">Watched folder</label> <select id="mylist-where"></select></p>
+      <p><label for="mylist-sub">Subfolder (optional)</label> <input type="text" id="mylist-sub" autocomplete="off" spellcheck="false"></p>
+      <p id="mylist-error" class="error" role="alert"></p>
+      <p><button type="submit" id="mylist-save">Create mylist.txt</button> <button type="button" id="mylist-later">Not now</button></p>
+    </form>
+  </dialog>
+
   <dialog id="manage-dialog" aria-labelledby="manage-title">
     <h2 id="manage-title">Manage lists</h2>
     <p>Lists are personal and are kept outside your text files. Deleting a list never changes your files. A list can have a folder to group it, and a file: either a notes file for notes that are not tasks, such as meeting notes, or a file the list keeps its tasks in. A list that keeps its tasks in a file shows everything in that file, and moving a task onto it moves the lines in your files.</p>
@@ -303,8 +314,8 @@
         <tr><th scope="row">t</th><td>Pick the task for today, or take it out of My Day. A pick that is still open tomorrow carries over until you take it out. Written on the line as today: and a date</td></tr>
         <tr><th scope="row">shift and p</th><td>Cycle the priority: medium (no token), high (p:high), low (p:low). My Day and Next actions list High first, then Medium, then Low. Sync with Jira sends it to the Jira Priority field</td></tr>
         <tr><th scope="row">shift and b</th><td>Blocked by: tick the tasks that must be done first. The task you wait for gets an id: token (once) and this task gets an after: token. A blocked task stays out of My Day and Next actions and is read as Blocked in other views, until every task it waits for is done or deleted</td></tr>
-        <tr><th scope="row">j</th><td>Jira: link, status, create</td></tr>
-        <tr><th scope="row">shift and j</th><td>Sync with Jira: shows every change in both directions for the lists that sync to Jira, grouped as conflicts, new issues, updates to Jira and updates to files. Tick what to do, then Apply. Nothing is sent or written before that. Main tasks become Tasks and their direct subtasks Sub-tasks; tasks nested deeper become a checklist in the Sub-task's description. A line with jira:skip and everything under it stay out of Jira; on a file's first line it covers the whole list. Enter on a task offers Keep out of Jira or Sync to Jira again</td></tr>
+        <tr><th scope="row">j</th><td>Send the task to Jira, or stop it going: adds or removes jira:yes. Only main tasks marked this way go to Jira; their subtasks go along as Sub-tasks, and so do new subtasks of tasks already in Jira. You hear Will go to Jira or Won't go to Jira. u undoes it. To link an issue, see its status or create one now, press Enter and choose Jira: link, status, create</td></tr>
+        <tr><th scope="row">shift and j</th><td>Sync with Jira: shows every change in both directions for the lists that sync to Jira, grouped as conflicts, new issues, updates to Jira and updates to files. Tick what to do, then Apply. Nothing is sent or written before that. Only main tasks marked with j (jira:yes) or already linked go to Jira: they become Tasks and their direct subtasks Sub-tasks; tasks nested deeper become a checklist in the Sub-task's description. A line with jira:skip and everything under it stay out of Jira; on a file's first line it covers the whole list. Enter on a task offers Keep out of Jira or Sync to Jira again</td></tr>
         <tr><th scope="row">y</th><td>Choose the task's buckets. A bucket is a line marked jira:label; Sync with Jira tags the tasks in it with a label such as bucket-advisory-services. A task without buckets of its own inherits its parent task's, or else its list's default buckets; inherited ones show ticked and say so. On a file's row in By file or All lists, y sets that list's default buckets, saved on the file's first line</td></tr>
         <tr><th scope="row">e</th><td>On a task: rename it and edit its notes in one box. Enter on a note row opens the same box at that note. Dates and status on the task line are kept, and u undoes it</td></tr>
         <tr><th scope="row">o</th><td>Open the source file in your text editor</td></tr>
@@ -324,7 +335,7 @@
         <tr><th scope="row">shift and o</th><td>In a list: sort by manual order, due, check-in, date added, type or name</td></tr>
         <tr><th scope="row">g</th><td>In a list with manual order: pick up the item to reorder. Then Up, Down, Home and End move it, Enter or Escape drops it. In a list that keeps its tasks in a file, this moves the lines in the file, among the tasks at the same level</td></tr>
         <tr><th scope="row">Option and Up, Option and Down</th><td>In a list with manual order: move the item up or down one place</td></tr>
-        <tr><th scope="row">minus</th><td>Open My list</td></tr>
+        <tr><th scope="row">minus</th><td>Open My list. My list keeps its tasks in mylist.txt; the first time, the app asks which watched folder to save it in (or Manage lists later). Its first line has jira:skip, so nothing on it goes to Jira</td></tr>
         <tr><th scope="row">equals</th><td>Open All lists</td></tr>
         <tr><th scope="row">shift and g</th><td>Open Buckets: each bucket with its tasks, then No bucket with the open and done tasks that are in none</td></tr>
         <tr><th scope="row">shift and q</th><td>Open Open questions: every open question from all files, grouped by the person to ask, then No person. A question for two people shows under both. Each row says which list it is from</td></tr>

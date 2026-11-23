@@ -121,6 +121,7 @@ function describe(t, today, level, extra = {}) {
   if (t.jira) meta.push(`Jira ${t.jira}`);
   if (t.jiraLabel && t.kind === 'task') meta.push('Bucket: tasks in it get its Jira label, it is not an issue');
   if (t.jiraSkip && t.kind === 'task') meta.push(jiraSkipText(t.jiraSkip));
+  if (t.jiraGo && t.kind === 'task') meta.push(t.jiraGo);
   if (t.notes.length) meta.push(t.notes.length === 1 ? '1 note' : `${t.notes.length} notes`);
   if (!extra.hideFile) meta.push(`List ${t.fileLabel}, line ${t.line}`);
   return {
@@ -146,6 +147,8 @@ function describe(t, today, level, extra = {}) {
     notes: t.notes,
     jira: t.jira,
     jiraSkip: t.kind === 'task' && t.jiraSkip ? (t.jiraSkip.own ? 'own' : 'inherited') : null,
+    jiraYes: t.kind === 'task' && !!t.jiraYes,
+    jiraMain: t.kind === 'task' && !t.isBucket && !t.jira && !t.jiraSkip && !t.subLevel,
     asks: t.kind === 'task' ? t.asks || [] : [],
     bareQuestion: isQuestion(t) && !['todo', 'waitingOnMe', 'waitingOnOthers', 'important', 'inProgress', 'ongoing', 'subtask'].some((f) => t.flags[f]),
     fileLabel: t.fileLabel,

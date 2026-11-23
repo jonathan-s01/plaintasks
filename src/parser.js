@@ -26,6 +26,8 @@ const JIRA_RE = /(^|\s)jira:([A-Za-z][A-Za-z0-9_]*-\d+)(?![\w-])/;
 const JIRA_LABEL_RE = /(^|\s)jira:label(?![\w-])/i;
 // jira:skip keeps the line and everything under it out of Jira sync. On a file's title line it covers the whole list.
 const JIRA_SKIP_RE = /(^|\s)jira:skip(?![\w-])/i;
+// jira:yes marks a main task to go to Jira. Unmarked main tasks stay out; a marked or linked task's subtasks go along.
+const JIRA_YES_RE = /(^|\s)jira:yes(?![\w-])/i;
 // goal:some-id. On a bucket line (jira:label) the first one is the bucket's own id; on any other line each one puts
 // the task in that bucket. On a file's title line they are the file's default buckets. goal:none means "no bucket".
 // p:high and p:low set the priority (no token means medium). id:slug names a task so others can wait for it with after:slug.
@@ -179,6 +181,11 @@ function stripTokens(origBody, ref) {
     jiraSkip = true;
     return pre;
   });
+  let jiraYes = false;
+  out = out.replace(new RegExp(JIRA_YES_RE.source, 'gi'), (m, pre) => {
+    jiraYes = true;
+    return pre;
+  });
   const goals = [];
   out = out.replace(GOAL_RE, (m, pre, id) => {
     if (!goals.includes(id.toLowerCase())) goals.push(id.toLowerCase());
@@ -220,6 +227,7 @@ function stripTokens(origBody, ref) {
     jira,
     jiraLabel,
     jiraSkip,
+    jiraYes,
     goals,
   };
 }
@@ -417,6 +425,7 @@ function makeTask(lineIndex, raw, indent, flags, parsed, groups, implicit) {
     jira: parsed.jira,
     jiraLabel: parsed.jiraLabel,
     jiraSkip: parsed.jiraSkip,
+    jiraYes: parsed.jiraYes,
     goalId: parsed.jiraLabel && parsed.goals.length ? parsed.goals[0] : null,
     goalLinks: parsed.jiraLabel ? parsed.goals.slice(1) : parsed.goals,
     implicit,
@@ -446,4 +455,4 @@ function attach(item, stack, items) {
 }
 
 module.exports = {
-  GOAL_RE, ampNote, parseText, splitLines, markerInfo, indentWidth, DEFAULT_SYMBOLS, MARKER_CHARS, stripTokens, jiraSkipSources, JIRA_RE, JIRA_LABEL_RE, JIRA_SKIP_RE, PRIORITY_RE, ID_RE, AFTER_RE, ASK_RE };
+  GOAL_RE, ampNote, parseText, splitLines, markerInfo, indentWidth, DEFAULT_SYMBOLS, MARKER_CHARS, stripTokens, jiraSkipSources, JIRA_RE, JIRA_LABEL_RE, JIRA_SKIP_RE, JIRA_YES_RE, PRIORITY_RE, ID_RE, AFTER_RE, ASK_RE };

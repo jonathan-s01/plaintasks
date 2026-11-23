@@ -47,6 +47,7 @@ Automated tests (jsdom and axe-core) cover structure and keyboard logic, but the
 - `d`: a dialog opens with focus in the date box. Type `fri` and press Enter. Next, try `nonsense`: you should hear an error and stay in the box.
 - `e` on a task: a box opens with the task name, then one field per note. Change the name, press Enter: you hear "Renamed to: ..." and focus stays on the task. `u` undoes it. Enter on a note row opens the same box at that note.
 - Enter on a task: actions menu opens as a dialog; Escape closes it and focus returns to the same task.
+- Press `j` on a main task: you hear "Will go to Jira: …". `i` says "Goes to Jira (jira:yes)", and on its subtask "Goes to Jira as a Sub-task of …". Press `j` again: "Won't go to Jira: …". On a subtask, `j` says "Press j on the main task instead". The Enter menu has "Send to Jira (j)" or "Don't send to Jira (j)", and "Jira: link, status, create".
 - Enter on a task with a subtask, then "Keep out of Jira": you hear "Kept out of Jira, with everything under it". `i` on the subtask says "Not synced to Jira (jira:skip, inherited from parent: …)", and its Enter menu has no Jira skip button. Enter on the parent again shows "Sync to Jira again". `u` undoes either.
 - `o`: opens the file in your text editor.
 
@@ -61,6 +62,7 @@ Automated tests (jsdom and axe-core) cover structure and keyboard logic, but the
 - `a` marks it as a to-do and focus lands on the next line. `s` skips. `n` jumps to the next file heading, Shift+`n` back. Shift+`r` marks the file reviewed. `f` toggles "new or changed files only"; confirm it is announced.
 
 **My list and reordering**
+- First run with a watched folder and no mylist.txt: a dialog "Where should My list be saved?" opens with focus on the "Watched folder" popup. Optional "Subfolder" field, then "Create mylist.txt" or "Not now" (Escape also means not now). After creating you hear "Created mylist.txt. My list keeps its tasks there. Nothing in it goes to Jira…". Manage lists (shift and m) offers "Save My list in a file called mylist.txt" until it has one.
 - On any task press `l`: "Added to My list, position N of N". Enter on the task then shows "On My list" in its details.
 - `-` opens My list. Press `g` on a task: you should hear "Picked up: ... Position 2 of 5". Press Down: "Moved down to position 3 of 5" and focus stays on the same task. Press Enter: "Dropped at position 3 of 5".
 - Also try Option+Up and Option+Down without picking up. Check that this does not clash with VoiceOver's own keys; tell me if it does.

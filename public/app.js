@@ -435,7 +435,8 @@
     }
     add('Due date and check-in (d)', () => openDue());
     add('Open source file (o)', () => act('open'));
-    add('Jira (j)', () => openJira());
+    if (item.jiraMain || item.jiraYes) add(item.jiraYes ? 'Don\'t send to Jira (j)' : 'Send to Jira (j)', () => act('jiraYes'));
+    add('Jira: link, status, create', () => openJira());
     if (item.type === 'task' && item.jiraSkip !== 'inherited') add(item.jiraSkip ? 'Sync to Jira again' : 'Keep out of Jira', () => act('jiraSkip'));
     add('Undo last change (u)', () => undo());
     openDialog(dlg, item.id);
@@ -489,6 +490,16 @@
     }
   });
   $('due-cancel').addEventListener('click', () => closeDialog($('due-dialog')));
+
+  // j marks a main task to go to Jira (jira:yes), or unmarks it. Subtasks go along with their main task.
+  function jiraKey(item = currentItem()) {
+    if (!item) return;
+    if (item.type !== 'task') {
+      announce('Select a task to send it to Jira.');
+      return;
+    }
+    act('jiraYes');
+  }
 
   async function openJira() {
     const item = currentItem();
@@ -1340,6 +1351,56 @@
     }
   }
 
+  // ---------- My list file (mylist.txt) ----------
+
+  async function openMylist(returnFocus) {
+    $('mylist-error').textContent = '';
+    $('mylist-sub').value = '';
+    try {
+      const cfg = await api('/api/config');
+      $('mylist-where').replaceChildren(...cfg.folders.map((f) => el('option', { value: f.path, text: f.path })));
+    } catch (err) {
+      alertMessage(err.message);
+      return;
+    }
+    $('mylist-dialog').returnFocus = returnFocus || null;
+    openDialog($('mylist-dialog'), returnFocus ? null : st.activeId);
+    $('mylist-where').focus();
+  }
+  async function closeMylist(res) {
+    const dlg = $('mylist-dialog');
+    closeDialog(dlg);
+    if (res) announce(res.message);
+    if (dlg.returnFocus) {
+      renderManage();
+      const f = $('manage-lists').querySelector(dlg.returnFocus) || $('manage-new');
+      if (f) f.focus();
+    }
+  }
+  $('mylist-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const sub = $('mylist-sub').value.trim().replace(/^[\\/]+|[\\/]+$/g, '');
+    const where = $('mylist-where').value;
+    try {
+      const res = await api('/api/action', { method: 'POST', body: { op: 'mylistSetup', value: { folder: sub ? `${where}/${sub}` : where } } });
+      await loadView({ focus: !$('mylist-dialog').returnFocus });
+      closeMylist(res);
+    } catch (err) {
+      $('mylist-error').textContent = err.message;
+    }
+  });
+  $('mylist-later').addEventListener('click', async () => {
+    try {
+      const res = await api('/api/action', { method: 'POST', body: { op: 'mylistLater' } });
+      closeMylist(res);
+    } catch (err) {
+      $('mylist-error').textContent = err.message;
+    }
+  });
+  $('mylist-dialog').addEventListener('cancel', () => {
+    api('/api/action', { method: 'POST', body: { op: 'mylistLater' } }).catch(() => {});
+  });
+
   const notesPlace = () => {
     const where = $('manage-where').value;
     const sub = $('manage-sub').value.trim().replace(/^[\\/]+|[\\/]+$/g, '');
@@ -1392,6 +1453,8 @@
         fs.append(el('button', { type: 'button', text: `Delete ${l.name}`, onclick: () => {
           if (window.confirm(`Delete the list ${l.name}? Your tasks and text files are not changed.`)) manageCall({ op: 'listDelete', list: l.id }, null);
         } }));
+      } else if (!l.file) {
+        fs.append(el('button', { type: 'button', id: `mylist-setup-${i}`, text: `Save ${l.name} in a file called mylist.txt`, onclick: () => openMylist(`#mylist-setup-${i}`) }));
       }
       return el('li', {}, fs);
     }));
@@ -1545,7 +1608,7 @@
     b: () => act('ongoing'),
     '~': () => act('ongoing'),
     d: () => openDue(),
-    j: () => openJira(),
+    j: () => jiraKey(),
     y: () => openBuckets(),
     t: () => act('today'),
     P: () => act('priority'),
@@ -2044,6 +2107,7 @@
       if (problems) announce(`${problems} ${problems === 1 ? 'file was' : 'files were'} skipped. See settings for details.`);
       connectEvents();
       if (params.get('master')) openMaster();
+      else if (st.summary.mylistAsk) openMylist();
     } catch (err) {
       alertMessage(err.message);
     }

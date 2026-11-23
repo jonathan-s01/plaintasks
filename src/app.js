@@ -83,6 +83,7 @@ class App {
       lists: this.stateData.lists.map((l) => ({ id: l.id, name: l.name, count: counts[`list:${l.id}`], folder: l.folder, sort: l.sort, file: l.file || '', fileTasks: fileBacked(l), notActionable: !!l.notActionable, jiraSync: !!l.jiraSync, jiraLabels: l.jiraLabels || [], jiraStatus: l.jiraStatus || '', notesFile: l.file ? (this.fileEntry(l.file) || {}).label || null : null })),
       lastList: this.stateData.lastList,
       folders: this.config.folders.length,
+      mylistAsk: !this.stateData.mylistAsked && this.config.folders.length > 0 && !(this.stateData.lists.find((l) => l.id === DEFAULT_LIST) || {}).file,
       files: this.index.files.length,
       problems: this.index.problems,
       rtfPending: this.index.rtf.length,
@@ -111,7 +112,7 @@ class App {
 
   detail(id) {
     const t = this.task(id);
-    return { id: t.id, text: t.text, notes: t.notes, file: t.fileLabel, line: t.line, group: t.group, jira: t.jira, raw: t.raw, kind: t.kind, flags: t.flags, due: t.due, question: !!t.flags.question && !t.flags.done, asks: t.asks || [], jiraSkip: t.jiraSkip ? jiraSkipText(t.jiraSkip) : null };
+    return { id: t.id, text: t.text, notes: t.notes, file: t.fileLabel, line: t.line, group: t.group, jira: t.jira, raw: t.raw, kind: t.kind, flags: t.flags, due: t.due, question: !!t.flags.question && !t.flags.done, asks: t.asks || [], jiraSkip: t.jiraSkip ? jiraSkipText(t.jiraSkip) : null, jiraYes: !!t.jiraYes, jiraGo: t.jiraGo || null };
   }
 
   // ---- writing ----
@@ -239,6 +240,8 @@ class App {
     if (op === 'listSort') return this.listSort(list, value);
     if (op === 'listEdit') return this.listEdit(list, value);
     if (op === 'listNote') return this.listNote(value, list);
+    if (op === 'mylistSetup') return this.mylistSetup(value);
+    if (op === 'mylistLater') return this.mylistLater();
     if (op === 'newTask') return this.newTask(value, list);
     if (op === 'dismissFile') {
       const file = String(id).replace(/^f:/, '');
@@ -329,6 +332,24 @@ class App {
         return this.bucketSet(t, value);
       case 'question':
         return this.toggleQuestion(t, value, list);
+      case 'jiraYes': {
+        if (t.kind !== 'task') throw new HttpError(400, 'Only tasks can go to Jira. Mark the line as a task first.');
+        const on = value == null ? !t.jiraYes : !!value;
+        const stay = (message) => ({ ok: true, message, focusId: t.id });
+        if (on) {
+          if (t.isBucket) return stay(`A bucket (jira:label) is never a Jira issue; its tasks get its label: ${t.text}`);
+          if (t.jira) return stay(`Already in Jira as ${t.jira}, it keeps syncing: ${t.text}`);
+          if (t.jiraSkip) return stay(`Won't go to Jira: ${jiraSkipText(t.jiraSkip).replace(/^Not synced to Jira /, '')}. Choose Sync to Jira again in the Enter menu first: ${t.text}`);
+          if (t.subLevel >= 1) {
+            let top = t;
+            while (top.parentId && this.index.get(top.parentId) && !this.index.get(top.parentId).isBucket) top = this.index.get(top.parentId);
+            return stay(t.jiraGo && !t.jiraYes ? `${t.jiraGo} already: ${t.text}` : `Subtasks go to Jira with their main task. Press j on the main task instead: ${top.text}`);
+          }
+        }
+        const res = done(this.lineWrite(t, 'jiraYes', on), on ? `Will go to Jira: ${t.text}` : `Won't go to Jira: ${t.text}`);
+        if (on && res.undo && !this.stateData.lists.some((l) => l.jiraSync && l.file === t.file)) res.message += `. Its list does not sync with Jira yet: turn on Jira sync for ${t.fileLabel} in Manage lists (press M).`;
+        return res;
+      }
       case 'jiraSkip': {
         const on = value == null ? !(t.jiraSkip && t.jiraSkip.own) : !!value;
         const res = done(this.lineWrite(t, 'jiraSkip', on), on ? `Kept out of Jira, with everything under it: ${t.text}` : `Syncs to Jira again: ${t.text}`);
