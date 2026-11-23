@@ -79,7 +79,8 @@ function checkinText(t, today) {
 
 /** The word spoken after a row's name: bucket, task, subtask, level 2 subtask, and so on. Unmarked lines and notes get none. */
 function taskTypeWord(t) {
-  if (t.kind !== 'task') return '';
+  if (t.kind === 'unmarked') return 'unmarked line';
+  if (t.kind !== 'task') return 'note';
   if (t.isBucket) return 'bucket';
   const n = t.subLevel || 0;
   return n === 0 ? 'task' : n === 1 ? 'subtask' : `level ${n} subtask`;
@@ -112,7 +113,7 @@ function describe(t, today, level, extra = {}) {
     text: t.text,
     typeWord: taskTypeWord(t),
     subLevel: t.kind === 'task' ? t.subLevel || 0 : null,
-    words: t.kind === 'unmarked' ? ['Unmarked'] : (extra.words || statusWords(t, today)),
+    words: t.kind === 'unmarked' ? [] : (extra.words || statusWords(t, today)),
     meta,
     due: due ? { iso: due.iso, state: due.state, time: t.dueTime || null } : null,
     checkin: t.checkin ? { iso: t.checkin, time: t.checkinTime || null } : null,
@@ -288,7 +289,7 @@ function withNoteRows(items) {
     if (it.type !== 'task' || !it.notes || !it.notes.length) continue;
     it.hasChildren = true;
     it.noteCount = it.notes.length;
-    it.notes.forEach((text, i) => out.push({ id: `tn:${it.id}:${i}`, type: 'tasknote', level: it.level + 1, text, words: ['Note'], meta: [], hasChildren: false, flags: {}, notes: [] }));
+    it.notes.forEach((text, i) => out.push({ id: `tn:${it.id}:${i}`, type: 'tasknote', level: it.level + 1, text, typeWord: 'note', words: [], meta: [], hasChildren: false, flags: {}, notes: [] }));
   }
   return out;
 }
@@ -381,7 +382,8 @@ function buildView(index, state, opts = {}) {
         it.meta = it.meta.filter((m) => !/^\d+ notes?$/.test(m));
         it.meta.push(`Line ${u.line}`);
         if (reviewed) {
-          it.words = ['Note', 'Reviewed'];
+          it.typeWord = 'note';
+          it.words = ['Reviewed'];
           if (u.attachedTo) it.meta.push(`Attached to ${u.attachedTo}`);
         } else {
           pos += 1;
@@ -398,7 +400,7 @@ function buildView(index, state, opts = {}) {
     items = [];
     for (const f of folders) {
       const here = lists.filter((l) => (l.folder || '') === f);
-      items.push({ id: `g:${f}`, type: 'group', level: 1, text: f || 'No folder', words: [], meta: [here.length === 1 ? '1 list' : `${here.length} lists`], hasChildren: true });
+      items.push({ id: `g:${f}`, type: 'group', level: 1, text: f || 'No folder', typeWord: 'folder', words: [], meta: [here.length === 1 ? '1 list' : `${here.length} lists`], hasChildren: true });
       for (const l of here) {
         const n = listTasks(index, state, l.id).filter((x) => !x.flags.done).length;
         const file = l.file ? index.files.find((x) => x.file === l.file) : null;
@@ -488,7 +490,7 @@ function buildView(index, state, opts = {}) {
     for (const label of ['Overdue', 'Today', 'This week', 'Later']) {
       const here = all.filter((e) => scheduleBucket(e.iso, today) === label);
       if (!here.length) continue;
-      items.push({ id: `g:${label}`, type: 'group', level: 1, text: label, words: [], meta: [here.length === 1 ? '1 task' : `${here.length} tasks`], hasChildren: true });
+      items.push({ id: `g:${label}`, type: 'group', level: 1, text: label, typeWord: 'section', words: [], meta: [here.length === 1 ? '1 task' : `${here.length} tasks`], hasChildren: true });
       for (const e of here) {
         const p = e.t.parentId ? byId.get(e.t.parentId) : null;
         items.push(describe(e.t, today, 2, { parentText: p ? p.text : null }));
@@ -506,7 +508,7 @@ function buildView(index, state, opts = {}) {
         prev = level;
         if (t.kind !== 'task') {
           const n = describe(t, today, 1, { hideGroup: true });
-          return { ...n, type: 'note', words: ['Note'], meta: n.meta.filter((m) => !/^List /.test(m)).concat(`List ${t.fileLabel}, line ${t.line}`) };
+          return { ...n, type: 'note', typeWord: 'note', words: [], meta: n.meta.filter((m) => !/^List /.test(m)).concat(`List ${t.fileLabel}, line ${t.line}`) };
         }
         const p = t.parentId ? index.get(t.parentId) : null;
         // In file order, subtasks are indented under their task the same way as in the file.

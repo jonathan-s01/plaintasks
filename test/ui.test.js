@@ -367,7 +367,7 @@ test('notes expand under a collapsed task, Delete marks it with $, and Option+n 
     assert.match(rows()[0].textContent, /Collapsed\./, 'a task with notes starts collapsed');
     key(window, doc.activeElement, 'ArrowRight');
     assert.equal(rows().length, 3);
-    assert.match(rows()[1].textContent, /Jaws training\. .*Note\./);
+    assert.match(rows()[1].textContent, /Jaws training\. note\./);
     key(window, doc.activeElement, 'ArrowLeft');
     key(window, doc.activeElement, 'ArrowDown');
     assert.match(doc.activeElement.textContent, /old thing/);

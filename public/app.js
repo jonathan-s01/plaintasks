@@ -377,7 +377,7 @@
     }
     const dlg = $('actions-dialog');
     $('actions-title').textContent = item.text;
-    $('actions-details').textContent = [item.words.join(', '), ...item.meta].filter(Boolean).join('. ') + '.';
+    $('actions-details').textContent = [item.typeWord, item.words.join(', '), ...item.meta].filter(Boolean).join('. ') + '.';
     const notes = $('actions-notes');
     notes.replaceChildren();
     if (item.notes && item.notes.length) {
