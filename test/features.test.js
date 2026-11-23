@@ -42,6 +42,31 @@ test('a note on a task with no notes goes directly below it, and the list name i
   await assert.rejects(() => app.action({ id: find(app, 'call Sam').id, op: 'addNote', value: { text: '+ oops' } }), /task symbol/);
 });
 
+test('edit renames a task keeping its tokens, rewrites notes in place, and one undo reverses both', async () => {
+  const { notes, app } = setup({ 'a.txt': '@ call Sam due:2026-12-01 p:high\n  first note\n  & amp note\n@ other\n' });
+  const t = find(app, 'call Sam');
+  assert.equal(t.fileNotes, 2);
+  const res = await app.action({ id: t.id, op: 'edit', value: { text: 'phone Sam  today', notes: ['first, changed', 'amp changed'] } });
+  assert.equal(read(notes, 'a.txt'), '@ phone Sam today due:2026-12-01 p:high\n  first, changed\n  & amp changed\n@ other\n');
+  assert.equal(app.task(res.focusId).text, 'phone Sam today');
+  assert.match(res.message, /Renamed to: phone Sam today\. 2 notes updated/);
+  app.undo();
+  assert.equal(read(notes, 'a.txt'), '@ call Sam due:2026-12-01 p:high\n  first note\n  & amp note\n@ other\n');
+});
+
+test('edit refuses empty names, symbol-led notes and changed note counts, and writes nothing', async () => {
+  const { notes, app } = setup({ 'a.txt': '@ call Sam\n  first note\n' });
+  const before = read(notes, 'a.txt');
+  const id = find(app, 'call Sam').id;
+  await assert.rejects(() => app.action({ id, op: 'edit', value: { text: '  ' } }), /cannot be empty/);
+  await assert.rejects(() => app.action({ id, op: 'edit', value: { text: 'x', notes: ['+ oops'] } }), /task symbol/);
+  await assert.rejects(() => app.action({ id, op: 'edit', value: { text: 'x', notes: [] } }), /notes changed/);
+  await assert.rejects(() => app.action({ id, op: 'edit', value: { text: 'x', notes: [''] } }), /empty/);
+  assert.equal(read(notes, 'a.txt'), before);
+  const same = await app.action({ id, op: 'edit', value: { text: 'call Sam', notes: ['first note'] } });
+  assert.match(same.message, /No change/);
+});
+
 test('Tab makes a subtask with its notes and children, Shift+Tab undoes it', async () => {
   const { notes, app } = setup({ 'a.txt': '@ parent\n@ child\n  note under child\n  @ grandchild\n@ other\n' });
   await app.action({ id: find(app, 'child').id, op: 'indent' });

@@ -368,7 +368,7 @@
       return;
     }
     if (item.type === 'tasknote') {
-      announce('That is a note under a task. Select the task to change it or add another note.');
+      openEdit(item);
       return;
     }
     if (item.type === 'list') {
@@ -409,6 +409,7 @@
       add('Mark all remaining lines in this file as notes (shift and s)', () => act('dismissFile', null, { id: `f:${fileOf(item)}`, type: 'group' }));
       add('Mark this file as reviewed (shift and r)', () => act('reviewFile'));
     } else {
+      add('Rename this task or edit its notes (e)', () => openEdit(item));
       add('Add a note to this task (s)', () => openNote());
       add('Make a subtask of the task above (tab)', () => act('indent'));
       add('Move up a level (shift and tab)', () => act('outdent'));
@@ -572,6 +573,58 @@
   }
 
   let noteCtx = null;
+  let editCtx = null;
+
+  function openEdit(from = currentItem()) {
+    let item = from;
+    let noteAt = -1;
+    if (item && item.type === 'tasknote') {
+      const m = /^tn:(.+):(\d+)$/.exec(item.id);
+      noteAt = m ? Number(m[2]) : -1;
+      item = m && st.model.items.find((i) => i.id === m[1]);
+    }
+    if (!item || item.type !== 'task') {
+      announce('Select a task to rename it or edit its notes.');
+      return;
+    }
+    if (noteAt >= item.fileNotes) {
+      announce('That note is not a line in the file, so it cannot be edited here. Open the file with o.');
+      return;
+    }
+    editCtx = { item };
+    $('edit-text').value = item.text;
+    $('edit-error').textContent = '';
+    const box = $('edit-notes');
+    box.replaceChildren();
+    for (let i = 0; i < item.fileNotes; i += 1) {
+      const id = `edit-note-${i}`;
+      box.append(el('div', {}, el('label', { for: id, text: `Note ${i + 1} of ${item.fileNotes}` }), el('input', { id, type: 'text', autocomplete: 'off', value: item.notes[i] })));
+    }
+    openDialog($('edit-dialog'), from.id);
+    $(noteAt >= 0 ? `edit-note-${noteAt}` : 'edit-text').focus();
+  }
+
+  $('edit-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const { item } = editCtx;
+    const idx = activeIndex();
+    const notes = item.fileNotes ? [...Array(item.fileNotes).keys()].map((i) => $(`edit-note-${i}`).value) : undefined;
+    try {
+      const res = await api('/api/action', { method: 'POST', body: { id: item.id, op: 'edit', value: { text: $('edit-text').value, notes }, list: curListId() || undefined } });
+      closeDialog($('edit-dialog'));
+      await finish(res, idx);
+    } catch (err) {
+      $('edit-error').textContent = err.message;
+      if (err.status === 409 || err.status === 404) {
+        closeDialog($('edit-dialog'));
+        alertMessage(err.message);
+        await loadView({ keepIndex: idx });
+        return;
+      }
+      $('edit-text').focus();
+    }
+  });
+  $('edit-cancel').addEventListener('click', () => closeDialog($('edit-dialog')));
 
   function openNote() {
     const item = currentItem();
@@ -1321,6 +1374,7 @@
     u: () => undo(),
     a: () => markTodo(),
     '@': () => markTodo(),
+    e: () => (currentItem() && ['task', 'tasknote'].includes(currentItem().type) ? openEdit() : announce('Select a task to rename it or edit its notes.')),
     s: () => noteKey(),
     '&': () => noteKey(),
     S: () => (st.view === 'triage' ? skipFile() : announce('Shift and s marks every remaining line in a file as a note in the triage view. Press 0 to open triage.')),

@@ -275,6 +275,45 @@ test('multiple lists: l opens a chooser, new list is created, [ ] cycle lists, d
   }
 });
 
+test('e renames a task and edits its notes; Enter on a note row opens the box at that note; the box passes axe', async () => {
+  const env = await boot({ 'a.txt': '@ Future due:2026-12-01\n  Jaws training\n  second note\n@ other\n' });
+  try {
+    const { window } = await openPage(env);
+    const doc = window.document;
+    const tree = doc.getElementById('tree');
+    const rows = () => [...tree.querySelectorAll('[role=option]')];
+    const live = () => doc.getElementById('live').textContent;
+    window.eval(axe.source);
+    await waitFor(() => rows().length === 2, 'tasks');
+    key(window, doc.activeElement, 'e');
+    await waitFor(() => doc.getElementById('edit-dialog').hasAttribute('open'), 'edit dialog');
+    assert.equal(doc.activeElement, doc.getElementById('edit-text'));
+    assert.equal(doc.getElementById('edit-text').value, 'Future');
+    assert.equal(doc.querySelectorAll('#edit-notes input').length, 2);
+    const r = await window.axe.run(doc.getElementById('edit-dialog'), { rules: { 'color-contrast': { enabled: false }, region: { enabled: false } } });
+    assert.equal(r.violations.length, 0, r.violations.map((v) => v.id).join());
+    doc.getElementById('edit-text').value = 'Future plans';
+    doc.getElementById('edit-note-1').value = 'second note, changed';
+    doc.getElementById('edit-form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+    await waitFor(() => /Renamed to: Future plans\. Note updated/.test(live()) && !doc.getElementById('edit-dialog').hasAttribute('open'), 'saved');
+    assert.equal(fs.readFileSync(path.join(env.notes, 'a.txt'), 'utf8'), '@ Future plans due:2026-12-01\n  Jaws training\n  second note, changed\n@ other\n');
+    await waitFor(() => rows().some((row) => /Future plans/.test(row.textContent)), 'renamed row');
+
+    key(window, doc.activeElement, 'ArrowRight');
+    await waitFor(() => rows().length === 4, 'notes shown');
+    key(window, doc.activeElement, 'ArrowDown');
+    key(window, doc.activeElement, 'ArrowDown');
+    key(window, doc.activeElement, 'Enter');
+    await waitFor(() => doc.getElementById('edit-dialog').hasAttribute('open'), 'edit from note row');
+    assert.equal(doc.activeElement, doc.getElementById('edit-note-1'));
+    key(window, doc.activeElement, 'Escape');
+    await new Promise((r) => setTimeout(r, 300));
+    window.close();
+  } finally {
+    env.close();
+  }
+});
+
 test('status symbols, add note, add task with master file, sort and dates dialogs', async () => {
   const env = await boot({ 'a.txt': '@ one\n@ two\n' });
   try {

@@ -302,6 +302,8 @@ class App {
         return this.setDates(t, value);
       case 'addNote':
         return this.addNote(t, value, list);
+      case 'edit':
+        return this.editTask(t, value);
       case 'exclude':
         return this.exclude(t);
       case 'indent':

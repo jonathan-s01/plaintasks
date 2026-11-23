@@ -104,6 +104,7 @@ Press `?` in the app for the list (Escape closes it). Every command is also writ
 | `<` / `>` | toggle waiting on me / waiting on someone else |
 | `*` / `%` (or `i` / `p`), `b` or `~` | toggle important / in progress; ongoing (`~`) |
 | (status symbols) | `+ > < % *` turning a status on opens a box for an optional note (who you are waiting on, why it matters). Enter with nothing typed skips it; Escape cancels. The note is saved dated under the task, for example `[2026-11-18] Waiting on others: Sam`, and one `u` undoes both. The letters `x w i p b` skip the box |
+| `e` | on a task (or Enter on its note row): rename it and edit its notes. Tokens such as dates and status stay; `u` undoes |
 | `s` or `&` | on a task: add a note; in triage, on an unmarked line: mark as a note |
 | Tab / Shift+Tab | make a subtask of the task above / move up a level (on a `•` subtask already at its parent's indentation, Shift+Tab removes the `•`) |
 | `n`, `m` | add a task (search first) / create a task straight away |

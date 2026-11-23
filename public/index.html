@@ -153,6 +153,18 @@
     </form>
   </dialog>
 
+  <dialog id="edit-dialog" aria-labelledby="edit-title">
+    <form method="dialog" id="edit-form">
+      <h2 id="edit-title">Rename or edit notes</h2>
+      <label for="edit-text">Task name</label>
+      <input id="edit-text" type="text" autocomplete="off" aria-describedby="edit-hint">
+      <div id="edit-notes"></div>
+      <p id="edit-hint" class="hint">Dates, status and other tokens on the task line are kept. Enter saves. Escape cancels and changes nothing.</p>
+      <p id="edit-error" class="error" role="alert"></p>
+      <p><button type="submit" id="edit-save">Save</button> <button type="button" id="edit-cancel">Cancel</button></p>
+    </form>
+  </dialog>
+
   <dialog id="newtask-dialog" aria-labelledby="newtask-title">
     <form method="dialog" id="newtask-form">
       <h2 id="newtask-title">Add a task</h2>
@@ -283,6 +295,7 @@
         <tr><th scope="row">j</th><td>Jira: link, status, create</td></tr>
         <tr><th scope="row">shift and j</th><td>Sync with Jira: shows every change in both directions for the lists that sync to Jira, grouped as conflicts, new issues, updates to Jira and updates to files. Tick what to do, then Apply. Nothing is sent or written before that</td></tr>
         <tr><th scope="row">y</th><td>Choose the task's buckets. A bucket is a line marked jira:label; Sync with Jira tags the tasks in it with a label such as bucket-advisory-services. A task without buckets of its own inherits its parent task's, or else its list's default buckets; inherited ones show ticked and say so. On a file's row in By file or All lists, y sets that list's default buckets, saved on the file's first line</td></tr>
+        <tr><th scope="row">e</th><td>On a task: rename it and edit its notes in one box. Enter on a note row opens the same box at that note. Dates and status on the task line are kept, and u undoes it</td></tr>
         <tr><th scope="row">o</th><td>Open the source file in your text editor</td></tr>
         <tr><th scope="row">u</th><td>Undo the last change</td></tr>
         <tr><th scope="row">s or &amp;</th><td>On a task: add a note to it, below its other notes in the file. On an unmarked line in triage: mark it as a note by writing "&amp; " in front of it in the file; it attaches to the task above. In a file, any line starting with &amp; is a note of the nearest task above it. Shift and s marks every remaining line in the file as a note</td></tr>

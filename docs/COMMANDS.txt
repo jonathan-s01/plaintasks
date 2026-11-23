@@ -57,6 +57,7 @@ EDITING TASKS
 Tab: make the task a subtask of the task above it, with its notes and subtasks.
 Shift and Tab: move a subtask up one level.
 d: set or clear the due date and the check-in date. A time works too, for example fri 2pm.
+e: rename the task and edit its notes in one box: the task name, then one field per note line in the file. Dates, status and other tokens on the task line are kept. Enter saves, Escape cancels, u undoes. Enter on a task also offers this as the first button, and Enter on a note row opens the box at that note.
 s or ampersand: add a note under the task, after its other notes in the file.
 t: pick the task for today, or take it out of My Day. A pick still open tomorrow carries over. Written as today: and a date.
 Shift and p: cycle the priority: Medium, High, Low, Medium. Written as p:high or p:low; Medium has no token. Syncs to the Jira Priority field.

@@ -99,6 +99,63 @@ function install(App, HttpError) {
     return { ok: true, message: `Note added to: ${t.text}`, undo: true, focusId: this.idAt(t.file, t.lineIndex) };
   };
 
+  /** Renames a task and/or rewrites its notes in the file. value: { text, notes: [one string per note line in the file] }. */
+  proto.editTask = function editTask(t, value) {
+    if (t.kind !== 'task') throw new HttpError(400, 'Only tasks can be renamed.');
+    const parsed = this.parsedFor(t.file);
+    const item = parsed.items.find((i) => i.lineIndex === t.lineIndex);
+    if (!item) throw new HttpError(404, 'That task is no longer in the file. The list has been refreshed.', 'gone');
+    const changes = [];
+    const wantText = value && typeof value.text === 'string' ? clean(value.text) : t.text;
+    if (!wantText) throw new HttpError(400, 'The task name cannot be empty.');
+    if (wantText !== t.text) {
+      let next;
+      try {
+        next = applyOp(t.raw, 'text', wantText, { symbols: t.symbols, unmarkedMode: t.unmarkedMode, today: this.now() });
+      } catch (err) {
+        if (err instanceof OpError) throw new HttpError(400, err.message);
+        throw err;
+      }
+      if (next !== t.raw) changes.push({ lineIndex: t.lineIndex, expected: t.raw, replacement: next });
+    }
+    const noteCount = item.notes.length;
+    const wantNotes = value && Array.isArray(value.notes) ? value.notes : null;
+    let notesChanged = 0;
+    if (wantNotes) {
+      if (wantNotes.length !== noteCount) throw new HttpError(409, 'The notes changed in the file. The list has been refreshed. Open the task again.', 'conflict');
+      item.notes.forEach((n, i) => {
+        const text = clean(wantNotes[i]);
+        if (!text) throw new HttpError(400, `Note ${i + 1} is empty. A note cannot be removed here; delete its line in the file with o.`);
+        if (text === n.text) return;
+        if (!n.amp && markerInfo(text)) throw new HttpError(400, `Note ${i + 1} cannot start with a task symbol. Add a word before it.`);
+        const raw = parsed.lines[n.lineIndex];
+        const replacement = n.amp ? raw.replace(/^([ \t]*&[ \t]+)[\s\S]*$/, (m, pre) => pre + text) : own(raw) + text;
+        changes.push({ lineIndex: n.lineIndex, expected: raw, replacement });
+        notesChanged += 1;
+      });
+    }
+    if (!changes.length) return { ok: true, message: `No change: ${t.text}` };
+
+    const lines = [...parsed.lines];
+    for (const c of changes) lines[c.lineIndex] = c.replacement;
+    const again = simulate(lines, t.unmarkedMode, this.now()).items.find((i) => i.lineIndex === item.lineIndex);
+    const intact = again && again.kind === 'task' && again.notes.length === noteCount && again.notes.every((n, i) => n.lineIndex === item.notes[i].lineIndex);
+    if (!intact) throw new HttpError(400, 'That text would not stay as it is in the file. Try rewording it, for example without a colon at the end or a leading symbol. Nothing was written.');
+
+    try {
+      replaceLines(t.file, changes);
+    } catch (err) {
+      this.writeFailed(err, 'save the changes');
+    }
+    this.pushUndo({ type: 'lines', file: t.file, changes: changes.map((c) => ({ lineIndex: c.lineIndex, before: c.expected, after: c.replacement })), text: t.text });
+    this.lastWriteAt = Date.now();
+    this.index.refresh(this.now());
+    const bits = [];
+    if (changes.some((c) => c.lineIndex === t.lineIndex)) bits.push(`Renamed to: ${wantText}`);
+    if (notesChanged) bits.push(notesChanged === 1 ? 'Note updated' : `${notesChanged} notes updated`);
+    return { ok: true, message: bits.join('. '), undo: true, focusId: this.idAt(t.file, t.lineIndex) };
+  };
+
   // ---- delete ----
 
   /** Marks a line and everything nested under it with $. The text stays in the file; the app stops showing it. */
