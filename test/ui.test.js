@@ -325,7 +325,7 @@ test('i reads details, shift+i marks important, shift+s shows subtasks even when
     window.eval(axe.source);
     await waitFor(() => rows().length === 4, 'items');
     key(window, rows()[0], 'i');
-    await waitFor(() => /^parent\. task\. Open\..*Due .*Has 1 subtask/.test(live()), 'info');
+    await waitFor(() => /^parent\. task\. Open\..*Due .*Has 1 subtask, 2 subtasks counting deeper levels/.test(live()), 'info');
     key(window, rows()[0], 'I');
     await waitFor(() => /Important/i.test(live()) && rows()[0].textContent.includes('Important'), 'important');
 

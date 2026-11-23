@@ -69,6 +69,17 @@ function setSubLevels(tasks) {
     for (let p = t.parentId ? byId.get(t.parentId) : null; p; p = p.parentId ? byId.get(p.parentId) : null) if (!p.isBucket) n += 1;
     t.subLevel = n;
   }
+  const count = (t, seen = new Set()) => {
+    let total = 0;
+    for (const c of t.childIds) {
+      const k = byId.get(c);
+      if (!k || seen.has(c)) continue;
+      seen.add(c);
+      total += 1 + count(k, seen);
+    }
+    return total;
+  };
+  for (const t of tasks) t.descendantCount = count(t);
 }
 
 function isExcluded(rel, excluded) {

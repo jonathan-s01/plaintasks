@@ -103,8 +103,8 @@ Press `?` in the app for the list (Escape closes it). Every command is also writ
 | `+` (or `x`) | done / reopen |
 | `<` / `>` | toggle waiting on me / waiting on someone else |
 | `*` / `%` (or Shift+`i` / `p`), `b` or `~` | toggle important / in progress; ongoing (`~`) |
-| `i` | read everything about the selected row (dates, status, priority, blockers, list, line, notes, subtask count) without opening anything |
-| Shift+`s` | on a task: open its subtasks in a box you move through with the arrow keys (right opens, left closes, `i` reads details, Escape closes), even when the current view only shows some tasks, such as In progress. Says so and opens nothing when there are none |
+| `i` | read everything about the selected row (dates, status, priority, blockers, list, line, notes, subtask count, including deeper levels) without opening anything |
+| Shift+`s` | on a task: open all its subtasks, sub-subtasks and deeper, already expanded, in a box you move through with the arrow keys (right opens, left closes, `i` reads details, Escape closes), even when the current view only shows some tasks, such as In progress. Says so and opens nothing when there are none |
 | (status symbols) | `+ > < % *` turning a status on opens a box for an optional note (who you are waiting on, why it matters). Enter with nothing typed skips it; Escape cancels. The note is saved dated under the task, for example `[2026-11-18] Waiting on others: Sam`, and one `u` undoes both. The letters `x w i p b` skip the box |
 | `e` | on a task (or Enter on its note row): rename it and edit its notes. Tokens such as dates and status stay; `u` undoes |
 | `s` or `&` | on a task: add a note; in triage, on an unmarked line: mark as a note |

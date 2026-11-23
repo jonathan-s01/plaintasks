@@ -125,6 +125,7 @@ function describe(t, today, level, extra = {}) {
     pickedNow: t.kind === 'task' && !!t.picked && t.picked <= toISO(today),
     hasChildren: !!extra.hasChildren,
     kids: t.kind === 'task' ? t.childIds.length : 0,
+    allKids: t.kind === 'task' ? t.descendantCount || 0 : 0,
     notes: t.notes,
     jira: t.jira,
     fileLabel: t.fileLabel,

@@ -632,7 +632,9 @@
   // Everything known about a row in one sentence run, so browsing can stay on the list.
   function infoText(item) {
     if (!item) return 'Nothing selected.';
-    const kids = item.kids ? [item.kids === 1 ? 'Has 1 subtask' : `Has ${item.kids} subtasks`] : [];
+    const plural = (n) => (n === 1 ? '1 subtask' : `${n} subtasks`);
+    const deeper = item.allKids > item.kids ? `, ${plural(item.allKids)} counting deeper levels` : '';
+    const kids = item.kids ? [`Has ${plural(item.kids)}${deeper}`] : item.type === 'task' ? ['Has no subtasks'] : [];
     const notes = item.notes && item.notes.length ? [`Notes: ${item.notes.join('; ')}`] : [];
     return `${[item.text, item.typeWord, item.words.join(', '), ...item.meta, ...kids, ...notes].filter(Boolean).join('. ')}.`;
   }
