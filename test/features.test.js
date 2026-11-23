@@ -702,3 +702,60 @@ test('lists show their title or file name, not the path, and rows carry a type w
   assert.equal(items(app, 'group').find((i) => i.type === 'group').typeWord, 'group');
   assert.ok(app.view({ view: 'myday', q: '', showCompleted: false }).items.every((i) => i.type !== 'group' || i.typeWord === 'section'));
 });
+
+test('q toggles the question marker, combining with other markers, and rename keeps ask:', async () => {
+  const { notes, app } = setup({ 'a.txt': '@ confirm venue ask:cory\n' });
+  await app.action({ id: find(app, 'confirm venue').id, op: 'question' });
+  assert.equal(read(notes, 'a.txt'), '@? confirm venue ask:cory\n');
+  const t = find(app, 'confirm venue');
+  assert.equal(t.typeWord, 'question');
+  assert.ok(t.words.includes('ask Cory'), JSON.stringify(t.words));
+  await app.action({ id: t.id, op: 'edit', value: { text: 'confirm the venue', notes: [] } });
+  assert.equal(read(notes, 'a.txt'), '@? confirm the venue ask:cory\n');
+});
+
+test('Questions view groups by person, a question shows under each person, No person is last, and search filters', () => {
+  const { app } = setup({ 'Budget.txt': 'Budget\n? which code ask:leanne ask:cory\n@? venue ask:Cory\n? loose one\n+? old ask:cory done:2026-11-01\n@ not a question\n' });
+  const v = app.view({ view: 'questions', q: '', showCompleted: false });
+  const shape = v.items.map((i) => (i.type === 'group' ? `# ${i.text}` : i.text));
+  assert.deepEqual(shape, ['# Cory', 'which code', 'venue', '# Leanne', 'which code', '# No person', 'loose one']);
+  assert.equal(v.count, 3);
+  const g = v.items.find((i) => i.type === 'group');
+  assert.equal(g.typeWord, 'person');
+  const row = v.items.find((i) => i.text === 'venue');
+  assert.ok(row.words.some((w) => /^from Budget/.test(w)), JSON.stringify(row.words));
+  assert.equal(app.summary().views.find((x) => x.id === 'questions').count, 3);
+  const s = app.view({ view: 'questions', q: 'leanne', showCompleted: false });
+  assert.deepEqual(s.items.filter((i) => i.type !== 'group').map((i) => i.text), ['which code', 'which code']);
+});
+
+test('answering a bare ? writes a dated Answer note and marks it done; one undo restores it', async () => {
+  const { notes, app } = setup({ 'a.txt': '? which code ask:cory\n@ other\n' });
+  const res = await app.action({ id: find(app, 'which code').id, op: 'question', value: { answer: 'use 4410' } });
+  assert.match(res.message, /Answered and marked done/);
+  assert.equal(read(notes, 'a.txt'), '+@ which code ask:cory done:2026-11-16\n  [2026-11-16] Answer: use 4410\n@ other\n');
+  app.undo();
+  assert.equal(read(notes, 'a.txt'), '? which code ask:cory\n@ other\n');
+});
+
+test('answering @? keeps the other marker; an empty answer writes no note', async () => {
+  const { notes, app } = setup({ 'a.txt': '>? Sam on dates\n' });
+  await app.action({ id: find(app, 'Sam on dates').id, op: 'question', value: { answer: '  ' } });
+  assert.equal(read(notes, 'a.txt'), '> Sam on dates\n');
+});
+
+test('in a tasks-mode file an answer is written as an & note', async () => {
+  const { notes, app } = setup({ 'a.txt': 'which code\n' });
+  app.setFolders([{ path: notes, unmarked: 'tasks' }]);
+  await app.action({ id: find(app, 'which code').id, op: 'question' });
+  assert.equal(read(notes, 'a.txt'), '? which code\n');
+  await app.action({ id: find(app, 'which code').id, op: 'question', value: { answer: 'ask finance' } });
+  assert.equal(read(notes, 'a.txt'), '+ which code done:2026-11-16\n  & [2026-11-16] Answer: ask finance\n');
+});
+
+test('triage: q marks an unmarked line as a question', async () => {
+  const { notes, app } = setup({ 'a.txt': '@ task\n\nloose thought\n' });
+  const line = items(app, 'triage').find((i) => i.type === 'unmarked');
+  await app.action({ id: line.id, op: 'question' });
+  assert.equal(read(notes, 'a.txt'), '@ task\n\n? loose thought\n');
+});

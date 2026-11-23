@@ -172,7 +172,7 @@
     $('grab-status').hidden = gi < 0;
     $('grab-status').textContent = gi < 0 ? '' : `Reordering "${vis[gi].text}", position ${gi + 1} of ${vis.length}. Up and Down move it. Home and End send it to the top or bottom. Enter or Escape drops it.`;
     const n = st.model.count;
-    const noun = st.model.view === 'triage' ? (n === 1 ? 'unmarked line' : 'unmarked lines') : st.model.view === 'lists' ? (n === 1 ? 'list' : 'lists') : n === 1 ? 'task' : 'tasks';
+    const noun = st.model.view === 'triage' ? (n === 1 ? 'unmarked line' : 'unmarked lines') : st.model.view === 'lists' ? (n === 1 ? 'list' : 'lists') : st.model.view === 'questions' ? (n === 1 ? 'question' : 'questions') : n === 1 ? 'task' : 'tasks';
     const sorted = st.model.isList && st.model.sortedBy && st.model.sortedBy !== 'manual' ? `, sorted by ${SORT_LABELS[st.model.sortedBy] || st.model.sortedBy}` : '';
     $('list-status').textContent = `${n} ${noun}${st.model.summary ? `, ${st.model.summary}` : ''}${sorted}${st.q ? ` matching "${st.q}"` : ''}${st.showCompleted && st.model.view !== 'completed' ? ', including completed' : ''}${st.changedOnly && st.model.view === 'triage' ? ', new or changed files only' : ''}.`;
   }
@@ -256,7 +256,7 @@
   }
 
   const NOTE_OPS = ['listToggle', 'listMove', 'open'];
-  const ADVANCE_OPS = ['todo', 'note', 'exclude', 'done', 'toggleDone', 'waitingOnMe', 'waitingOnOthers', 'important', 'inProgress', 'ongoing', 'indent'];
+  const ADVANCE_OPS = ['todo', 'note', 'exclude', 'done', 'toggleDone', 'waitingOnMe', 'waitingOnOthers', 'important', 'inProgress', 'ongoing', 'indent', 'question'];
 
   function nextTriageId(item, idx) {
     if (item.type !== 'unmarked') return null;
@@ -277,7 +277,7 @@
       const res = await api('/api/action', { method: 'POST', body: { id: item.id, op, value, list } });
       announce(res.message);
       if (op === 'open') return;
-      if (op === 'addNote' || (value && value.note)) {
+      if (op === 'addNote' || (value && (value.note || value.answer))) {
         // Show the note you just added.
         for (const id of [item.id, res.focusId]) if (id) {
           st.seenNotes.add(id);
@@ -426,6 +426,7 @@
       }
     }
     add(item.flags.done ? 'Reopen (plus)' : 'Mark done (plus)', () => act('toggleDone'));
+    add(isOpenQuestion(item) ? 'Answer the question (q)' : item.flags.question ? 'Clear the question mark (q)' : 'Mark as a question (q)', () => questionKey(item));
     for (const [flag, on, off, key] of FLAG_LABELS) add(`${item.flags[flag] ? off : on} (${key})`, () => act(flag));
     if (item.type === 'task') {
       add(item.pickedNow ? 'Take out of My Day (t)' : 'Pick for today (t)', () => act('today'));
@@ -825,7 +826,8 @@
     $('note-input').value = '';
     $('note-error').textContent = '';
     $('note-stamp').checked = true;
-    if (noteCtx.mode !== 'status') $('note-save').textContent = 'Add note';
+    if (noteCtx.mode !== 'status' && noteCtx.mode !== 'answer') $('note-save').textContent = 'Add note';
+    if (noteCtx.mode !== 'answer') $('note-label').textContent = 'Note';
     openDialog($('note-dialog'), returnId);
     $('note-input').focus();
   }
@@ -838,6 +840,12 @@
       const { item, op } = noteCtx;
       closeDialog($('note-dialog'));
       await act(op, text.trim() ? { note: text } : undefined, item, curListId() || undefined);
+      return;
+    }
+    if (noteCtx.mode === 'answer') {
+      const { item } = noteCtx;
+      closeDialog($('note-dialog'));
+      await act('question', { answer: text }, item, curListId() || undefined);
       return;
     }
     try {
@@ -1546,7 +1554,34 @@
     s: () => noteKey(),
     '&': () => noteKey(),
     S: () => (st.view === 'triage' ? skipFile() : openSubtasks()),
+    q: () => questionKey(),
   };
+
+  const isOpenQuestion = (item) => !!(item && item.flags && item.flags.question && !item.flags.done);
+
+  // q marks a task or line as an open question. On an open question it asks for the answer instead.
+  function questionKey(item = currentItem()) {
+    if (!item) return;
+    if (item.type !== 'task' && item.type !== 'unmarked') {
+      announce('Select a task or line to mark it as a question.');
+      return;
+    }
+    if (!isOpenQuestion(item)) {
+      act('question', undefined, item, curListId() || undefined);
+      return;
+    }
+    const bare = !!item.bareQuestion;
+    noteCtx = { mode: 'answer', item };
+    $('note-title').textContent = 'Answer the question';
+    $('note-label').textContent = 'Answer';
+    $('note-task').textContent = item.text;
+    $('note-hint').textContent = bare
+      ? 'Type the answer, then Enter. It is saved under the task as a dated note starting with Answer, the question mark is removed and the line becomes a done task. Enter with nothing typed does the same without a note. Escape cancels and changes nothing.'
+      : 'Type the answer, then Enter. It is saved under the task as a dated note starting with Answer, and the question mark is removed; other markers stay. Enter with nothing typed only removes the question mark. Escape cancels and changes nothing.';
+    $('note-stamp').parentElement.hidden = true;
+    $('note-save').textContent = 'Save answer';
+    showNote(item.id);
+  }
 
   function markTodo() {
     if (st.view === 'triage') act('todo');
@@ -1796,6 +1831,10 @@
     }
     if (e.key === 'A') {
       switchView('next');
+      return true;
+    }
+    if (e.key === 'Q') {
+      switchView('questions');
       return true;
     }
     if (e.key === 'J') {

@@ -61,7 +61,9 @@ function install(App, HttpError) {
 
   proto.addNote = function addNote(t, value, listId) {
     if (t.kind !== 'task') throw new HttpError(400, 'Notes can only be added to tasks.');
-    if (t.unmarkedMode === 'tasks') throw new HttpError(400, 'In this file every plain line is a task, so a note could not be told apart. Change the folder or file to treat plain lines as notes first.');
+    // value.amp writes "& note" where plain notes cannot exist, so the note still attaches to the task above it.
+    const amp = t.unmarkedMode === 'tasks' && !!(value && value.amp);
+    if (t.unmarkedMode === 'tasks' && !amp) throw new HttpError(400, 'In this file every plain line is a task, so a note could not be told apart. Change the folder or file to treat plain lines as notes first.');
     const text = clean(value && value.text);
     if (!text) throw new HttpError(400, 'Type the note first.');
     if (markerInfo(text)) throw new HttpError(400, 'A note cannot start with a task symbol. Add a word before it.');
@@ -77,7 +79,7 @@ function install(App, HttpError) {
     const afterIndex = lastNote ? lastNote.lineIndex : item.lineIndex;
     const taskIndent = own(item.raw);
     const indent = lastNote ? own(parsed.lines[lastNote.lineIndex]) : taskIndent + (taskIndent.includes('\t') ? '\t' : '  ');
-    const newLine = indent + line;
+    const newLine = indent + (amp ? `& ${line}` : line);
 
     const lines = [...parsed.lines];
     lines.splice(afterIndex + 1, 0, newLine);

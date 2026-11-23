@@ -393,8 +393,17 @@ function install(App, HttpError) {
       const kind = fileKind(t);
       const sub = t.depth > 0 && t.parentId && byTaskId.has(t.parentId);
       const top = sub ? topOf(t) : null;
+      // An open question (?) is not created until it is answered. A task linked to Jira keeps syncing either way.
+      if (t.flags.question) {
+        info.push({ ...where(t), text: 'Not synced: open question.' });
+        continue;
+      }
       if (sub && !top.jira && (fileKind(top) === 'done')) {
         info.push({ ...where(t), text: `Not created: its main task, ${top.text}, is done and not in Jira.` });
+        continue;
+      }
+      if (sub && !top.jira && top.flags.question) {
+        info.push({ ...where(t), text: `Not created: its main task, ${top.text}, is an open question and not in Jira.` });
         continue;
       }
       creating.add(t.id);

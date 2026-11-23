@@ -290,6 +290,7 @@ class Index extends EventEmitter {
         priority: it.priority || 'medium',
         refId: it.refId || null,
         waitsFor: it.waitsFor || [],
+        asks: it.asks || [],
         jira: it.jira || null,
         jiraLabel: !!it.jiraLabel,
         goalId: it.goalId || null,

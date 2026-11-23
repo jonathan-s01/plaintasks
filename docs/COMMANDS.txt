@@ -31,6 +31,7 @@ Pressing a view key says the view name straight away, before the first item is r
 Minus: My list.
 Equals: all lists.
 Shift and g: Buckets, each bucket followed by its tasks, then No bucket: how many open and done tasks have no bucket, and the open ones.
+Shift and q: Open questions. Every open question from all files, grouped by the person to ask (from ask:), then No person. A question for two people shows under both. Each row says which list it is from, for example "Which budget code. question. Open, ask Cory. from Budget".
 Shift and t: My Day. Tasks you picked for today, earlier picks still open (spoken as carried over), overdue tasks and tasks due today, High priority first. Ongoing tasks, waiting on others, blocked tasks and tasks on not-actionable lists are left out. The status line gives the counts.
 Shift and a: Next actions. Open tasks with no open subtasks, grouped by file, High priority first, then in progress. A task with subtasks shows its subtasks instead. Same exclusions as My Day.
 Left bracket and right bracket: previous or next list.
@@ -50,6 +51,7 @@ Percent or p: in progress.
 Asterisk or shift and i: important.
 i: read everything about the selected row (dates, status, priority, blockers, list, line, notes) without opening anything.
 Shift and s, on a task: open its subtasks in a box. Arrows move, right opens, left closes, i reads details, Escape closes. It says so and opens nothing if there are none. In triage, shift and s still marks the rest of the file as notes.
+q: mark the task or line as an open question, written as a question mark at the start of the line. It combines with other markers, for example @? . Add ask: and a name, for example ask:cory, to say who to ask; it is read as "ask Cory". On an open question, q asks for the answer: Enter saves it under the task as a dated note starting with Answer and removes the question mark. A line that was only a question becomes a done task. Enter with nothing typed only removes the question mark. Escape changes nothing. u undoes it all. Help stays on question mark.
 Tilde or b: ongoing or major outcome, written as a tilde.
 When plus, greater than, less than, percent or asterisk turn a status on, a box asks for an optional note, for example who you are waiting on. Enter with nothing typed sets the status without a note. Escape cancels. The letters x, w, p, shift and i, and b set the status straight away with no note box.
 
@@ -91,7 +93,7 @@ Option and Up arrow, Option and Down arrow: move the item up or down one place i
 JIRA
 
 j: Jira for this task: link it to an issue, see its status, or create an issue.
-Shift and j: sync with Jira. Shows every change in both directions for the lists that sync to Jira, grouped as conflicts, new issues, updates to Jira and updates to files. Tick what you want, then Apply. Nothing is sent or written before that.
+Shift and j: sync with Jira. Shows every change in both directions for the lists that sync to Jira, grouped as conflicts, new issues, updates to Jira and updates to files. Tick what you want, then Apply. Nothing is sent or written before that. Open questions that are not linked to Jira are not created; they are listed under Not synced as open question. Once you answer them they sync like other tasks.
 
 
 TRIAGE (press 0)
@@ -99,6 +101,7 @@ TRIAGE (press 0)
 a or at sign: mark the unmarked line as a to-do.
 Plus, less than, greater than, percent and asterisk (or x, w, shift and i, p): make the line a to-do with that status.
 s or ampersand: mark the line as a note of the task above it.
+q: mark the line as an open question.
 Shift and s: mark every remaining line in the file as a note.
 l: mark the line as a to-do, then choose its lists.
 Tab: make the line a subtask of the task above it.

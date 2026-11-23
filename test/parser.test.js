@@ -183,3 +183,24 @@ test('today:, p:, id: and after: tokens are hidden and parsed', () => {
   const e = t('@ rating p:medium');
   assert.deepEqual([e.text, e.priority], ['rating', 'medium']);
 });
+
+test('? marks an open question only as a leading marker; ??, ?foo, URLs and trailing ? stay plain', () => {
+  const r = parse('? which budget code\n@? confirm venue\n>? Sam on dates\n?? huh\n??? what\n?foo\n?q=1&x=2\nwhy is this?\na ? b\nhttps://x.test/?q=1\n+? answered already\n');
+  const t = tasks(r);
+  assert.deepEqual(t.map((i) => i.text), ['which budget code', 'confirm venue', 'Sam on dates', 'answered already']);
+  assert.deepEqual(t.map(flagsOf), [['question'], ['question', 'todo'], ['question', 'waitingOnOthers'], ['done', 'question']]);
+});
+
+test('ask: tokens are hidden from text, deduped case-insensitively, and not matched inside words or URLs', () => {
+  const r = parse('? which code ask:cory ask:Leanne ask:Cory.\n@ task:ask:no flask:x\n');
+  const [a, b] = tasks(r);
+  assert.equal(a.text, 'which code .');
+  assert.deepEqual(a.asks, ['cory', 'Leanne']);
+  assert.deepEqual(b.asks, []);
+});
+
+test('legend can define ? as question', () => {
+  const r = parse('? = question\n@ = todo\n? who owns it\n');
+  assert.equal(tasks(r).length, 1);
+  assert.equal(tasks(r)[0].flags.question, true);
+});

@@ -32,6 +32,7 @@ A marker is one or more of these symbols at the start of a line (after optional 
 | `%` | in progress |
 | `~` | ongoing / major outcome |
 | `•` | subtask of the task above |
+| `?` | open question (combines: `@?`, `>?`) |
 
 ```text
 Website relaunch
@@ -44,7 +45,8 @@ Website relaunch
 ```
 
 - **Hierarchy.** An indented marked line is a subtask. So is a line starting with `•`, with or without indenting: `• call Sam` is an open to-do under the task above, and it combines with statuses (`•+ done thing`, `•% doing`, `•> waiting`). A `•` line belongs to the nearest task above it at the same indentation that is not itself a `•` subtask, so a run of `•` lines are siblings; indent a `•` line to nest it one level deeper under the line above. Unmarked lines directly after a task are notes for it. A blank line ends the block.
-- **Groups.** An unmarked line (or one ending in `:`) that is followed by tasks becomes a group or project name.
+- **Open questions.** `?` at the start of a line marks something you need to ask about, for example `? which budget code ask:cory` or `@? confirm the venue ask:cory ask:leanne`. Like the other markers it needs a space after it unless it is joined to a strong marker (`@?x`), so `?foo`, `?q=1`, a line ending in `?` and a `?` in the middle of text stay plain text; `??` and `???` are puzzlement, not a marker. `ask:<name>` (several allowed) says who to ask; it is hidden from the text and spoken as "ask Cory". `q` toggles the marker (also in triage, on an unmarked line). `q` on an open question asks for the answer: Enter writes it under the task as a dated note, `[2026-11-23] Answer: …` (`& [2026-11-23] Answer: …` in lists that keep notes with `&`), and removes the `?`; a line that was only `?` becomes done (`+@ … done:2026-11-23`, or `+ … done:` in task-mode files) so it syncs as a completed record. Other markers stay (`@?` becomes `@`). An empty answer only removes the marker, Escape changes nothing, and one `u` undoes it all. Shift+`q` opens the Open questions view.
+- **Groups. An unmarked line (or one ending in `:`) that is followed by tasks becomes a group or project name.
 - **Dates.** `due:2026-11-20` is the stored form. When you set a date in the app, friendly input such as `fri`, `nov 20`, `+3d` or `in 2 weeks` is converted to that form. Completing a task adds `+` and `done:YYYY-MM-DD`.
 - **Jira link.** `jira:ABC-123` ties a task to an issue.
 - **Start date.** `start:2026-11-02` records when work began. It is hidden from the displayed text and spoken as "Started …". Sync with Jira sends it to the start-date field.
@@ -82,7 +84,7 @@ The full design, including assumptions, is in [docs/SPEC-lists-notes.md](docs/SP
 
 ## Views
 
-All open, by file, by group or project, buckets and their tasks, My Day, Next actions, schedule (overdue, today, this week, later), due soon and overdue, waiting on me, waiting on others, important, in progress, completed, triage, All lists, and each list. Completed tasks are hidden everywhere except the Completed view; `c` shows them in the others. Search filters the current view.
+All open, by file, by group or project, buckets and their tasks, open questions by person (Shift+`q`: every open question from all files, grouped by the `ask:` person, then No person; a question for two people shows under both, and each row says which list it is from), My Day, Next actions, schedule (overdue, today, this week, later), due soon and overdue, waiting on me, waiting on others, important, in progress, completed, triage, All lists, and each list. Completed tasks are hidden everywhere except the Completed view; `c` shows them in the others. Search filters the current view.
 
 ## My Day and Next actions
 
@@ -103,6 +105,7 @@ Press `?` in the app for the list (Escape closes it). Every command is also writ
 | `+` (or `x`) | done / reopen |
 | `<` / `>` | toggle waiting on me / waiting on someone else |
 | `*` / `%` (or Shift+`i` / `p`), `b` or `~` | toggle important / in progress; ongoing (`~`) |
+| `q` / Shift+`q` | mark or clear an open question (on an open question: answer it) / Open questions view |
 | `i` | read everything about the selected row (dates, status, priority, blockers, list, line, notes, subtask count, including deeper levels) without opening anything |
 | Shift+`s` | on a task: open all its subtasks, sub-subtasks and deeper, already expanded, in a box you move through with the arrow keys (right opens, left closes, `i` reads details, Escape closes), even when the current view only shows some tasks, such as In progress. Says so and opens nothing when there are none |
 | (status symbols) | `+ > < % *` turning a status on opens a box for an optional note (who you are waiting on, why it matters). Enter with nothing typed skips it; Escape cancels. The note is saved dated under the task, for example `[2026-11-18] Waiting on others: Sam`, and one `u` undoes both. The letters `x w i p b` skip the box |
@@ -157,6 +160,7 @@ With Jira set up, `j` on a task lets you link an issue key, show the issue's sta
 Sync runs only when you press Shift+`j` or the Sync with Jira button. It covers only lists with **Sync to Jira** ticked (in Manage lists or the New list form; off by default; the list needs a file, and sync is per file). It first shows a preview of every change in both directions. Nothing is sent or written until you choose Apply.
 
 - **Preview.** Changes are grouped in fieldsets with counts: Conflicts, Create in Jira, Update Jira, Update files from Jira. Each item is labelled with its position ("2 of 5"), the task, the issue key, and the file and line. Conflicts have three radio buttons (keep file, take Jira, skip), and each group has apply-all buttons. A live line says how many changes are chosen. Items that can't sync (for example a subtask whose main task is done and was never in Jira) are listed under Not synced.
+- **Open questions.** A line with `?` that has no `jira:` key is not created; it is listed under Not synced as "open question", and its subtasks are not created either. A question already linked to Jira keeps syncing normally (nothing is closed or deleted because of `?`). Once the `?` is removed it syncs like any other task.
 - **Push.** A main task becomes a Task in the epic (unless it already has `jira:`); an indented task at any depth becomes a Sub-task of its main task, because Jira can't nest deeper. The summary is the task text without tokens. The description is the task's notes, with web addresses as links. After a create, `jira:KEY` is written onto the task's line. A task that already has a key is updated, never re-created. For issues plaintasks didn't create, summary and description changes start unticked.
 - **Pull.** For linked issues, Jira-side changes to status, summary and resolution are offered and, if ticked, written to the file (marker and `done:` date).
 - **Which side changed.** After each sync the app remembers both values. Next time, a change on one side is offered in that direction; a change on both sides, or a difference on the first sync, is a conflict (default skip).

@@ -634,3 +634,41 @@ test('Manage lists and New list have a Not actionable checkbox that saves', asyn
     env.close();
   }
 });
+
+test('q marks a question, shift+q opens Open questions grouped by person, q again asks for the answer (passes axe) and saves it', async () => {
+  const env = await boot({ 'a.txt': '@ which code ask:cory\n' });
+  try {
+    const { window } = await openPage(env);
+    const doc = window.document;
+    const rows = () => [...doc.getElementById('tree').querySelectorAll('[role=option]')];
+    const live = () => doc.getElementById('live').textContent;
+    const file = () => fs.readFileSync(path.join(env.notes, 'a.txt'), 'utf8');
+    const submit = (id) => doc.getElementById(id).dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+    window.eval(axe.source);
+    await waitFor(() => rows().length === 1, 'items');
+
+    key(window, doc.activeElement, 'q');
+    await waitFor(() => /Marked as a question/.test(live()), 'marked');
+    assert.equal(file(), '@? which code ask:cory\n');
+    await waitFor(() => /question/.test(rows()[0].textContent) && /ask Cory/.test(rows()[0].textContent), 'row says question and who to ask');
+
+    key(window, doc.activeElement, 'Q');
+    await waitFor(() => rows().some((r) => /Cory/.test(r.textContent) && /person/.test(r.textContent)), 'person group');
+    const row = rows().find((r) => /which code/.test(r.textContent));
+    assert.match(row.textContent, /from a/);
+    row.focus();
+
+    key(window, row, 'q');
+    await waitFor(() => doc.getElementById('note-dialog').hasAttribute('open'), 'answer dialog');
+    assert.equal(doc.getElementById('note-title').textContent, 'Answer the question');
+    assert.equal(doc.getElementById('note-label').textContent, 'Answer');
+    const r = await window.axe.run(doc.getElementById('note-dialog'), { rules: { 'color-contrast': { enabled: false }, region: { enabled: false } } });
+    assert.equal(r.violations.length, 0, r.violations.map((v) => v.id).join());
+    doc.getElementById('note-input').value = 'use 4410';
+    submit('note-form');
+    await waitFor(() => /Answered/.test(live()), 'answered');
+    assert.equal(file(), '@ which code ask:cory\n  [2026-11-16] Answer: use 4410\n');
+  } finally {
+    await env.close();
+  }
+});

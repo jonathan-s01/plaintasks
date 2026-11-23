@@ -11,7 +11,7 @@ const { applyOp, OpError } = require('./ops');
 const { markerInfo, ampNote, parseText } = require('./parser');
 const { replaceLine, replaceLines, removeLines, moveLine, ConflictError } = require('./writer');
 const { formatDate, toISO } = require('./dates');
-const { subtasksOf, allViews, buildView, viewCounts, untriaged, listTasks, fileBacked } = require('./views');
+const { askText, subtasksOf, allViews, buildView, viewCounts, untriaged, listTasks, fileBacked } = require('./views');
 const { convertRtfFiles } = require('./rtf');
 const { JiraClient, JiraError, KEY_RE } = require('./jira');
 const { cleanSync } = require('./jirasync');
@@ -111,7 +111,7 @@ class App {
 
   detail(id) {
     const t = this.task(id);
-    return { id: t.id, text: t.text, notes: t.notes, file: t.fileLabel, line: t.line, group: t.group, jira: t.jira, raw: t.raw, kind: t.kind, flags: t.flags, due: t.due };
+    return { id: t.id, text: t.text, notes: t.notes, file: t.fileLabel, line: t.line, group: t.group, jira: t.jira, raw: t.raw, kind: t.kind, flags: t.flags, due: t.due, question: !!t.flags.question && !t.flags.done, asks: t.asks || [] };
   }
 
   // ---- writing ----
@@ -327,6 +327,8 @@ class App {
       case 'bucketSet':
       case 'goalSet':
         return this.bucketSet(t, value);
+      case 'question':
+        return this.toggleQuestion(t, value, list);
       case 'jira': {
         const key = value ? String(value).trim() : '';
         if (key && !KEY_RE.test(key)) throw new HttpError(400, 'Jira keys look like ABC-123');
@@ -339,6 +341,35 @@ class App {
           return had ? res : this.withStatusNote(t, res, value, FLAG_LABELS[op], list);
         }
         throw new HttpError(400, `Unknown action: ${op}`);
+    }
+  }
+
+  /**
+   * q: marks a line as an open question, or answers one. Answering removes the ? and saves the typed answer as a dated
+   * note under the task. A line that was only a question (no other marker) becomes a done task. One undo reverses it all.
+   */
+  toggleQuestion(t, value, listId) {
+    const who = (t.asks || []).length ? `, ask ${askText(t)}` : '';
+    if (!t.flags.question) {
+      const r = this.lineWrite(t, 'question');
+      return r ? { ok: true, message: `Marked as a question${who}: ${t.text}`, undo: true, focusId: r.focusId } : { ok: true, message: `No change: ${t.text}` };
+    }
+    const answer = value && typeof value.answer === 'string' ? value.answer.replace(/\s+/g, ' ').trim() : '';
+    const mi = markerInfo(t.raw);
+    const others = mi ? [...mi.run].filter((c) => (t.symbols || {})[c] !== 'question').join('') : '';
+    const bare = !others && !t.flags.done;
+    const before = this.undoStack.length;
+    const r = this.lineWrite(t, bare ? [['question'], ['done']] : 'question');
+    if (!r) return { ok: true, message: `No change: ${t.text}` };
+    const message = `${answer ? 'Answered' : 'No longer a question'}${bare ? ' and marked done' : ''}: ${t.text}`;
+    if (!answer) return { ok: true, message, undo: true, focusId: r.focusId };
+    try {
+      const noted = this.addNote(this.task(r.focusId), { text: `Answer: ${answer}`, amp: true }, listId);
+      this.pushUndo({ type: 'multi', steps: this.undoStack.splice(before), text: t.text });
+      return { ok: true, message: `${message}. Answer saved as a note`, undo: true, focusId: noted.focusId || r.focusId };
+    } catch (err) {
+      if (this.undoStack.length === before + 1) this.undo();
+      throw err;
     }
   }
 

@@ -11,12 +11,13 @@ const DEFAULT_SYMBOLS = {
   '~': 'ongoing',
   '*': 'important',
   '%': 'inProgress',
+  '?': 'question',
   $: 'excluded',
 };
 
-const MARKER_CHARS = '+@<>•~*%$';
-const MARK_RE = /^([ \t]*)([+@<>•~*%$]+)([ \t]*)(.*)$/;
-// Without a space after the marker, only these symbols count, so "**bold**", "%", "$5", "~/path" and "~~strike~~" stay plain text.
+const MARKER_CHARS = '+@<>•~*%?$';
+const MARK_RE = /^([ \t]*)([+@<>•~*%?$]+)([ \t]*)(.*)$/;
+// Without a space after the marker, only these symbols count, so "**bold**", "%", "$5", "~/path", "?q=1" and "~~strike~~" stay plain text.
 const STRONG_MARKERS = /[+@<>•]/;
 // A line starting with & is a note of the nearest task above it, however many lines lie between.
 const NOTE_RE = /^[ \t]*&[ \t]*(.*)$/;
@@ -29,6 +30,8 @@ const JIRA_LABEL_RE = /(^|\s)jira:label(?![\w-])/i;
 const PRIORITY_RE = /(^|\s)p:(high|medium|med|low)(?![\w-])/gi;
 const ID_RE = /(^|\s)id:([A-Za-z0-9][A-Za-z0-9-]*)(?![\w-])/g;
 const AFTER_RE = /(^|\s)after:([A-Za-z0-9][A-Za-z0-9-]*)(?![\w-])/g;
+// ask:name says who an open question (?) is for. Several are allowed.
+const ASK_RE = /(^|\s)ask:([\p{L}\p{N}](?:[\p{L}\p{N}._-]*[\p{L}\p{N}])?)(?![\p{L}\p{N}_-])/gu;
 const GOAL_RE = /(^|\s)goal:([A-Za-z0-9][A-Za-z0-9-]*)(?![\w-])/g;
 const HAS_WORD_RE = /[\p{L}\p{N}]/u;
 
@@ -68,6 +71,8 @@ function markerInfo(line) {
   if (!m || !HAS_WORD_RE.test(m[4])) return null;
   // "~~" is markdown strikethrough, never a marker.
   if (m[2].includes('~~')) return null;
+  // "?? huh" and "???" are puzzlement, not a question marker; one ? is.
+  if (m[2].includes('??')) return null;
   if (!m[3]) {
     // "+1 for that", "<div>" and similar are not markers.
     if (!STRONG_MARKERS.test(m[2]) || /^\d/.test(m[4]) || (m[2] === '<' && /^\/?[a-z][a-z0-9]*(\s[^<>]*)?\/?>/i.test(m[4]))) return null;
@@ -80,6 +85,7 @@ const UNMARKED_WORDS = /^(nothing|none|blank|no marker|no symbol|unmarked|plain|
 function classifyMeaning(right) {
   const r = right.toLowerCase();
   if (/sub-?task/.test(r)) return 'subtask';
+  if (/question|to ask\b/.test(r)) return 'question';
   if (/\b(done|complete|completed|finished)\b/.test(r)) return 'done';
   if (/waiting (on|for) me|my turn|on me\b|for me\b/.test(r)) return 'waitingOnMe';
   if (/someone else|other people|others|them\b|waiting/.test(r)) return 'waitingOnOthers';
@@ -102,7 +108,7 @@ function parseLegend(lines) {
       legendLines.add(i);
       continue;
     }
-    const m = /^\s*(.{1,40}?)\s+=\s+(.{1,80}?)\s*$/.exec(line) || /^\s*([+@<>•~*%]{1,3})\s*=\s*(.{1,80}?)\s*$/.exec(line);
+    const m = /^\s*(.{1,40}?)\s+=\s+(.{1,80}?)\s*$/.exec(line) || /^\s*([+@<>•~*%?]{1,3})\s*=\s*(.{1,80}?)\s*$/.exec(line);
     if (!m) continue;
     const left = m[1].trim();
     const meaning = classifyMeaning(m[2]);
@@ -117,7 +123,7 @@ function parseLegend(lines) {
     const chars = [...left].filter((c) => MARKER_CHARS.includes(c));
     if (!chars.length || meaning === 'note') continue;
     // The remainder of the left side may only be connective words ("and indenting").
-    const rest = left.replace(/[+@<>•~*%\s]/g, '').toLowerCase();
+    const rest = left.replace(/[+@<>•~*%?\s]/g, '').toLowerCase();
     if (rest && !/^(and|or|plus)?(indent\w*|tabs?)?$/.test(rest)) continue;
     for (const c of chars) symbols[c] = meaning;
     legendLines.add(i);
@@ -135,6 +141,7 @@ function emptyFlags() {
     important: false,
     inProgress: false,
     subtask: false,
+    question: false,
     excluded: false,
   };
 }
@@ -185,8 +192,14 @@ function stripTokens(origBody, ref) {
     if (!waitsFor.includes(id.toLowerCase())) waitsFor.push(id.toLowerCase());
     return pre;
   });
+  const asks = [];
+  out = out.replace(ASK_RE, (m, pre, name) => {
+    if (!asks.some((a) => a.toLowerCase() === name.toLowerCase())) asks.push(name);
+    return pre;
+  });
   return {
     text: out.replace(/\s+/g, ' ').trim(),
+    asks,
     due: due ? due.iso : null,
     dueTime: due ? due.time : null,
     checkin: checkin ? checkin.iso : null,
@@ -372,6 +385,7 @@ function makeTask(lineIndex, raw, indent, flags, parsed, groups, implicit) {
     priority: parsed.priority,
     refId: parsed.refId,
     waitsFor: parsed.waitsFor,
+    asks: parsed.asks,
     jira: parsed.jira,
     jiraLabel: parsed.jiraLabel,
     goalId: parsed.jiraLabel && parsed.goals.length ? parsed.goals[0] : null,
@@ -403,4 +417,4 @@ function attach(item, stack, items) {
 }
 
 module.exports = {
-  GOAL_RE, ampNote, parseText, splitLines, markerInfo, indentWidth, DEFAULT_SYMBOLS, MARKER_CHARS, stripTokens, JIRA_RE, JIRA_LABEL_RE, PRIORITY_RE, ID_RE, AFTER_RE };
+  GOAL_RE, ampNote, parseText, splitLines, markerInfo, indentWidth, DEFAULT_SYMBOLS, MARKER_CHARS, stripTokens, JIRA_RE, JIRA_LABEL_RE, PRIORITY_RE, ID_RE, AFTER_RE, ASK_RE };

@@ -9,6 +9,7 @@ const VIEWS = [
   { id: 'group', title: 'By group or project', hierarchical: true },
   { id: 'myday', title: 'My Day: picked, overdue and due today', empty: 'Nothing is picked, overdue or due today. Press t on a task to pick it for today.' },
   { id: 'next', title: 'Next actions', empty: 'No next actions. Open tasks that are not ongoing, not waiting, not blocked and not on a not-actionable list show here.' },
+  { id: 'questions', title: 'Open questions by person', empty: 'No open questions. Press q on a task to mark it as a question, and add ask: and a name to say who to ask.' },
   { id: 'buckets', title: 'Buckets and their tasks', empty: 'No buckets yet. A bucket is a line marked jira:label. Press y on any task to put it in one.' },
   { id: 'schedule', title: 'Schedule: overdue, today, this week', empty: 'Nothing has a due date or check-in date. Press d on a task to set one.' },
   { id: 'due', title: 'Due soon and overdue', empty: 'No open tasks are overdue or due within 7 days.' },
@@ -39,10 +40,16 @@ function matcher(q) {
   const terms = String(q || '').toLowerCase().split(/\s+/).filter(Boolean);
   if (!terms.length) return () => true;
   return (t) => {
-    const hay = `${t.text} ${t.group} ${t.fileLabel} ${t.filePath || ''} ${t.notes.join(' ')} ${t.jira || ''} ${t.due || ''} ${t.checkin || ''}`.toLowerCase();
+    const hay = `${t.text} ${(t.asks || []).join(' ')} ${t.group} ${t.fileLabel} ${t.filePath || ''} ${t.notes.join(' ')} ${t.jira || ''} ${t.due || ''} ${t.checkin || ''}`.toLowerCase();
     return terms.every((x) => hay.includes(x));
   };
 }
+
+/** True for a task marked ? that is not done. */
+const isQuestion = (t) => t.kind === 'task' && !!t.flags.question && !t.flags.done;
+const personName = (n) => n.charAt(0).toUpperCase() + n.slice(1);
+const joinNames = (names) => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
+const askText = (t) => joinNames((t.asks || []).map(personName));
 
 const PRIORITY_RANK = { high: 0, medium: 1, low: 2 };
 const byPriority = (a, b) => PRIORITY_RANK[a.priority || 'medium'] - PRIORITY_RANK[b.priority || 'medium'];
@@ -57,6 +64,7 @@ function statusWords(t, today = new Date()) {
   if (f.waitingOnOthers) w.push('Waiting on someone else');
   if (f.inProgress) w.push('In progress');
   if (f.ongoing) w.push('Ongoing');
+  if (isQuestion(t) && (t.asks || []).length) w.push(`ask ${askText(t)}`);
   return w;
 }
 
@@ -83,12 +91,14 @@ function taskTypeWord(t) {
   if (t.kind !== 'task') return 'note';
   if (t.isBucket) return 'bucket';
   const n = t.subLevel || 0;
-  return n === 0 ? 'task' : n === 1 ? 'subtask' : `level ${n} subtask`;
+  const q = isQuestion(t);
+  return n === 0 ? (q ? 'question' : 'task') : `${n === 1 ? 'subtask' : `level ${n} subtask`}${q ? ' question' : ''}`;
 }
 
 function describe(t, today, level, extra = {}) {
   const due = dueInfo(t, today);
   const meta = [];
+  if (isQuestion(t)) meta.push(`Open question, ${(t.asks || []).length ? `ask ${askText(t)}` : 'no person named to ask'}`);
   if (due) meta.push(t.flags.done ? `Due ${formatDate(t.due, today)}${atTime(t.dueTime)}` : due.text);
   const checkin = !t.flags.done && checkinText(t, today);
   if (checkin) meta.push(checkin);
@@ -128,6 +138,8 @@ function describe(t, today, level, extra = {}) {
     allKids: t.kind === 'task' ? t.descendantCount || 0 : 0,
     notes: t.notes,
     jira: t.jira,
+    asks: t.kind === 'task' ? t.asks || [] : [],
+    bareQuestion: isQuestion(t) && !['todo', 'waitingOnMe', 'waitingOnOthers', 'important', 'inProgress', 'ongoing', 'subtask'].some((f) => t.flags[f]),
     fileLabel: t.fileLabel,
     line: t.line,
     ...(t.kind === 'unmarked' ? { context: { before: t.before || [], after: t.after || [] } } : {}),
@@ -277,6 +289,7 @@ function viewCounts(index, state, today) {
     else if (v.isList) counts[v.id] = listTasks(index, state, v.id.slice(5)).filter((t) => !t.flags.done).length;
     else if (v.id === 'myday') counts.myday = Object.values(myDay(index, state, today)).reduce((n, g) => n + g.length, 0);
     else if (v.id === 'next') counts.next = nextActions(index, state, today).length;
+    else if (v.id === 'questions') counts.questions = index.tasks.filter(isQuestion).length;
     else if (v.id === 'buckets') counts.buckets = bucketIndex(index).list.filter((b) => !b.flags.done).length;
     else if (v.id === 'completed') counts.completed = index.tasks.filter(preds.completed).length;
     else counts[v.id] = index.tasks.filter((t) => !t.flags.done && preds[v.id](t)).length;
@@ -442,6 +455,35 @@ function buildView(index, state, opts = {}) {
         for (const t of mine) items.push(row(t, { hideFile: true }));
       }
     }
+  } else if (view === 'questions') {
+    // One group per person named with ask:, then No person. A question for two people shows under both.
+    const all = index.tasks.filter((t) => isQuestion(t) && match(t)).sort(byFileLine);
+    const people = new Map();
+    for (const t of all) {
+      for (const a of t.asks || []) {
+        const key = a.toLowerCase();
+        if (!people.has(key)) people.set(key, { name: personName(a), list: [] });
+        people.get(key).list.push(t);
+      }
+    }
+    const groups = [...people.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name, undefined, { sensitivity: 'base' }));
+    const nobody = all.filter((t) => !(t.asks || []).length);
+    if (nobody.length) groups.push(['', { name: 'No person', list: nobody }]);
+    items = [];
+    const parts = [];
+    for (const [key, g] of groups) {
+      const n = g.list.length;
+      parts.push(`${g.name} ${n}`);
+      items.push({ id: `g:ask:${key}`, type: 'group', level: 1, text: g.name, typeWord: 'person', words: [], meta: [n === 1 ? '1 question' : `${n} questions`], hasChildren: true });
+      for (const t of g.list) {
+        const p = t.parentId ? index.get(t.parentId) : null;
+        const c = describe(t, today, 2, { parentText: p ? p.text : null });
+        c.id = `${t.id}@ask:${key}`;
+        c.words = [...c.words, `from ${t.fileLabel}`];
+        items.push(c);
+      }
+    }
+    summary = parts.join(', ');
   } else if (view === 'buckets') {
     // Each bucket, then the tasks in it from any file (own, inherited from a parent task or from the list's title line).
     // A task in several buckets shows under each one; a subtask in the same bucket nests under its task.
@@ -571,7 +613,7 @@ function buildView(index, state, opts = {}) {
     items = withNoteRows(items);
   }
   if (def.isList) sortedBy = (state.lists || []).find((l) => l.id === view.slice(5)).sort || 'manual';
-  const count = view === 'triage' ? items.filter((i) => i.type === 'unmarked' && !i.known).length : items.filter((i) => i.type === 'task' || i.type === 'unmarked').length;
+  const count = view === 'questions' ? new Set(items.filter((i) => i.type === 'task').map((i) => i.id.split('@')[0])).size : view === 'triage' ? items.filter((i) => i.type === 'unmarked' && !i.known).length : items.filter((i) => i.type === 'task' || i.type === 'unmarked').length;
   return { view, title: def.title, items, count: view === 'lists' ? (state.lists || []).length : count, empty: def.empty || 'No open tasks.', rev: index.rev, sortedBy, summary, isList: !!def.isList };
 }
 
@@ -592,4 +634,4 @@ function subtasksOf(index, id, today = new Date()) {
   return { title: `Subtasks of ${root.text}`, items, count: items.length };
 }
 
-module.exports = { subtasksOf, heldBack, listTasks, fileBacked, isOnList, allViews, VIEWS, buildView, viewCounts, describe, matcher, untriaged, DUE_SOON_DAYS };
+module.exports = { isQuestion, askText, subtasksOf, heldBack, listTasks, fileBacked, isOnList, allViews, VIEWS, buildView, viewCounts, describe, matcher, untriaged, DUE_SOON_DAYS };

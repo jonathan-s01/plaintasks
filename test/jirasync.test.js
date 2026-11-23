@@ -376,3 +376,14 @@ test('jira sync: Blocks links are added when a task waits, removed only when pla
   assert.ok(jira.calls.some((c) => c.method === 'DELETE' && c.path.startsWith('/issueLink/')));
   assert.equal(jira.issues.get('A11Y-8').fields.issuelinks.filter((l) => l.type.name === 'Blocks').length, 0);
 });
+
+test('jira sync: open questions without a key are not created, nor their subtasks; linked questions still sync', async () => {
+  const { app, jira } = setup({ 'a.txt': '? which code\n\t@ sub of question\n@? linked question jira:A11Y-7\n@ normal\n' });
+  jira.add('A11Y-7', { summary: 'Linked question renamed' });
+  await syncedList(app, 'a.txt');
+  const plan = await app.syncPreview();
+  assert.deepEqual(plan.items.filter((i) => i.group === 'create').map((i) => i.task), ['normal']);
+  assert.ok(plan.items.some((i) => i.key === 'A11Y-7'), 'the linked question is still compared');
+  assert.ok(plan.info.some((i) => /open question\.$/.test(i.text) && i.task === 'which code'), JSON.stringify(plan.info));
+  assert.ok(plan.info.some((i) => /main task, which code, is an open question/.test(i.text)), JSON.stringify(plan.info));
+});

@@ -144,7 +144,7 @@
     <form method="dialog" id="note-form">
       <h2 id="note-title">Add a note</h2>
       <p id="note-task"></p>
-      <label for="note-input">Note</label>
+      <label for="note-input" id="note-label">Note</label>
       <input id="note-input" type="text" autocomplete="off" aria-describedby="note-hint">
       <p id="note-hint" class="hint"></p>
       <div class="row"><input type="checkbox" id="note-stamp" checked><label for="note-stamp">Start the note with today's date</label></div>
@@ -292,6 +292,7 @@
         <tr><th scope="row">less than</th><td>Toggle waiting on me</td></tr>
         <tr><th scope="row">percent, p</th><td>Toggle in progress</td></tr>
         <tr><th scope="row">asterisk, shift and i</th><td>Toggle important</td></tr>
+        <tr><th scope="row">q</th><td>Mark the task or line as an open question, written as a question mark at the start of the line (it combines with other markers, for example @?). Add ask: and a name, such as ask:cory, to say who to ask. On an open question, q asks for the answer: Enter saves it under the task as a dated note starting with Answer and removes the question mark, and a line that was only a question becomes a done task. Enter with nothing typed only removes the question mark. Escape changes nothing. u undoes it. In triage, q marks the unmarked line as a question</td></tr>
         <tr><th scope="row">i</th><td>Read everything about the selected row: dates, status, priority, blockers, list, line and notes</td></tr>
         <tr><th scope="row">shift and s</th><td>On a task: open its subtasks in a box you move through with the arrow keys, whatever the current view hides. Says so and opens nothing if there are none. In triage, shift and s still marks the rest of the file as notes</td></tr>
         <tr><th scope="row">b or tilde</th><td>Toggle ongoing or major outcome, written as a tilde</td></tr>
@@ -325,6 +326,7 @@
         <tr><th scope="row">minus</th><td>Open My list</td></tr>
         <tr><th scope="row">equals</th><td>Open All lists</td></tr>
         <tr><th scope="row">shift and g</th><td>Open Buckets: each bucket with its tasks, then No bucket with the open and done tasks that are in none</td></tr>
+        <tr><th scope="row">shift and q</th><td>Open Open questions: every open question from all files, grouped by the person to ask, then No person. A question for two people shows under both. Each row says which list it is from</td></tr>
         <tr><th scope="row">shift and t</th><td>Open My Day: tasks you picked for today (and earlier picks still open), overdue tasks and tasks due today, High priority first. Ongoing tasks, tasks waiting on others, blocked tasks and tasks on not-actionable lists are left out</td></tr>
         <tr><th scope="row">shift and a</th><td>Open Next actions: open tasks with no open subtasks, grouped by file, High priority first, then in progress. A task with subtasks shows its subtasks instead. Same exclusions as My Day</td></tr>
         <tr><th scope="row">a or @</th><td>Triage: mark the unmarked line as a to-do. The symbol keys also work on unmarked lines</td></tr>
