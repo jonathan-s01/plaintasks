@@ -1,15 +1,15 @@
 'use strict';
 
 const { formatDate, formatTime, relativeDue, daysBetween, toISO } = require('./dates');
-const { goalIndex, goalMembers, linkedGoals } = require('./goals');
+const { bucketIndex, sourceText } = require('./buckets');
 
 const VIEWS = [
   { id: 'open', title: 'All open tasks', hierarchical: true },
   { id: 'file', title: 'By file', hierarchical: true },
   { id: 'group', title: 'By group or project', hierarchical: true },
   { id: 'myday', title: 'My Day: picked, overdue and due today', empty: 'Nothing is picked, overdue or due today. Press t on a task to pick it for today.' },
-  { id: 'next', title: 'Next actions', empty: 'No next actions. Open tasks that are not goals, not waiting, not blocked and not on a not-actionable list show here.' },
-  { id: 'goals', title: 'Goals and their tasks', empty: 'No goals yet. A goal is an ongoing task, marked with ~. Press y on any task to link it to one.' },
+  { id: 'next', title: 'Next actions', empty: 'No next actions. Open tasks that are not ongoing, not waiting, not blocked and not on a not-actionable list show here.' },
+  { id: 'buckets', title: 'Buckets and their tasks', empty: 'No buckets yet. A bucket is a line marked jira:label. Press y on any task to put it in one.' },
   { id: 'schedule', title: 'Schedule: overdue, today, this week', empty: 'Nothing has a due date or check-in date. Press d on a task to set one.' },
   { id: 'due', title: 'Due soon and overdue', empty: 'No open tasks are overdue or due within 7 days.' },
   { id: 'waitingMe', title: 'Waiting on me', empty: 'Nothing is waiting on you.' },
@@ -94,7 +94,7 @@ function describe(t, today, level, extra = {}) {
   if (extra.parentText) meta.push(`Subtask of ${extra.parentText}`);
   if (t.group && !extra.hideGroup) meta.push(`Group ${t.group}`);
   if (t.jira) meta.push(`Jira ${t.jira}`);
-  if (t.jiraLabel && t.kind === 'task' && t.flags.ongoing) meta.push('Jira label goal: linked tasks get its label, it is not an issue');
+  if (t.jiraLabel && t.kind === 'task') meta.push('Bucket: tasks in it get its Jira label, it is not an issue');
   if (t.notes.length) meta.push(t.notes.length === 1 ? '1 note' : `${t.notes.length} notes`);
   if (!extra.hideFile) meta.push(`File ${t.fileLabel}, line ${t.line}`);
   return {
@@ -218,14 +218,14 @@ function onNotActionable(state, t) {
 
 /** Why a task stays out of My Day and Next actions, or null when it can show there. */
 function heldBack(state, t, today) {
-  if (t.flags.ongoing) return 'it is an ongoing goal';
+  if (t.flags.ongoing) return 'it is ongoing';
   if (t.flags.waitingOnOthers) return 'it is waiting on someone else';
   if (t.blocked) return 'it is blocked by another task';
   if (onNotActionable(state, t)) return 'it is on a not-actionable list';
   return null;
 }
 
-/** Open tasks that could be worked on today: not goals, not waiting on others, not blocked, not on a not-actionable list. */
+/** Open tasks that could be worked on today: not ongoing, not waiting on others, not blocked, not on a not-actionable list. */
 function workable(index, state, today) {
   return index.tasks.filter((t) => !t.flags.done && !t.flags.ongoing && !t.flags.waitingOnOthers && !t.blocked && !onNotActionable(state, t));
 }
@@ -263,7 +263,7 @@ function viewCounts(index, state, today) {
     else if (v.isList) counts[v.id] = listTasks(index, state, v.id.slice(5)).filter((t) => !t.flags.done).length;
     else if (v.id === 'myday') counts.myday = Object.values(myDay(index, state, today)).reduce((n, g) => n + g.length, 0);
     else if (v.id === 'next') counts.next = nextActions(index, state, today).length;
-    else if (v.id === 'goals') counts.goals = goalIndex(index).goals.filter((g) => !g.flags.done).length;
+    else if (v.id === 'buckets') counts.buckets = bucketIndex(index).list.filter((b) => !b.flags.done).length;
     else if (v.id === 'completed') counts.completed = index.tasks.filter(preds.completed).length;
     else counts[v.id] = index.tasks.filter((t) => !t.flags.done && preds[v.id](t)).length;
   }
@@ -281,6 +281,13 @@ function withNoteRows(items) {
     it.notes.forEach((text, i) => out.push({ id: `tn:${it.id}:${i}`, type: 'tasknote', level: it.level + 1, text, words: ['Note'], meta: [], hasChildren: false, flags: {}, notes: [] }));
   }
   return out;
+}
+
+/** "Default buckets: X" for a file whose title line names some, else []. */
+function defaultsMeta(index, file) {
+  const bx = bucketIndex(index);
+  const ids = bx.fileDefaults(file);
+  return ids.length ? [`Default ${ids.length > 1 ? 'buckets' : 'bucket'}: ${ids.map((b) => bx.byId.get(b).text).join('; ')}`] : [];
 }
 
 function buildHierarchy(index, ctx, groupKeyOf) {
@@ -308,7 +315,7 @@ function buildHierarchy(index, ctx, groupKeyOf) {
   const buckets = new Map();
   for (const r of roots) {
     const { key, label } = groupKeyOf(r);
-    if (!buckets.has(key)) buckets.set(key, { label, roots: [] });
+    if (!buckets.has(key)) buckets.set(key, { label, file: groupKeyOf(r).file, roots: [] });
     buckets.get(key).roots.push(r);
   }
   const ordered = [...buckets.entries()].sort(([a], [b]) => (a === '' ? 1 : 0) - (b === '' ? 1 : 0));
@@ -323,8 +330,9 @@ function buildHierarchy(index, ctx, groupKeyOf) {
       level: 1,
       text: b.label,
       words: [],
-      meta: [n === 1 ? '1 task' : `${n} tasks`],
+      meta: [n === 1 ? '1 task' : `${n} tasks`, ...(b.file ? defaultsMeta(index, b.file) : [])],
       hasChildren: true,
+      ...(b.file ? { file: b.file } : {}),
     });
     out.push(...body);
   }
@@ -336,7 +344,7 @@ function buildView(index, state, opts = {}) {
   let sortedBy = null;
   let summary = '';
   const views = allViews(state);
-  const wanted = opts.view === 'mylist' ? 'list:mylist' : opts.view;
+  const wanted = opts.view === 'mylist' ? 'list:mylist' : opts.view === 'goals' ? 'buckets' : opts.view;
   const view = views.some((v) => v.id === wanted) ? wanted : 'open';
   const def = views.find((v) => v.id === view);
   const match = matcher(opts.q);
@@ -383,7 +391,7 @@ function buildView(index, state, opts = {}) {
       for (const l of here) {
         const n = listTasks(index, state, l.id).filter((x) => !x.flags.done).length;
         const file = l.file ? index.files.find((x) => x.file === l.file) : null;
-        items.push({ id: `list:${l.id}`, type: 'list', listId: l.id, level: 2, text: l.name, words: [], meta: [n === 1 ? '1 open item' : `${n} open items`, file ? `${fileBacked(l) ? 'Tasks kept in' : 'Notes file'} ${file.label}` : 'No notes file'], hasChildren: false, flags: {}, notes: [] });
+        items.push({ id: `list:${l.id}`, type: 'list', listId: l.id, level: 2, text: l.name, words: [], meta: [n === 1 ? '1 open item' : `${n} open items`, file ? `${fileBacked(l) ? 'Tasks kept in' : 'Notes file'} ${file.label}` : 'No notes file', ...(file ? defaultsMeta(index, file.file) : [])], hasChildren: false, flags: {}, notes: [], ...(file ? { file: file.file } : {}) });
       }
     }
   } else if (view === 'myday' || view === 'next') {
@@ -418,26 +426,49 @@ function buildView(index, state, opts = {}) {
         for (const t of mine) items.push(row(t, { hideFile: true }));
       }
     }
-  } else if (view === 'goals') {
-    // Each goal, then the tasks linked to it from any file. A task on several goals shows under each one.
+  } else if (view === 'buckets') {
+    // Each bucket, then the tasks in it from any file (own, inherited from a parent task or from the list's title line).
+    // A task in several buckets shows under each one; a subtask in the same bucket nests under its task.
+    const bx = bucketIndex(index);
     items = [];
-    for (const g of goalIndex(index).goals) {
-      const members = goalMembers(index, g);
-      const shown = members.filter((t) => (showCompleted || !t.flags.done) && match(t));
-      if (g.flags.done && !showCompleted) continue;
-      if (!match(g) && !shown.length) continue;
-      const open = members.filter((t) => !t.flags.done).length;
-      const it = describe(g, today, 1);
-      it.meta.unshift(members.length ? `${open} open, ${members.length - open} done linked ${members.length === 1 ? 'task' : 'tasks'}` : 'No linked tasks');
-      it.hasChildren = shown.length > 0;
-      it.goal = true;
-      items.push(it);
+    const members = (list, where) => {
+      const shown = list.filter((t) => (showCompleted || !t.flags.done) && match(t));
+      const ids = new Set(shown.map((t) => t.id));
+      const out = [];
+      let prev = 1;
       for (const t of shown) {
+        let level = 2;
+        for (let p = t.parentId ? index.get(t.parentId) : null; p; p = p.parentId ? index.get(p.parentId) : null) if (ids.has(p.id)) level += 1;
+        level = Math.min(level, prev + 1);
+        prev = level;
         const p = t.parentId ? index.get(t.parentId) : null;
-        const c = describe(t, today, 2, { parentText: p ? p.text : null });
-        c.id = `${t.id}@${g.id}`;
-        items.push(c);
+        const c = describe(t, today, level, { parentText: p ? p.text : null });
+        c.id = `${t.id}@${where}`;
+        out.push(c);
       }
+      out.forEach((c, i) => {
+        if (out[i + 1] && out[i + 1].level > c.level) c.hasChildren = true;
+      });
+      return out;
+    };
+    const tally = (list) => {
+      const open = list.filter((t) => !t.flags.done).length;
+      return `${open} open, ${list.length - open} done ${list.length === 1 ? 'task' : 'tasks'}`;
+    };
+    for (const b of bx.list) {
+      const all = b.goalId && bx.byId.get(b.goalId) === b ? bx.members.get(b.goalId) : [];
+      const rows = members(all, b.id);
+      if (b.flags.done && !showCompleted) continue;
+      if (!match(b) && !rows.length) continue;
+      const it = describe(b, today, 1);
+      it.meta.unshift(all.length ? tally(all) : 'No tasks');
+      it.hasChildren = rows.length > 0;
+      it.bucket = true;
+      items.push(it, ...rows);
+    }
+    if (bx.none.length) {
+      const rows = members(bx.none, 'nobucket');
+      items.push({ id: 'g:nobucket', type: 'group', level: 1, text: 'No bucket', words: [], meta: [tally(bx.none)], hasChildren: rows.length > 0 }, ...rows);
     }
   } else if (view === 'schedule') {
     const byId = new Map(index.tasks.map((t) => [t.id, t]));
@@ -477,7 +508,7 @@ function buildView(index, state, opts = {}) {
   } else if (view === 'open') {
     items = buildHierarchy(index, ctx, null);
   } else if (view === 'file') {
-    items = buildHierarchy(index, ctx, (t) => ({ key: t.fileLabel, label: t.fileLabel }));
+    items = buildHierarchy(index, ctx, (t) => ({ key: t.fileLabel, label: t.fileLabel, file: t.file }));
     items.forEach((i) => {
       if (i.type === 'task') i.meta = i.meta.filter((m) => !m.startsWith('File '));
     });
@@ -506,18 +537,19 @@ function buildView(index, state, opts = {}) {
     }
   }
   if (view !== 'triage' && view !== 'lists') {
-    const { byId } = goalIndex(index);
+    const bx = bucketIndex(index);
     for (const i of items) {
       const t = i.type === 'task' ? index.get(i.id) : null;
       if (!t) continue;
-      const gs = linkedGoals(index, t, byId);
-      if (gs.length && !(view === 'goals' && i.level === 2 && gs.length === 1)) {
-        i.goals = gs.map((g) => g.id);
-        i.meta.unshift(`${gs.length > 1 ? 'Goals' : 'Goal'}: ${gs.map((g) => g.text).join('; ')}`);
-      }
-      if (t.flags.ongoing && view !== 'goals') {
-        const n = goalMembers(index, t).length;
-        if (n) i.meta.push(n === 1 ? '1 linked task' : `${n} linked tasks`);
+      const how = sourceText(index, t);
+      if (t.buckets && t.buckets.length) {
+        const names = t.buckets.map((b) => bx.byId.get(b).text);
+        i.buckets = t.buckets.map((b) => bx.byId.get(b).id);
+        i.meta.unshift(`${names.length > 1 ? 'Buckets' : 'Bucket'}: ${names.join('; ')}${how ? ` (${how})` : ''}`);
+      } else if (t.bucketSource === 'own') i.meta.unshift('No bucket (set on this task)');
+      if (t.isBucket && view !== 'buckets') {
+        const n = t.goalId && bx.byId.get(t.goalId) === t ? bx.members.get(t.goalId).length : 0;
+        if (n) i.meta.push(n === 1 ? '1 task' : `${n} tasks`);
       }
     }
     items = withNoteRows(items);

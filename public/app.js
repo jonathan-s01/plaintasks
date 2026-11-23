@@ -207,7 +207,7 @@
 
     const vis = visibleItems();
     let target = null;
-    // In the goals view a task can show once per goal ("taskId@goalId"): stay under the same goal when possible.
+    // In the buckets view a task can show once per bucket ("taskId@bucketTaskId"): stay under the same bucket when possible.
     const under = st.activeId && st.activeId.includes('@') ? st.activeId.slice(st.activeId.indexOf('@')) : null;
     const copy = focusId && (vis.find((i) => under && i.id === focusId + under) || vis.find((i) => i.id.startsWith(`${focusId}@`)));
     if (focusId && vis.some((i) => i.id === focusId)) target = focusId;
@@ -404,6 +404,7 @@
       add('Move up a level (shift and tab)', () => act('outdent'));
       add('Convert to a note', () => act('note'));
       add('Choose lists for this task (l)', () => listKey());
+      if (item.type === 'task') add('Choose buckets (y)', () => openBuckets());
       if (curListId()) {
         add('Move up (alt and up)', () => act('listMove', 'up'));
         add('Move down (alt and down)', () => act('listMove', 'down'));
@@ -896,6 +897,7 @@
     }
   }
   $('lists-form').addEventListener('submit', saveLists);
+  speakOnHover($('lists-choices'));
   // Up and Down move through the lists, Space ticks one, Enter saves.
   $('lists-form').addEventListener('keydown', (e) => {
     const stops = [...$('lists-choices').querySelectorAll('input'), $('lists-new')];
@@ -912,49 +914,78 @@
   });
   $('lists-cancel').addEventListener('click', () => closeDialog($('lists-dialog')));
 
-  // ---------- goals ----------
+  // ---------- buckets ----------
 
-  async function openGoals() {
+  // Moving the mouse over a choice focuses its checkbox, so VoiceOver reads it. Keys work as before.
+  function speakOnHover(box) {
+    box.addEventListener('pointermove', (e) => {
+      const row = e.target.closest && e.target.closest('.row');
+      const input = row && box.contains(row) ? row.querySelector('input') : null;
+      if (input && document.activeElement !== input) input.focus({ preventScroll: true });
+    });
+  }
+
+  let bucketCtx = null;
+
+  /** y: on a task, choose its buckets; on a file's row (By file, triage, All lists), choose the file's default buckets. */
+  async function openBuckets(forFile, returnSel) {
     const item = currentItem();
-    if (!item || item.type !== 'task') return;
+    const file = forFile || (item && (item.type === 'group' || item.type === 'list') ? item.file : null);
+    if (!file && (!item || item.type !== 'task')) {
+      if (item && (item.type === 'group' || item.type === 'list')) announce('The y key sets default buckets on a file. Open the By file view (v) or All lists, then press y on a file or list that has one.');
+      return;
+    }
     let data;
     try {
-      data = await api(`/api/goals?id=${encodeURIComponent(item.id)}`);
+      data = await api(file ? `/api/buckets?file=${encodeURIComponent(file)}` : `/api/buckets?id=${encodeURIComponent(item.id)}`);
     } catch (err) {
       alertMessage(err.message);
       return;
     }
-    $('goals-task').textContent = item.text;
-    $('goals-error').textContent = '';
-    $('goals-empty').hidden = data.goals.length > 0;
-    $('goals-choices').replaceChildren(...data.goals.map((g, i) => el('div', { class: 'row' },
-      el('input', { type: 'checkbox', id: `gc-${i}`, value: g.id, checked: g.linked }),
-      el('label', { for: `gc-${i}`, text: `${g.text}${g.done ? ' (done)' : ''}, ${g.count === 1 ? '1 task' : `${g.count} tasks`}, ${g.file}` }))));
-    openDialog($('goals-dialog'), item.id);
-    const first = $('goals-choices').querySelector('input') || $('goals-cancel');
+    bucketCtx = { file, id: file ? null : item.id, back: st.activeId, returnSel: returnSel || null };
+    $('buckets-title').textContent = file ? 'Default buckets for a list' : 'Choose buckets';
+    $('buckets-legend').textContent = file ? 'Tasks in this file without buckets of their own inherit' : 'This task is in';
+    $('buckets-task').textContent = file
+      ? `${data.task}. Saved on the file's first line.`
+      : `${data.task}.${data.inherited.length ? ` Without buckets of its own it inherits from ${data.inheritedFrom}. Ticking exactly those again removes its own.` : ''}`;
+    $('buckets-error').textContent = '';
+    $('buckets-empty').hidden = data.buckets.length > 0;
+    $('buckets-choices').replaceChildren(...data.buckets.map((b, i) => el('div', { class: 'row' },
+      el('input', { type: 'checkbox', id: `gc-${i}`, value: b.id, checked: b.checked }),
+      el('label', { for: `gc-${i}`, text: `${b.text}${b.done ? ' (done)' : ''}${b.inherited ? `, inherited from ${data.inheritedFrom.replace(/:.*$/, '')}` : ''}, ${b.count === 1 ? '1 task' : `${b.count} tasks`}` }))));
+    openDialog($('buckets-dialog'), returnSel ? null : st.activeId);
+    const first = $('buckets-choices').querySelector('input') || $('buckets-cancel');
     first.focus();
   }
 
-  async function saveGoals(e) {
+  async function saveBuckets(e) {
     e.preventDefault();
-    const item = currentItem();
     const idx = activeIndex();
-    const ids = [...$('goals-choices').querySelectorAll('input:checked')].map((c) => c.value);
+    const ids = [...$('buckets-choices').querySelectorAll('input:checked')].map((c) => c.value);
+    const body = bucketCtx.file
+      ? { id: `f:${bucketCtx.file}`, op: 'listBucketSet', value: { ids } }
+      : { id: bucketCtx.id, op: 'bucketSet', value: { ids } };
     try {
-      const res = await api('/api/action', { method: 'POST', body: { id: item.id, op: 'goalSet', value: { ids } } });
-      closeDialog($('goals-dialog'));
+      const res = await api('/api/action', { method: 'POST', body });
+      closeDialog($('buckets-dialog'));
       announce(res.message);
-      await loadView({ focusId: res.focusId, keepIndex: idx });
+      if ($('manage-dialog').open) {
+        await loadView({ focus: false });
+        renderManage();
+        const back = bucketCtx.returnSel && document.querySelector(bucketCtx.returnSel);
+        if (back) back.focus();
+      } else await loadView({ focusId: res.focusId || bucketCtx.back, keepIndex: idx });
     } catch (err) {
-      $('goals-error').textContent = err.message;
-      const first = $('goals-choices').querySelector('input');
+      $('buckets-error').textContent = err.message;
+      const first = $('buckets-choices').querySelector('input');
       if (first) first.focus();
     }
   }
-  $('goals-form').addEventListener('submit', saveGoals);
-  // Up and Down move through the goals, Space ticks one, Enter saves.
-  $('goals-form').addEventListener('keydown', (e) => {
-    const stops = [...$('goals-choices').querySelectorAll('input')];
+  $('buckets-form').addEventListener('submit', saveBuckets);
+  speakOnHover($('buckets-choices'));
+  // Up and Down move through the buckets, Space ticks one, Enter saves.
+  $('buckets-form').addEventListener('keydown', (e) => {
+    const stops = [...$('buckets-choices').querySelectorAll('input')];
     const i = stops.indexOf(document.activeElement);
     if (i < 0) return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -963,10 +994,15 @@
       if (to) to.focus();
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      $('goals-form').requestSubmit();
+      $('buckets-form').requestSubmit();
     }
   });
-  $('goals-cancel').addEventListener('click', () => closeDialog($('goals-dialog')));
+  $('buckets-cancel').addEventListener('click', () => closeDialog($('buckets-dialog')));
+  // Opened from Manage lists: focus goes back to that list's button.
+  $('buckets-dialog').addEventListener('close', () => {
+    const back = bucketCtx && bucketCtx.returnSel ? document.querySelector(bucketCtx.returnSel) : null;
+    if (back) back.focus();
+  });
 
   // ---------- blocked by ----------
 
@@ -1008,6 +1044,7 @@
     updateBlockerCount();
   });
   $('blockers-choices').addEventListener('change', updateBlockerCount);
+  speakOnHover($('blockers-choices'));
 
   async function saveBlockers(e) {
     e.preventDefault();
@@ -1106,6 +1143,9 @@
           if (fileSel.value && fileSel.value !== l.file) value.file = fileSel.value;
           return manageCall({ op: 'listEdit', list: l.id, value }, `#mt-${i}`);
         } }));
+      if (l.file) {
+        fs.append(el('button', { type: 'button', id: `mbk-${i}`, text: `Default buckets for ${l.name} (y on its row in All lists)`, onclick: () => openBuckets(l.file, `#mbk-${i}`) }));
+      }
       if (l.id !== 'mylist') {
         fs.append(el('button', { type: 'button', text: `Delete ${l.name}`, onclick: () => {
           if (window.confirm(`Delete the list ${l.name}? Your tasks and text files are not changed.`)) manageCall({ op: 'listDelete', list: l.id }, null);
@@ -1263,7 +1303,7 @@
     '~': () => act('ongoing'),
     d: () => openDue(),
     j: () => openJira(),
-    y: () => openGoals(),
+    y: () => openBuckets(),
     t: () => act('today'),
     P: () => act('priority'),
     B: () => openBlockers(),
@@ -1515,7 +1555,7 @@
       return true;
     }
     if (e.key === 'G') {
-      switchView('goals');
+      switchView('buckets');
       return true;
     }
     if (e.key === 'T') {

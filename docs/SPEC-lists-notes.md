@@ -105,9 +105,9 @@ When `+ > < % *` turn a status on (tasks in any view, unmarked lines in triage),
 
 - Tokens (hidden from text; `text` keeps them): `today:YYYY-MM-DD`, `p:high`/`p:low` (`p:medium`/`p:med` parse as Medium and are dropped on rewrite), `id:<slug>`, `after:<slug>` (repeatable, de-duplicated, lowercased).
 - Keys: `t` op `today` (picks for today, or unpicks when picked for today or earlier; refused on done tasks). Shift+`p` op `priority` cycles medium → high → low → medium, or takes `value` of `high`/`medium`/`low`. Shift+`b` opens a checkbox dialog (`GET /api/blockers?id=`, saved with op `blockSet` and `{ ids }`).
-- Blocked by: targets are tasks with `id:` and `~` goals (their `goalId`). `blockSet` writes `id:` on blockers that lack one (slug from the text, unique across `goalId`, `refId`, goal links and `after:` ids), rewrites the task's `after:` tokens (unknown refs are kept), rejects self and cycles, and is one undo step. A task is `blocked` when any resolved blocker is open. Done blockers keep the link ("Blocked by: x (done)") but do not block. A `$` task is not indexed, so its dependents' tokens become unresolved and do not block.
+- Blocked by: targets are tasks with `id:`, and bucket ids. Buckets cannot be blockers. `blockSet` writes `id:` on blockers that lack one (slug from the text, unique across bucket ids, `refId`, bucket references and `after:` ids), rewrites the task's `after:` tokens (unknown refs are kept), rejects self and cycles, and is one undo step. A task is `blocked` when any resolved blocker is open. Done blockers keep the link ("Blocked by: x (done)") but do not block. A `$` task is not indexed, so its dependents' tokens become unresolved and do not block.
 - Details add "Priority: High/Low", "Blocked by: …" and "Blocks N task(s)"; speech words add "Blocked" and "High priority"/"Low priority".
-- Workable = open, not `~`, not `>`, not blocked, not on a not-actionable list. List setting `notActionable` (Manage lists, New list form; persisted in state.json; default off) excludes tasks that `isOnList` for such a list.
+- Workable = open, not `~` (ongoing), not `>`, not blocked, not on a not-actionable list. List setting `notActionable` (Manage lists, New list form; persisted in state.json; default off) excludes tasks that `isOnList` for such a list.
 - My Day (Shift+`t`, view `myday`): groups Picked (picked ≤ today; earlier picks roll over at view time, nothing is rewritten), Overdue, Due today. A task appears once, in the first group that matches. Each group sorts High, Medium, Low. The list status adds a summary such as "Picked 3, Overdue 1".
 - Next actions (Shift+`a`, view `next`): workable tasks with no open child, grouped by file, sorted by priority then `%` first. A parent with any open child is hidden, even if that child is itself excluded.
 - Jira: `priority` is synced when the issue response has a Priority field, with the same three-way snapshot as status and summary (names in `jira.sync.priorities`, default High/Medium/Low; Medium not sent on create; an unknown Jira name is an unticked push item). Each resolved `after:` becomes a link of type `jira.sync.blockType` (default `Blocks`) created with the blocker as the inward issue; plan item ids `block:<taskId>:<blockerId>` and `unblock:<taskId>:<KEY>`. Unlinking only removes links recorded in the snapshot (`synced[key].blockers`) and never while the task has an unresolved `after:`. `today:` is never pushed.
@@ -116,31 +116,34 @@ When `+ > < % *` turn a status on (tasks in any view, unmarked lines in triage),
 
 `c` or `h` shows or hides completed tasks in the current view.
 
-## Goals
+## Buckets
 
-- A goal is any ongoing task (`~`). A task links to goals with `goal:<id>` tokens on its own line; there can be several. On a `~` line the first `goal:` token is that goal's own id and the rest link it to other goals.
-- `y` on a task opens a checkbox dialog of goals (open goals, plus done goals the task already links to). Saving writes the task's tokens (`goalSet`, value `{ ids: [goal task ids] }`). A goal without an id gets one first: a slug of its text, at most 32 characters, with `-2`, `-3` added if taken by any id or link. All writes from one save are one undo step; if a write fails, the ones already made are rolled back.
-- Links use the id, so rewording a goal keeps them. Tokens that match no indexed goal are kept on the line. A goal cannot link to itself.
-- Tokens are stripped from displayed text, like `jira:` and dates. Task details begin with "Goal: …" (or "Goals: …"); goals elsewhere get "N linked tasks".
-- Goals view (Shift+`g`, view id `goals`): each goal, "N open, M done linked tasks", then its linked tasks from any file at level 2. A task on two goals appears under each, with row id `taskId@goalId`; actions on either row act on the task. Done goals and done tasks show only with `c`.
+- A bucket is a task line with `jira:label`. On a bucket line the first `goal:` token is its own id. On any other line (including `~` lines) every `goal:` token is a bucket reference; a line never claims an id by being linked. `~` is only a status.
+- Effective buckets (`t.buckets`, computed in `src/buckets.js` after each index): own references that match a known bucket id (`t.ownBuckets`; `goal:none` alone is an explicit empty set), else the parent task's effective buckets (a child of a bucket line is in that bucket), else the file's default buckets. An own set replaces the inherited one. `t.bucketSource` is `own`, `parent`, `list` or null; `t.bucketFrom` is the task id holding the set when it comes from a parent. Bucket lines have no buckets.
+- File defaults: the title line is the first non-blank line that is not a legend, task or `&` note. Its `goal:` tokens are the defaults (`parsed.title.buckets`) and are hidden from its displayed text. A file whose first line is a task has no title line and no defaults.
+- `y` on a task: `GET /api/buckets?id=` lists open buckets plus done ones the task is in, with `checked` (effective) and `inherited`. Saving is op `bucketSet` (old name `goalSet` still accepted), value `{ ids: [bucket task ids] }`. Equal to the inherited set → only unknown tokens are kept; empty while something is inherited → `goal:none`; otherwise the explicit ids. A bucket without an id gets a slug of its text (at most 32 characters, `-2`, `-3` if taken). One undo step; failures roll back.
+- `y` on a By file group row or All lists row with a file: `GET /api/buckets?file=`, saved with op `listBucketSet`, id `f:<file>`, which rewrites the title line's `goal:` tokens.
+- Unknown tokens are kept. Details begin with "Bucket(s): X (inherited from parent: P|list: L)" or "No bucket (set on this task)"; bucket lines elsewhere get "N tasks". By file rows and list rows show "Default bucket(s): …".
+- Buckets view (Shift+`g`, view id `buckets`, `goals` still accepted): each bucket, "N open, M done tasks", then its members from any file, nested under member ancestors; row id `taskId@bucketTaskId`. Last, group `g:nobucket` "No bucket" with the counts of open and done tasks without buckets, listing them (`taskId@nobucket`). Done buckets and done tasks show only with `c`.
+- `bin/migrate-buckets.js <folder>` (dry run unless `--write`) removes own ids from non-bucket `~` lines nothing links to, sets title-line defaults and drops task tokens equal to what they inherit, and verifies every task's effective buckets are unchanged.
 
 ## Jira sync
 
 - Only on press (Shift+`j` or the toolbar button); Jira Cloud only. Endpoints: `POST /api/jira/sync/preview`, `/api/jira/sync/apply` (`{ choices: { itemId: { choice: 'apply'|'file'|'jira'|'skip', sig } } }`), `/api/jira/sync/started`.
 - Covers files of lists with `jiraSync` (needs a file). Per-list `jiraLabels` (extra labels) and `jiraStatus` (status for open tasks).
-- Items have stable ids (`create:<taskId>`, `KEY:<field>`, `link:<taskId>:<goalId>`) and a signature. Apply rebuilds the plan and skips any item whose signature changed since the preview.
-- Three-way rule for status and summary: the last synced value of both sides is stored. Only Jira changed → pull (ticked); only the file changed → push; both, or no snapshot → conflict (default skip). Pulling ongoing (`~`) back to open is unticked, because it stops the task being a goal.
+- Items have stable ids (`create:<taskId>`, `KEY:<field>`, `block:<taskId>:<blockerId>`) and a signature. Apply rebuilds the plan and skips any item whose signature changed since the preview.
+- Three-way rule for status and summary: the last synced value of both sides is stored. Only Jira changed → pull (ticked); only the file changed → push; both, or no snapshot → conflict (default skip).
 - Push-only fields: description (notes in ADF, `& Started` notes excluded), due date (the done date for done tasks), start date (`start:`), Flagged (for `>`), labels. A Jira value plaintasks didn't set is never cleared. Labels removed are only ones plaintasks added.
 - Summary and description pushes are unticked for issues plaintasks didn't create.
 - Order on apply: creates (main tasks, then subtasks), field updates and transitions, links, then file writes. File writes are one undo step; Jira changes can't be undone.
 - `start:YYYY-MM-DD` is a token like `due:`: hidden from text, spoken "Started …".
-- Label goals: a `~` line with `jira:label` (case-insensitive, hidden like `jira:`; `text` keeps it). Excluded from sync entries, so never created, updated, closed or linked. Tasks linking to one directly via `goal:` want label `<labelPrefix><goalId>` (setting `jira.sync.labelPrefix`, default `bucket-`); it is added on create and in the labels push item. Any label on the issue starting with the prefix that is not wanted is removed. Children of a label goal have no syncing parent, so they become Tasks.
+- Buckets: a line with `jira:label` (case-insensitive, hidden like `jira:`; `text` keeps it). Excluded from sync entries, so never created, updated, closed or linked. No Relates links are made. Every synced task and sub-task wants label `<labelPrefix><bucketId>` for each effective bucket (setting `jira.sync.labelPrefix`, default `bucket-`); it is added on create and in the labels push item. Any label on the issue starting with the prefix that is not wanted is removed. Children of a bucket have no syncing parent, so they become Tasks.
 
 ## What is stored where
 
 | Data | Location |
 | --- | --- |
-| Tasks, status, due, check-in, notes under a task, subtasks, goal links and goal ids | the original text file |
+| Tasks, status, due, check-in, notes under a task, subtasks, bucket ids and references, list default buckets (title line) | the original text file |
 | To-do marker `@`, deleted marker `$` | the original text file |
 | Marked as a note in triage, attached-to link | `state.json` (keyed by line text) |
 | Lists, order, sort, folder, notes-file path | `state.json` |

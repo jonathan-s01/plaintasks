@@ -255,6 +255,7 @@ class App {
       this.touchList();
       return { ok: true, message: `Marked ${f.label} as reviewed. It returns to the new and changed filter when the file changes.`, undo: true };
     }
+    if (op === 'listBucketSet') return this.listBucketSet(String(id || '').replace(/^f:/, ''), value);
     if (op === 'refresh') {
       this.index.refresh(today);
       return { ok: true, message: 'List refreshed' };
@@ -315,8 +316,9 @@ class App {
         return this.setPriority(t, value);
       case 'blockSet':
         return this.blockSet(t, value);
+      case 'bucketSet':
       case 'goalSet':
-        return this.goalSet(t, value);
+        return this.bucketSet(t, value);
       case 'jira': {
         const key = value ? String(value).trim() : '';
         if (key && !KEY_RE.test(key)) throw new HttpError(400, 'Jira keys look like ABC-123');
@@ -820,7 +822,7 @@ class App {
 
 require('./features').install(App, HttpError);
 require('./filelists').install(App, HttpError);
-require('./goals').install(App, HttpError);
+require('./buckets').install(App, HttpError);
 require('./blocks').install(App, HttpError);
 require('./jirasync').install(App, HttpError);
 

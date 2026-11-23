@@ -137,7 +137,7 @@ test('jira sync: lists sync only when ticked, and need a file', async () => {
   assert.deepEqual([l.jiraSync, l.jiraLabels, l.jiraStatus], [true, ['a11y', 'team'], 'In Discovery']);
 });
 
-test('jira sync: creates Tasks under the epic and Sub-tasks under their main task, writes jira: back, links goals', async () => {
+test('jira sync: creates Tasks under the epic and Sub-tasks under their main task, writes jira: back, and a ~ line is an ordinary task with no Relates links', async () => {
   const { notes, app, jira } = setup({
     'a.txt': '~ Build partner network goal:partner-network\n@ Write scan due:2026-12-01 goal:partner-network\n\t& see https://x.test/doc\n\t& Started 2026-11-02\n\t@ sub step\n\t\t> deeper step\n+ Old thing done:2026-11-01\n',
   });
@@ -145,7 +145,7 @@ test('jira sync: creates Tasks under the epic and Sub-tasks under their main tas
   const plan = await app.syncPreview();
   const creates = plan.items.filter((i) => i.group === 'create');
   assert.deepEqual(creates.map((i) => [i.task, i.checked]), [['Build partner network', true], ['Write scan', true], ['sub step', true], ['deeper step', true], ['Old thing', false]]);
-  assert.ok(plan.items.some((i) => i.field === 'link' && i.task === 'Write scan'));
+  assert.ok(!plan.items.some((i) => i.field === 'link'), 'no Relates links: ~ is only a status');
   const before = read(notes, 'a.txt');
   assert.equal(jira.calls.filter((c) => c.method !== 'GET' && c.path !== '/search/jql').length, 0, 'the preview sends nothing');
 
@@ -174,7 +174,7 @@ test('jira sync: creates Tasks under the epic and Sub-tasks under their main tas
   assert.deepEqual(made('A11Y-103').parent, { key: 'A11Y-101' });
   assert.ok(made('A11Y-103').labels.includes('waiting'));
   assert.deepEqual(made('A11Y-103').customfield_10021, [{ value: 'Impediment' }]);
-  assert.ok(made('A11Y-101').issuelinks.some((l) => l.outwardIssue.key === 'A11Y-100'));
+  assert.ok(!jira.calls.some((c) => c.path === '/issueLink'));
 
   // Everything is in sync now, so a second run has nothing but the done task that was left out.
   const again = await app.syncPreview();
@@ -266,13 +266,14 @@ test('jira sync: settings are validated, stored without the token, and needed be
   await assert.rejects(() => app.syncPreview(), /Task issue type id/);
 });
 
-test('jira sync: label goals (jira:label) are never issues; linked tasks get prefix+id labels, and unlinking removes them', async () => {
+test('jira sync: buckets (jira:label) are never issues; tasks and sub-tasks get prefix+id labels from their effective buckets, and unlinking removes them', async () => {
   const { notes, app, jira } = setup({
     'a.txt': [
       '~ Advisory services goal:advisory-services jira:label',
       '\t@ Under the bucket',
       '~ Partner network goal:partner-network',
       '@ Review site goal:advisory-services goal:partner-network',
+      '\t@ Review sub',
       '+ Jurisdictional scan jira:A11Y-2591 goal:advisory-services done:2026-11-10',
       '@ Other thing jira:A11Y-5',
       '',
@@ -284,10 +285,13 @@ test('jira sync: label goals (jira:label) are never issues; linked tasks get pre
   const plan = await app.syncPreview();
   const byId = Object.fromEntries(plan.items.map((i) => [i.id, i]));
   const creates = plan.items.filter((i) => i.group === 'create');
-  assert.deepEqual(creates.map((i) => i.task), ['Under the bucket', 'Partner network', 'Review site']);
-  assert.equal(creates[0].parentTaskId, null, 'a task under a label goal is a main task');
+  assert.deepEqual(creates.map((i) => i.task), ['Under the bucket', 'Partner network', 'Review site', 'Review sub']);
+  assert.equal(creates[0].parentTaskId, null, 'a task under a bucket is a main task');
+  assert.match(creates[0].label, /, label bucket-advisory-services$/);
+  assert.doesNotMatch(creates[1].label, /label bucket/);
   assert.match(creates[2].label, /, label bucket-advisory-services$/);
-  assert.deepEqual(plan.items.filter((i) => i.field === 'link').map((i) => i.to), ['Partner network']);
+  assert.match(creates[3].label, /, label bucket-advisory-services$/, 'a sub-task inherits its parent bucket');
+  assert.equal(plan.items.filter((i) => i.field === 'link').length, 0);
   assert.deepEqual([byId['A11Y-2591:labels'].to, byId['A11Y-2591:labels'].checked], [{ add: ['bucket-advisory-services'], remove: [] }, true]);
   assert.deepEqual(byId['A11Y-5:labels'].to, { add: [], remove: ['bucket-old'] });
 
@@ -296,7 +300,8 @@ test('jira sync: label goals (jira:label) are never issues; linked tasks get pre
   const made = jira.calls.filter((c) => c.method === 'POST' && c.path === '/issue').map((c) => c.body.fields);
   assert.ok(!made.some((f) => /Advisory/.test(f.summary)));
   assert.deepEqual(made.find((f) => f.summary === 'Review site').labels, ['bucket-advisory-services']);
-  assert.equal(jira.calls.filter((c) => c.path === '/issueLink').length, 1);
+  assert.equal(jira.calls.filter((c) => c.path === '/issueLink').length, 0);
+  assert.deepEqual(made.find((f) => f.summary === 'Review sub').labels, ['bucket-advisory-services']);
   const f = (k) => jira.issues.get(k).fields;
   assert.deepEqual(f('A11Y-2591').labels, ['legal', 'bucket-advisory-services']);
   assert.deepEqual(f('A11Y-5').labels, ['keep']);
@@ -342,7 +347,7 @@ test('jira sync: priority is sent on create and update, pulled back, and an unkn
   assert.ok(!JSON.stringify(jira.calls).includes('today'), 'today: is never sent');
 });
 
-test('jira sync: Blocks links are added when a task waits, removed only when plaintasks made them, and goals still use Relates', async () => {
+test('jira sync: Blocks links are added when a task waits, removed only when plaintasks made them', async () => {
   const { notes, app, jira } = setup({
     'a.txt': '@ Write code id:write-code jira:A11Y-7\n@ Release after:write-code jira:A11Y-8\n@ New dependent after:write-code\n@ Stray after:nobody jira:A11Y-9\n',
   });

@@ -11,7 +11,7 @@ Home and End: first or last item.
 Page Up and Page Down: move ten items.
 Right arrow: expand a task to show its notes and subtasks, or move to its first subtask. Tasks with notes start collapsed.
 Left arrow: collapse a task, or move to its parent.
-Enter: open the actions menu for the item. It starts with the item's full details: status, dates, file and line, notes, lists, Jira and goals. On a group, Enter expands or collapses it.
+Enter: open the actions menu for the item. It starts with the item's full details: status, dates, file and line, notes, lists, Jira, and which buckets apply and whether they are inherited from the parent task or the list. On a group, Enter expands or collapses it.
 Escape: close any dialog, including this help.
 
 
@@ -30,8 +30,8 @@ VIEWS
 Pressing a view key says the view name straight away, before the first item is read.
 Minus: My list.
 Equals: all lists.
-Shift and g: Goals, each goal followed by its linked tasks.
-Shift and t: My Day. Tasks you picked for today, earlier picks still open (spoken as carried over), overdue tasks and tasks due today, High priority first. Goals, waiting on others, blocked tasks and tasks on not-actionable lists are left out. The status line gives the counts.
+Shift and g: Buckets, each bucket followed by its tasks, then No bucket: how many open and done tasks have no bucket, and the open ones.
+Shift and t: My Day. Tasks you picked for today, earlier picks still open (spoken as carried over), overdue tasks and tasks due today, High priority first. Ongoing tasks, waiting on others, blocked tasks and tasks on not-actionable lists are left out. The status line gives the counts.
 Shift and a: Next actions. Open tasks with no open subtasks, grouped by file, High priority first, then in progress. A task with subtasks shows its subtasks instead. Same exclusions as My Day.
 Left bracket and right bracket: previous or next list.
 v: jump to the view menu.
@@ -61,7 +61,7 @@ s or ampersand: add a note under the task, after its other notes in the file.
 t: pick the task for today, or take it out of My Day. A pick still open tomorrow carries over. Written as today: and a date.
 Shift and p: cycle the priority: Medium, High, Low, Medium. Written as p:high or p:low; Medium has no token. Syncs to the Jira Priority field.
 Shift and b: choose the tasks this one is blocked by. A checkbox list opens with a filter field: Up and Down move, Space ticks, Enter saves. Written as after: and the blocker's id:. A task is blocked until its blockers are done. Syncs as Jira Blocks links.
-y: link the task to goals. A checkbox list of goals opens: Up and Down move, Space ticks or unticks, Enter saves.
+y: choose the task's buckets. A checkbox list of buckets opens with the current ones ticked; inherited ones say inherited from parent or from list. Up and Down move, Space ticks or unticks, Enter saves. Moving the mouse over an item focuses it so VoiceOver reads it. Ticking exactly the inherited buckets removes the task's own. On a file row in By file, or a list in All lists, y sets the list's default buckets, written on the file's first line.
 o: open the task's file in your text editor.
 u: undo the last change.
 Delete or Backspace: in a normal list, take the item off that list. Anywhere else, and in a list that keeps its tasks in a file, delete the task and its subtasks. The text stays in the file with a dollar sign in front. u undoes it.

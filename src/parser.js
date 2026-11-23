@@ -21,9 +21,10 @@ const STRONG_MARKERS = /[+@<>•]/;
 // A line starting with & is a note of the nearest task above it, however many lines lie between.
 const NOTE_RE = /^[ \t]*&[ \t]*(.*)$/;
 const JIRA_RE = /(^|\s)jira:([A-Za-z][A-Za-z0-9_]*-\d+)(?![\w-])/;
-// jira:label on a goal line: sync tags linked tasks with a label instead of making the goal an issue.
+// jira:label makes the line a bucket: sync tags the tasks in it with a label instead of making the bucket an issue.
 const JIRA_LABEL_RE = /(^|\s)jira:label(?![\w-])/i;
-// goal:some-id. On a ~ (ongoing) line the first one is that goal's own id; every other one links to a goal.
+// goal:some-id. On a bucket line (jira:label) the first one is the bucket's own id; on any other line each one puts
+// the task in that bucket. On a file's title line they are the file's default buckets. goal:none means "no bucket".
 // p:high and p:low set the priority (no token means medium). id:slug names a task so others can wait for it with after:slug.
 const PRIORITY_RE = /(^|\s)p:(high|medium|med|low)(?![\w-])/gi;
 const ID_RE = /(^|\s)id:([A-Za-z0-9][A-Za-z0-9-]*)(?![\w-])/g;
@@ -222,6 +223,21 @@ function parseText(text, options = {}) {
     return -1;
   };
 
+  // The title line (the first non-empty line, when it is not a marked task or an & note) can carry goal: tokens:
+  // the file's default buckets, which every task without its own buckets inherits.
+  let titleLine = -1;
+  for (let i = 0; i < lines.length; i += 1) {
+    if (legend.legendLines.has(i) || isBlank(i)) continue;
+    if (!info[i] && !ampNote(lines[i])) titleLine = i;
+    break;
+  }
+  const defaultBuckets = [];
+  const titleText = (t) => t.replace(GOAL_RE, (m, pre, id) => {
+    if (!defaultBuckets.includes(id.toLowerCase())) defaultBuckets.push(id.toLowerCase());
+    return pre;
+  }).replace(/\s+/g, ' ').trim();
+  if (titleLine >= 0) titleText(lines[titleLine]);
+
   const items = [];
   const groups = [];
   let stack = [];
@@ -269,7 +285,7 @@ function parseText(text, options = {}) {
     // Unmarked line. A deleted ($) line only keeps what is indented under it; later lines are no longer its notes.
     const cut = stack.findIndex((s) => s.flags.excluded && s.indent >= indent);
     if (cut >= 0) stack = stack.slice(0, cut);
-    const trimmed = line.trim();
+    const trimmed = i === titleLine ? titleText(line) || line.trim() : line.trim();
     const nn = nextNonBlank(i);
     const nextIsMarked = nn >= 0 && info[nn] !== null;
     const endsColon = /:$/.test(trimmed);
@@ -289,7 +305,7 @@ function parseText(text, options = {}) {
     if (unmarkedMode === 'tasks') {
       const flags = emptyFlags();
       flags.todo = true;
-      const parsed = stripTokens(trimmed, ref);
+      const parsed = stripTokens(line.trim(), ref);
       const item = makeTask(i, line, indent, flags, parsed, groups, true);
       attach(item, stack, items);
       continue;
@@ -328,8 +344,10 @@ function parseText(text, options = {}) {
     for (const c of it.children) exclude(items[c]);
   };
   for (const it of items) if (it.kind === 'task' && it.flags.excluded) exclude(it);
+  // A title line that is itself a task (unmarked lines are tasks in this file) holds no defaults.
+  if (titleLine >= 0 && items.some((it) => it.lineIndex === titleLine && it.kind !== 'unmarked')) titleLine = -1;
 
-  return { lines, eols, items, legend: { symbols, unmarked: legend.unmarked, hasLegend: legend.hasLegend, lines: [...legend.legendLines] }, unmarkedMode, symbols };
+  return { lines, eols, items, legend: { symbols, unmarked: legend.unmarked, hasLegend: legend.hasLegend, lines: [...legend.legendLines] }, unmarkedMode, symbols, title: titleLine >= 0 ? { lineIndex: titleLine, buckets: defaultBuckets, raw: lines[titleLine], text: titleText(lines[titleLine]) || lines[titleLine].trim() } : null };
 }
 
 function groupPath(groups) {
@@ -356,8 +374,8 @@ function makeTask(lineIndex, raw, indent, flags, parsed, groups, implicit) {
     waitsFor: parsed.waitsFor,
     jira: parsed.jira,
     jiraLabel: parsed.jiraLabel,
-    goalId: flags.ongoing && parsed.goals.length ? parsed.goals[0] : null,
-    goalLinks: flags.ongoing ? parsed.goals.slice(1) : parsed.goals,
+    goalId: parsed.jiraLabel && parsed.goals.length ? parsed.goals[0] : null,
+    goalLinks: parsed.jiraLabel ? parsed.goals.slice(1) : parsed.goals,
     implicit,
     group: groupPath(groups),
     parent: -1,

@@ -1,13 +1,13 @@
 'use strict';
 
 // Blocked by: any task can carry an id:slug token, and others wait for it with after:slug (several allowed).
-// A goal's own goal: id is a valid target too. A task is blocked while any task it waits for is open; a done task,
+// A bucket's own goal: id is a valid target too. A task is blocked while any task it waits for is open; a done task,
 // or a $ (deleted) one that is no longer indexed, no longer blocks. Unresolved after: tokens are left alone.
 // Installed onto App.prototype by app.js; link() is called by the indexer after every scan.
 
-const { slugOf, isGoal } = require('./goals');
+const { slugOf, isBucket } = require('./buckets');
 
-/** Map from target id (id: or a goal's own goal: id) to the task that carries it. First one wins. */
+/** Map from target id (id: or a bucket's own goal: id) to the task that carries it. First one wins. */
 function targetMap(tasks) {
   const map = new Map();
   for (const t of tasks) if (t.refId && !map.has(t.refId)) map.set(t.refId, t);
@@ -54,7 +54,7 @@ function install(App, HttpError) {
     return {
       task: t.text,
       tasks: this.index.tasks
-        .filter((c) => c.id !== t.id && (mine.has(c.id) || (!c.flags.done && !isGoal(c) && !waitsForMe(c))))
+        .filter((c) => c.id !== t.id && (mine.has(c.id) || (!c.flags.done && !isBucket(c) && !waitsForMe(c))))
         .map((c) => ({ id: c.id, text: c.text, done: c.flags.done, file: c.fileLabel, line: c.line, linked: mine.has(c.id), blocked: !!c.blocked })),
     };
   };
@@ -96,7 +96,7 @@ function install(App, HttpError) {
           for (const x of this.index.tasks) {
             for (const v of [x.refId, x.goalId, ...(x.goalLinks || []), ...(x.waitsFor || [])]) if (v) taken.add(v);
           }
-          const base = slugOf(b.text) === 'goal' ? 'task' : slugOf(b.text);
+          const base = slugOf(b.text) === 'bucket' ? 'task' : slugOf(b.text);
           target = base;
           for (let n = 2; taken.has(target); n += 1) target = `${base}-${n}`;
           const r = this.lineWrite(b, 'refId', target);

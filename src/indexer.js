@@ -5,6 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { EventEmitter } = require('node:events');
 const { parseText } = require('./parser');
+const { computeBuckets } = require('./buckets');
 const { link: linkBlockers } = require('./blocks');
 const { decode, UnsupportedFileError } = require('./writer');
 
@@ -136,7 +137,7 @@ class Index extends EventEmitter {
           problems.push({ file: e.abs, label, message: entry.error });
           return;
         }
-        const file = { file: e.abs, label, rel: e.rel, folderIndex, folderName, mtimeMs: st.mtimeMs, unmarkedMode: entry.parsed.unmarkedMode, hasLegend: entry.parsed.legend.hasLegend, taskCount: 0 };
+        const file = { file: e.abs, label, rel: e.rel, folderIndex, folderName, mtimeMs: st.mtimeMs, unmarkedMode: entry.parsed.unmarkedMode, hasLegend: entry.parsed.legend.hasLegend, taskCount: 0, title: entry.parsed.title };
         files.push(file);
         this.collect(entry.parsed, file, tasks, unmarked);
       });
@@ -149,6 +150,7 @@ class Index extends EventEmitter {
 
     this.files = files;
     linkBlockers(tasks);
+    this.buckets = computeBuckets(tasks, files);
     this.tasks = tasks;
     this.unmarked = unmarked;
     this.problems = problems;
@@ -256,7 +258,7 @@ class Index extends EventEmitter {
   }
 
   get(id) {
-    // Rows that show a task a second time (a task under each of its goals) use "taskId@where" ids.
+    // Rows that show a task a second time (a task under each of its buckets) use "taskId@where" ids.
     return this.byId.get(id) || this.byId.get(String(id).split('@')[0]) || null;
   }
 

@@ -384,56 +384,143 @@ test('a list using its file only for notes still keeps tasks by hand', async () 
   assert.equal(read(notes, 'a.txt'), '@ task\n');
 });
 
-test('goals: y links a task to several goals, the goal gets an id from its text, unticking removes it, undo restores both files', async () => {
-  const { notes, app } = setup({ 'goals.txt': '~ Building partner network\n~ DERG work\n', 'a.txt': '@ call Bob\n' });
+test('buckets: y puts a task in several buckets, the bucket gets an id from its text, unticking removes it, undo restores both files', async () => {
+  const { notes, app } = setup({ 'buckets.txt': '~ Building partner network jira:label\n~ DERG work jira:label\n~ just ongoing\n', 'a.txt': '@ call Bob\n' });
   const id = (text) => find(app, text).id;
-  const choices = app.goalChoices(id('call Bob'));
-  assert.deepEqual(choices.goals.map((g) => [g.text, g.linked]), [['Building partner network', false], ['DERG work', false]]);
-  const res = await app.action({ id: id('call Bob'), op: 'goalSet', value: { ids: [id('Building partner network'), id('DERG work')] } });
-  assert.match(res.message, /Linked to goals: Building partner network; DERG work/);
-  assert.equal(read(notes, 'goals.txt'), '~ Building partner network goal:building-partner-network\n~ DERG work goal:derg-work\n');
+  const choices = app.bucketChoices({ id: id('call Bob') });
+  assert.deepEqual(choices.buckets.map((g) => [g.text, g.checked, g.inherited]), [['Building partner network', false, false], ['DERG work', false, false]], 'only jira:label lines are buckets');
+  const res = await app.action({ id: id('call Bob'), op: 'bucketSet', value: { ids: [id('Building partner network'), id('DERG work')] } });
+  assert.match(res.message, /Buckets: Building partner network; DERG work\. Task: call Bob/);
+  assert.equal(read(notes, 'buckets.txt'), '~ Building partner network jira:label goal:building-partner-network\n~ DERG work jira:label goal:derg-work\n~ just ongoing\n');
   assert.equal(read(notes, 'a.txt'), '@ call Bob goal:building-partner-network goal:derg-work\n');
   const bob = find(app, 'call Bob');
   assert.equal(bob.text, 'call Bob');
-  assert.match(bob.meta[0], /^Goals: Building partner network; DERG work$/);
+  assert.match(bob.meta[0], /^Buckets: Building partner network; DERG work$/);
   assert.equal(res.focusId, bob.id);
 
-  // Untick one goal.
-  await app.action({ id: bob.id, op: 'goalSet', value: { ids: [id('DERG work')] } });
+  // Untick one bucket.
+  await app.action({ id: bob.id, op: 'bucketSet', value: { ids: [id('DERG work')] } });
   assert.equal(read(notes, 'a.txt'), '@ call Bob goal:derg-work\n');
   app.undo();
   assert.equal(read(notes, 'a.txt'), '@ call Bob goal:building-partner-network goal:derg-work\n');
   app.undo();
-  assert.equal(read(notes, 'goals.txt'), '~ Building partner network\n~ DERG work\n');
+  assert.equal(read(notes, 'buckets.txt'), '~ Building partner network jira:label\n~ DERG work jira:label\n~ just ongoing\n');
   assert.equal(read(notes, 'a.txt'), '@ call Bob\n');
-  await assert.rejects(() => app.action({ id: id('DERG work'), op: 'goalSet', value: { ids: [id('DERG work')] } }), /cannot belong to itself/);
-  await assert.rejects(() => app.action({ id: id('call Bob'), op: 'goalSet', value: { ids: [id('call Bob')] } }), /cannot belong to itself/);
+  await assert.rejects(() => app.action({ id: id('DERG work'), op: 'bucketSet', value: { ids: [id('DERG work')] } }), /is a bucket/);
+  await assert.rejects(() => app.action({ id: id('call Bob'), op: 'bucketSet', value: { ids: [id('just ongoing')] } }), /Not a bucket/);
+  // The old op name still works.
+  await app.action({ id: id('call Bob'), op: 'goalSet', value: { ids: [id('DERG work')] } });
+  assert.equal(read(notes, 'a.txt'), '@ call Bob goal:derg-work\n');
 });
 
-test('goals: links survive rewording the goal, ids stay unique, unknown tokens are kept, Goals view shows counts', async () => {
+test('buckets: y on a ~ line without its own id never takes over the bucket id (regression)', async () => {
   const { notes, app } = setup({
-    'g.txt': '~ Partner network goal:partner-network\n~ Partner network!\n',
-    'a.txt': '@ call Bob goal:partner-network goal:gone\n+ sent email goal:partner-network\n@ plan day\n',
+    'b.txt': '~ Program operations goal:program-operations jira:label\n',
+    'a.txt': '@~ Add hours each week\n@ other\n',
   });
-  fs.writeFileSync(path.join(notes, 'g.txt'), '~ Grow the partner network goal:partner-network\n~ Partner network!\n');
+  await app.action({ id: find(app, 'Add hours each week').id, op: 'bucketSet', value: { ids: [find(app, 'Program operations').id] } });
+  assert.equal(read(notes, 'a.txt'), '@~ Add hours each week goal:program-operations\n@ other\n');
+  const bx = app.index.buckets;
+  assert.equal(bx.byId.get('program-operations').text, 'Program operations', 'the bucket keeps its id');
+  assert.deepEqual(bx.list.map((b) => b.text), ['Program operations'], 'the ~ line did not become a second bucket');
+  assert.equal(find(app, 'Add hours each week').goalId, undefined);
+  assert.deepEqual(app.index.get(find(app, 'Add hours each week').id).buckets, ['program-operations']);
+  // Saving again is no change, and the bucket still has exactly one task.
+  const again = await app.action({ id: find(app, 'Add hours each week').id, op: 'bucketSet', value: { ids: [find(app, 'Program operations').id] } });
+  assert.match(again.message, /^No change/);
+  assert.equal(bx.members.get('program-operations').length, 1);
+});
+
+test('buckets: a task inherits from its parent, else from the list title line; an own set replaces it; ticking the inherited set removes the override', async () => {
+  const { notes, app } = setup({
+    'b.txt': 'Buckets\n~ Advisory goal:advisory jira:label\n~ Testing goal:testing jira:label\n\t@ under testing\n',
+    'a.txt': 'Assessment system goal:testing\n\n@ top\n\t@ child\n\t\t@ grandchild\n@ own goal:advisory\n\t@ own child\n@ nothing goal:none\n',
+  });
+  const t = (text) => app.index.get(find(app, text).id);
+  assert.deepEqual([t('top').buckets, t('top').bucketSource], [['testing'], 'list']);
+  assert.deepEqual([t('grandchild').buckets, t('grandchild').bucketSource, t('grandchild').bucketFrom], [['testing'], 'list', null]);
+  assert.deepEqual([t('own').buckets, t('own').bucketSource], [['advisory'], 'own']);
+  assert.deepEqual([t('own child').buckets, t('own child').bucketSource, t('own child').bucketFrom], [['advisory'], 'parent', t('own').id]);
+  assert.deepEqual([t('nothing').buckets, t('nothing').bucketSource], [[], 'own']);
+  assert.deepEqual(t('under testing').buckets, ['testing'], 'a task under a bucket line is in it');
+  assert.equal(find(app, 'top').meta[0], 'Bucket: Testing (inherited from list: Assessment system)');
+  assert.equal(find(app, 'own child').meta[0], 'Bucket: Advisory (inherited from parent: own)');
+  assert.equal(find(app, 'nothing').meta[0], 'No bucket (set on this task)');
+  // The title line is still a group, its tokens hidden.
+  assert.equal(app.index.get(find(app, 'top').id).group, 'Assessment system');
+
+  // The chooser pre-ticks the effective set and marks the inherited ones.
+  const c = app.bucketChoices({ id: find(app, 'child').id });
+  assert.deepEqual(c.buckets.map((b) => [b.text, b.checked, b.inherited]), [['Advisory', false, false], ['Testing', true, true]]);
+  assert.equal(c.inheritedFrom, 'list: Assessment system');
+
+  // An own set replaces the inherited one, and its subtasks follow it.
+  await app.action({ id: find(app, 'child').id, op: 'bucketSet', value: { ids: [find(app, 'Advisory').id] } });
+  assert.match(read(notes, 'a.txt'), /\t@ child goal:advisory\n/);
+  assert.deepEqual([t('grandchild').buckets, t('grandchild').bucketSource], [['advisory'], 'parent']);
+  // Ticking exactly the inherited set again removes the override.
+  let res = await app.action({ id: find(app, 'child').id, op: 'bucketSet', value: { ids: [find(app, 'Testing').id] } });
+  assert.match(res.message, /Bucket: Testing \(inherited from list: Assessment system\)/);
+  assert.match(read(notes, 'a.txt'), /\t@ child\n/);
+  // Unticking everything while something is inherited writes goal:none.
+  await app.action({ id: find(app, 'top').id, op: 'bucketSet', value: { ids: [] } });
+  assert.match(read(notes, 'a.txt'), /\n@ top goal:none\n/);
+  assert.deepEqual(t('grandchild').buckets, []);
+  await app.action({ id: find(app, 'top').id, op: 'bucketSet', value: { ids: [find(app, 'Testing').id] } });
+  assert.match(read(notes, 'a.txt'), /\n@ top\n/);
+
+  // List defaults: set from a file row, written on the title line, and undoable.
+  const before = read(notes, 'a.txt');
+  res = await app.action({ id: `f:${path.join(notes, 'a.txt')}`, op: 'listBucketSet', value: { ids: [find(app, 'Advisory').id, find(app, 'Testing').id] } });
+  assert.match(res.message, /Default buckets for Assessment system: Advisory; Testing/);
+  assert.equal(read(notes, 'a.txt').split('\n')[0], 'Assessment system goal:advisory goal:testing');
+  assert.deepEqual(t('top').buckets, ['advisory', 'testing']);
+  assert.deepEqual(app.bucketChoices({ file: path.join(notes, 'a.txt') }).buckets.map((b) => b.checked), [true, true]);
+  app.undo();
+  assert.equal(read(notes, 'a.txt'), before);
+  await app.action({ id: `f:${path.join(notes, 'a.txt')}`, op: 'listBucketSet', value: { ids: [] } });
+  assert.equal(read(notes, 'a.txt').split('\n')[0], 'Assessment system');
+  assert.deepEqual(t('top').buckets, []);
+  // A file whose first line is a task has no title line.
+  assert.throws(() => app.bucketChoices({ file: path.join(notes, 'b.txt').replace('b.txt', 'nope.txt') }), /no longer/);
+});
+
+test('buckets: a file without a title line refuses defaults; the By file row carries its defaults', async () => {
+  const { notes, app } = setup({ 'b.txt': '~ Ops goal:ops jira:label\n', 'a.txt': 'Team goal:ops\n\n@ one\n' });
+  await assert.rejects(() => app.action({ id: `f:${path.join(notes, 'b.txt')}`, op: 'listBucketSet', value: { ids: [] } }), /no title line/);
+  const row = items(app, 'file').find((i) => i.type === 'group' && i.text === 'notes/a.txt');
+  assert.equal(row.file, path.join(notes, 'a.txt'));
+  assert.ok(row.meta.includes('Default bucket: Ops'));
+});
+
+test('buckets: rewording keeps membership, ids stay unique, unknown tokens are kept, Buckets view nests and counts No bucket', async () => {
+  const { notes, app } = setup({
+    'g.txt': '~ Partner network goal:partner-network jira:label\n~ Partner network! jira:label\n',
+    'a.txt': '@ call Bob goal:partner-network goal:gone\n\t@ bob sub\n+ sent email goal:partner-network\n@ plan day\n@ loose\n+ loose done\n',
+  });
+  fs.writeFileSync(path.join(notes, 'g.txt'), '~ Grow the partner network goal:partner-network jira:label\n~ Partner network! jira:label\n');
   app.index.refresh(NOW());
-  const goal = find(app, 'Grow the partner network');
-  assert.equal(goal.meta.at(-1), '2 linked tasks');
-  assert.match(find(app, 'call Bob').meta[0], /^Goal: Grow the partner network$/);
+  const bucket = find(app, 'Grow the partner network');
+  assert.equal(bucket.meta.at(-1), '3 tasks');
+  assert.match(find(app, 'call Bob').meta[0], /^Bucket: Grow the partner network$/);
 
-  await app.action({ id: find(app, 'plan day').id, op: 'goalSet', value: { ids: [find(app, 'Partner network!').id] } });
-  assert.equal(read(notes, 'g.txt'), '~ Grow the partner network goal:partner-network\n~ Partner network! goal:partner-network-2\n');
-  await app.action({ id: find(app, 'call Bob').id, op: 'goalSet', value: { ids: [] } });
-  assert.match(read(notes, 'a.txt'), /^@ call Bob goal:gone\n/);
+  await app.action({ id: find(app, 'plan day').id, op: 'bucketSet', value: { ids: [find(app, 'Partner network!').id] } });
+  assert.equal(read(notes, 'g.txt'), '~ Grow the partner network goal:partner-network jira:label\n~ Partner network! jira:label goal:partner-network-2\n');
+  await app.action({ id: find(app, 'call Bob').id, op: 'bucketSet', value: { ids: [find(app, 'Partner network!').id] } });
+  assert.match(read(notes, 'a.txt'), /^@ call Bob goal:partner-network-2 goal:gone\n/);
+  await app.action({ id: find(app, 'call Bob').id, op: 'bucketSet', value: { ids: [find(app, 'Grow the partner network').id] } });
 
-  const view = items(app, 'goals');
-  assert.deepEqual(view.map((i) => [i.level, i.text]), [[1, 'Grow the partner network'], [1, 'Partner network!'], [2, 'plan day']]);
-  assert.equal(view[0].meta[0], '0 open, 1 done linked task');
-  const all = items(app, 'goals', { showCompleted: true });
-  assert.deepEqual(all.map((i) => i.text), ['Grow the partner network', 'sent email', 'Partner network!', 'plan day']);
-  // A task row under a goal acts on the task.
-  await app.action({ id: view[2].id, op: 'toggleDone' });
-  assert.equal(read(notes, 'a.txt').split('\n')[2], '+@ plan day goal:partner-network-2 done:2026-11-16');
+  const view = items(app, 'buckets');
+  assert.deepEqual(view.map((i) => [i.level, i.text]), [[1, 'Grow the partner network'], [2, 'call Bob'], [3, 'bob sub'], [1, 'Partner network!'], [2, 'plan day'], [1, 'No bucket'], [2, 'loose']]);
+  assert.equal(view[0].meta[0], '2 open, 1 done tasks');
+  assert.equal(view[5].meta[0], '1 open, 1 done tasks');
+  assert.equal(view[5].id, 'g:nobucket');
+  assert.equal(items(app, 'goals').length, view.length, 'the old view name still opens Buckets');
+  const all = items(app, 'buckets', { showCompleted: true });
+  assert.deepEqual(all.map((i) => i.text), ['Grow the partner network', 'call Bob', 'bob sub', 'sent email', 'Partner network!', 'plan day', 'No bucket', 'loose', 'loose done']);
+  // A task row under a bucket acts on the task.
+  await app.action({ id: view[4].id, op: 'toggleDone' });
+  assert.equal(read(notes, 'a.txt').split('\n')[3], '+@ plan day goal:partner-network-2 done:2026-11-16');
 });
 
 test('My Day and Next actions: picks roll over, overdue and due today join, priority sorts, blocked and exclusions stay out', async () => {
@@ -507,7 +594,7 @@ test('priority cycles medium, high, low, medium, shows in details and speech, an
 });
 
 test('Blocked by: blockSet writes id: and after:, keeps ids unique, rejects cycles, and unblocks when the blocker is done', async () => {
-  const { notes, app } = setup({ 'a.txt': '~ Ship it goal:ship-it\n@ Ship it\n@ write code\n@ review code\n@ release\n' });
+  const { notes, app } = setup({ 'a.txt': '~ Ship it goal:ship-it jira:label\n@ Ship it\n@ write code\n@ review code\n@ release\n' });
   const id = (n) => find(app, n).id;
   const choices = app.blockChoices(id('release'));
   assert.deepEqual(choices.tasks.map((c) => c.text), ['Ship it', 'write code', 'review code']);
@@ -515,14 +602,14 @@ test('Blocked by: blockSet writes id: and after:, keeps ids unique, rejects cycl
 
   let res = await app.blockSet(app.task(id('release')), { ids: [id('write code'), id('review code')] });
   assert.match(res.message, /Blocked by: write code; review code/);
-  assert.equal(read(notes, 'a.txt'), '~ Ship it goal:ship-it\n@ Ship it\n@ write code id:write-code\n@ review code id:review-code\n@ release after:write-code after:review-code\n');
+  assert.equal(read(notes, 'a.txt'), '~ Ship it goal:ship-it jira:label\n@ Ship it\n@ write code id:write-code\n@ review code id:review-code\n@ release after:write-code after:review-code\n');
   const rel = find(app, 'release');
   assert.deepEqual(rel.words, ['Open', 'Blocked']);
   assert.ok(rel.meta.includes('Blocked by: write code; review code'));
   assert.ok(find(app, 'write code').meta.includes('Blocks 1 task'));
   assert.ok(!items(app, 'next').some((i) => i.text === 'release'));
 
-  // A goal's own id is a valid target, and the task's own slug never clashes with it.
+  // A bucket's own id is a valid target, and the task's own slug never clashes with it.
   res = await app.blockSet(app.task(id('write code')), { ids: [id('Ship it')] });
   assert.equal(read(notes, 'a.txt').split('\n')[2], '@ write code id:write-code after:ship-it');
 

@@ -161,7 +161,7 @@ function applyOp(raw, op, arg, ctx) {
     case 'goals': {
       // arg: { own: id of this goal or null, links: ids of goals this task belongs to }. Rewrites every goal: token.
       const ids = [arg && arg.own, ...((arg && arg.links) || [])].filter(Boolean);
-      if (ids.some((x) => !/^[a-z0-9][a-z0-9-]*$/.test(x))) throw new OpError('Goal ids use lowercase letters, digits and hyphens');
+      if (ids.some((x) => !/^[a-z0-9][a-z0-9-]*$/.test(x))) throw new OpError('Bucket ids use lowercase letters, digits and hyphens');
       let body = d.body.replace(new RegExp(GOAL_RE.source, 'g'), () => '').replace(/[ \t]+$/, '');
       for (const x of ids) body = appendToken(body, `goal:${x}`);
       d.body = body;

@@ -136,8 +136,8 @@ test('CRLF, CR and missing trailing newline are split without losing information
   assert.deepEqual(r.eols, ['\r\n', '\r', '']);
 });
 
-test('goal: tokens: first on a ~ line is its id, others are links; stripped from text; not inside words', () => {
-  const [g, t, u] = tasks(parse('~ Partner network goal:partner-network goal:Big-1\n@ call Bob goal:partner-network goal:derg goal:derg\n@ see mygoal:x and goal:-bad\n'));
+test('goal: tokens: first on a bucket (jira:label) line is its id, others are links; a plain ~ line never claims an id; stripped from text; not inside words', () => {
+  const [g, t, u, o] = tasks(parse('~ Partner network goal:partner-network goal:Big-1 jira:label\n@ call Bob goal:partner-network goal:derg goal:derg\n@ see mygoal:x and goal:-bad\n~ Add hours goal:program-operations\n'));
   assert.equal(g.text, 'Partner network');
   assert.equal(g.goalId, 'partner-network');
   assert.deepEqual(g.goalLinks, ['big-1']);
@@ -146,6 +146,15 @@ test('goal: tokens: first on a ~ line is its id, others are links; stripped from
   assert.deepEqual(t.goalLinks, ['partner-network', 'derg']);
   assert.equal(u.text, 'see mygoal:x and goal:-bad');
   assert.deepEqual(u.goalLinks, []);
+  assert.equal(o.goalId, null);
+  assert.deepEqual(o.goalLinks, ['program-operations']);
+});
+
+test('the first plain line is the title line: its goal: tokens are the list defaults and are hidden', () => {
+  const r = parse('\nAssessment system goal:testing goal:Ops\n\n@ one goal:x\n', { unmarked: 'notes' });
+  assert.deepEqual([r.title.lineIndex, r.title.buckets, r.title.text], [1, ['testing', 'ops'], 'Assessment system']);
+  assert.deepEqual(tasks(r)[0].goalLinks, ['x']);
+  assert.equal(parse('@ first task goal:x\nTitle goal:y\n').title, null, 'a task first means no title line');
 });
 
 test('jira:label marks a label goal and is hidden; other jira: words are not it', () => {

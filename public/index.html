@@ -66,17 +66,17 @@
     </form>
   </dialog>
 
-  <dialog id="goals-dialog" aria-labelledby="goals-title">
-    <form method="dialog" id="goals-form">
-      <h2 id="goals-title">Link to goals</h2>
-      <p id="goals-task"></p>
+  <dialog id="buckets-dialog" aria-labelledby="buckets-title">
+    <form method="dialog" id="buckets-form">
+      <h2 id="buckets-title">Choose buckets</h2>
+      <p id="buckets-task"></p>
       <fieldset>
-        <legend>This task belongs to</legend>
-        <div id="goals-choices"></div>
+        <legend id="buckets-legend">This task is in</legend>
+        <div id="buckets-choices"></div>
       </fieldset>
-      <p id="goals-empty" hidden>No goals yet. A goal is an ongoing task: start its line with ~.</p>
-      <p id="goals-error" class="error" role="alert"></p>
-      <p><button type="submit" id="goals-save">Save</button> <button type="button" id="goals-cancel">Cancel</button></p>
+      <p id="buckets-empty" hidden>No buckets yet. A bucket is a line marked jira:label, for example ~ Advisory services jira:label.</p>
+      <p id="buckets-error" class="error" role="alert"></p>
+      <p><button type="submit" id="buckets-save">Save</button> <button type="button" id="buckets-cancel">Cancel</button></p>
     </form>
   </dialog>
 
@@ -282,7 +282,7 @@
         <tr><th scope="row">shift and b</th><td>Blocked by: tick the tasks that must be done first. The task you wait for gets an id: token (once) and this task gets an after: token. A blocked task stays out of My Day and Next actions and is read as Blocked in other views, until every task it waits for is done or deleted</td></tr>
         <tr><th scope="row">j</th><td>Jira: link, status, create</td></tr>
         <tr><th scope="row">shift and j</th><td>Sync with Jira: shows every change in both directions for the lists that sync to Jira, grouped as conflicts, new issues, updates to Jira and updates to files. Tick what to do, then Apply. Nothing is sent or written before that</td></tr>
-        <tr><th scope="row">y</th><td>Link the task to goals (ongoing tasks, marked with ~). A goal with jira:label on its line is a label goal: Sync with Jira tags its linked tasks with a label such as bucket-advisory-services instead of making the goal an issue</td></tr>
+        <tr><th scope="row">y</th><td>Choose the task's buckets. A bucket is a line marked jira:label; Sync with Jira tags the tasks in it with a label such as bucket-advisory-services. A task without buckets of its own inherits its parent task's, or else its list's default buckets; inherited ones show ticked and say so. On a file's row in By file or All lists, y sets that list's default buckets, saved on the file's first line</td></tr>
         <tr><th scope="row">o</th><td>Open the source file in your text editor</td></tr>
         <tr><th scope="row">u</th><td>Undo the last change</td></tr>
         <tr><th scope="row">s or &amp;</th><td>On a task: add a note to it, below its other notes in the file. On an unmarked line in triage: mark it as a note by writing "&amp; " in front of it in the file; it attaches to the task above. In a file, any line starting with &amp; is a note of the nearest task above it. Shift and s marks every remaining line in the file as a note</td></tr>
@@ -302,8 +302,8 @@
         <tr><th scope="row">Option and Up, Option and Down</th><td>In a list with manual order: move the item up or down one place</td></tr>
         <tr><th scope="row">minus</th><td>Open My list</td></tr>
         <tr><th scope="row">equals</th><td>Open All lists</td></tr>
-        <tr><th scope="row">shift and g</th><td>Open Goals: each goal with its linked tasks</td></tr>
-        <tr><th scope="row">shift and t</th><td>Open My Day: tasks you picked for today (and earlier picks still open), overdue tasks and tasks due today, High priority first. Goals, tasks waiting on others, blocked tasks and tasks on not-actionable lists are left out</td></tr>
+        <tr><th scope="row">shift and g</th><td>Open Buckets: each bucket with its tasks, then No bucket with the open and done tasks that are in none</td></tr>
+        <tr><th scope="row">shift and t</th><td>Open My Day: tasks you picked for today (and earlier picks still open), overdue tasks and tasks due today, High priority first. Ongoing tasks, tasks waiting on others, blocked tasks and tasks on not-actionable lists are left out</td></tr>
         <tr><th scope="row">shift and a</th><td>Open Next actions: open tasks with no open subtasks, grouped by file, High priority first, then in progress. A task with subtasks shows its subtasks instead. Same exclusions as My Day</td></tr>
         <tr><th scope="row">a or @</th><td>Triage: mark the unmarked line as a to-do. The symbol keys also work on unmarked lines</td></tr>
         <tr><th scope="row">f</th><td>Triage: show only files not yet reviewed or changed since review</td></tr>

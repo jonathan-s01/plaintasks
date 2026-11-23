@@ -9,7 +9,7 @@ const { JiraError, KEY_RE } = require('./jira');
 const { applyOp } = require('./ops');
 const { toISO } = require('./dates');
 const { transformFile, ConflictError } = require('./writer');
-const { goalIndex } = require('./goals');
+const { bucketIndex, isBucket } = require('./buckets');
 
 const STARTED_RE = /^started:?\s+(\d{4}-\d{2}-\d{2})\.?$/i;
 const FIELD_RE = /^[A-Za-z0-9_]+$/;
@@ -204,19 +204,19 @@ function managedLabels(cfg, ctxLists) {
   return new Set([cfg.labels.waiting, cfg.labels.ongoing, ...ctxLists.flatMap((l) => l.jiraLabels || [])].filter(Boolean));
 }
 
-const isLabelGoal = (g) => !!(g && g.jiraLabel && g.flags && g.flags.ongoing);
-
-/** Labels for the label goals (jira:label) a task links to directly: prefix plus the goal id. */
-function bucketLabels(cfg, t, goalsById) {
-  if (!goalsById) return [];
-  return (t.goalLinks || []).filter((id) => isLabelGoal(goalsById.get(id)) && goalsById.get(id).id !== t.id).map((id) => `${cfg.labelPrefix}${id}`);
+/** Labels for a task's buckets (own, or inherited from its parent task or its list): prefix plus the bucket id. */
+function bucketLabels(cfg, t, bucketsById) {
+  if (!bucketsById) return [];
+  // Deleted ($) lines are not indexed, so they have no inherited buckets: use their own tokens.
+  const ids = t.buckets || (t.goalLinks || []).filter((id) => bucketsById.has(id));
+  return ids.filter((id) => bucketsById.has(id) && bucketsById.get(id).id !== t.id).map((id) => `${cfg.labelPrefix}${id}`);
 }
 
-function wantedLabels(cfg, t, list, goalsById) {
+function wantedLabels(cfg, t, list, bucketsById) {
   const out = new Set(list.jiraLabels || []);
   if (t.flags.waitingOnOthers && cfg.labels.waiting) out.add(cfg.labels.waiting);
   if (t.flags.ongoing && cfg.labels.ongoing) out.add(cfg.labels.ongoing);
-  for (const l of bucketLabels(cfg, t, goalsById)) out.add(l);
+  for (const l of bucketLabels(cfg, t, bucketsById)) out.add(l);
   return out;
 }
 
@@ -231,7 +231,7 @@ function wantedBlockers(index, t, willCreate = () => false) {
   const out = new Map();
   for (const bid of t.blockedBy || []) {
     const b = index.get(bid);
-    if (!b || b.id === t.id || isLabelGoal(b)) continue;
+    if (!b || b.id === t.id || isBucket(b)) continue;
     if (b.jira) out.set(b.jira.toUpperCase(), b);
     else if (willCreate(b.id)) out.set(`new:${b.id}`, b);
   }
@@ -270,11 +270,11 @@ function fieldStates(ctx, entry, issue) {
     const j = isFlagged(f[ctx.flaggedField]);
     out.flagged = { file: !!t.flags.waitingOnOthers, jira: j, same: j === !!t.flags.waitingOnOthers };
   }
-  const want = wantedLabels(cfg, t, list, ctx.goalsById);
+  const want = wantedLabels(cfg, t, list, ctx.bucketsById);
   const have = new Set(f.labels || []);
   const snap = ((ctx.synced[issue.key] || {}).labels || {}).added || [];
   const add = [...want].filter((l) => !have.has(l));
-  // Labels with the bucket prefix belong to label goals, so any that is no longer wanted goes, whoever added it.
+  // Labels with the bucket prefix belong to buckets, so any that is no longer wanted goes, whoever added it.
   const prefixed = [...have].filter((l) => cfg.labelPrefix && l.startsWith(cfg.labelPrefix));
   const remove = [...new Set([...snap, ...prefixed])].filter((l) => !want.has(l) && have.has(l));
   out.labels = { file: [...want], jira: [...have], add, remove, same: !add.length && !remove.length };
@@ -337,8 +337,8 @@ function install(App, HttpError) {
     const entries = [];
     for (const file of files) {
       const list = listForFile(this.stateData.lists, file);
-      // Label goals (jira:label) are never issues; their linked tasks get a label instead.
-      for (const t of this.index.tasks) if (t.file === file && !isLabelGoal(t)) entries.push({ t, list });
+      // Buckets (jira:label) are never issues; the tasks in them get a label instead.
+      for (const t of this.index.tasks) if (t.file === file && !isBucket(t)) entries.push({ t, list });
       // Deleted ($) lines are not in the index, but a linked one still closes its issue as Won't Do.
       const parsed = this.parsedFor(file);
       const label = this.fileEntry(file).label;
@@ -356,7 +356,7 @@ function install(App, HttpError) {
     }
     const issues = await this.fetchIssues(client, cfg, flaggedField, keys);
     const jstate = this.stateData.jira;
-    return { cfg, client, lists, files, entries, issues, flaggedField, goalsById: goalIndex(this.index).byId, created: new Set(jstate.created), synced: jstate.synced };
+    return { cfg, client, lists, files, entries, issues, flaggedField, bucketsById: bucketIndex(this.index).byId, created: new Set(jstate.created), synced: jstate.synced };
   };
 
   proto.fetchIssues = async function fetchIssues(client, cfg, flaggedField, keys) {
@@ -378,7 +378,7 @@ function install(App, HttpError) {
     const byTaskId = new Map(entries.map((e) => [e.t.id, e]));
     const where = (t) => ({ taskId: t.id, task: t.text, file: t.fileLabel, line: t.line });
     const add = (it) => items.push({ ...it, sig: JSON.stringify([it.from, it.to, it.raw]) });
-    // A task under a label goal is a main task: the label goal is never an issue to be a parent.
+    // A task under a bucket line is a main task: the bucket is never an issue to be a parent.
     const topOf = (t) => {
       let cur = t;
       while (cur.parentId && byTaskId.has(cur.parentId)) cur = byTaskId.get(cur.parentId).t;
@@ -398,7 +398,7 @@ function install(App, HttpError) {
         continue;
       }
       creating.add(t.id);
-      const buckets = bucketLabels(cfg, t, ctx.goalsById);
+      const buckets = bucketLabels(cfg, t, ctx.bucketsById);
       add({
         id: `create:${t.id}`,
         group: 'create',
@@ -455,11 +455,10 @@ function install(App, HttpError) {
             choice: 'skip',
           });
         } else if (jiraChanged) {
-          const dropsGoal = isStatus && s.file === 'ongoing' && pullKind === 'open';
           add({
             ...base, id: `${key}:${field}`, group: 'pull', field, pullKind,
-            label: `${fieldName} changed in Jira: ${jiraWords}${dropsGoal ? '. This removes the ongoing mark (~), so it stops being a goal' : ''}`,
-            from: s.file, to: s.jira, checked: !dropsGoal,
+            label: `${fieldName} changed in Jira: ${jiraWords}`,
+            from: s.file, to: s.jira, checked: true,
           });
         } else {
           add({
@@ -495,31 +494,6 @@ function install(App, HttpError) {
           ...base, id: `${key}:labels`, group: 'push', field: 'labels',
           label: `Labels: ${[lab.add.length ? `add ${lab.add.join(', ')}` : '', lab.remove.length ? `remove ${lab.remove.join(', ')}` : ''].filter(Boolean).join('; ')}`,
           from: lab.jira, to: { add: lab.add, remove: lab.remove }, checked: true,
-        });
-      }
-    }
-
-    // Goal links: a "Relates" link between a task and each goal it belongs to, when both are (or will be) in Jira.
-    const { byId } = goalIndex(this.index);
-    for (const e of entries) {
-      const { t } = e;
-      if (e.excluded || !(t.goalLinks || []).length) continue;
-      const issue = t.jira ? issues.get(t.jira.toUpperCase()) : null;
-      if (t.jira && !issue) continue;
-      if (!t.jira && !creating.has(t.id)) continue;
-      for (const gid of t.goalLinks) {
-        const g = byId.get(gid);
-        if (!g || g.id === t.id || isLabelGoal(g)) continue;
-        if (!g.jira && !creating.has(g.id)) continue;
-        if (issue && g.jira) {
-          const links = (issue.fields && issue.fields.issuelinks) || [];
-          if (links.some((l) => ((l.inwardIssue || l.outwardIssue || {}).key || '').toUpperCase() === g.jira.toUpperCase())) continue;
-        }
-        add({
-          ...where(t), key: t.jira || null, raw: t.raw, id: `link:${t.id}:${gid}`, group: 'push', field: 'link',
-          goalTaskId: g.id,
-          label: `Link to goal ${g.text}${g.jira ? ` (${g.jira})` : ''} as ${cfg.linkType}`,
-          from: null, to: g.jira || g.text, checked: true,
         });
       }
     }
@@ -638,7 +612,7 @@ function install(App, HttpError) {
             if (cfg.reporter) fields.reporter = { accountId: cfg.reporter };
             if (cfg.dueField && dueOf(t)) fields[cfg.dueField] = dueOf(t);
             if (cfg.startField && startOf(t)) fields[cfg.startField] = startOf(t);
-            const labels = [...wantedLabels(cfg, t, list, ctx.goalsById)];
+            const labels = [...wantedLabels(cfg, t, list, ctx.bucketsById)];
             if (labels.length) fields.labels = labels;
             if (t.priority && t.priority !== 'medium') fields.priority = { name: cfg.priorities[t.priority] };
             const made = await client.create(fields);
@@ -704,19 +678,6 @@ function install(App, HttpError) {
             note(true, `Updated ${key} (${done.join(', ')}): ${t.text}`);
           } catch (err) {
             note(false, `Could not update ${key}, ${t.text}: ${err.message}`);
-          }
-        }
-
-        for (const it of chosen.filter((x) => x.field === 'link')) {
-          const a = keyOf(it.taskId);
-          const b = keyOf(it.goalTaskId) || (this.index.get(it.goalTaskId) || {}).jira;
-          try {
-            if (!a || !b) throw new Error('the task or the goal is not in Jira');
-            await client.link(cfg.linkType, a, b);
-            jiraChanges += 1;
-            note(true, `Linked ${a} to goal ${b}: ${it.task}`);
-          } catch (err) {
-            note(false, `Could not link ${it.task} to its goal: ${err.message}`);
           }
         }
 

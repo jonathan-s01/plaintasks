@@ -385,8 +385,8 @@ test('notes expand under a collapsed task, Delete marks it with $, and Option+n 
   }
 });
 
-test('goals: y opens a goal chooser that passes axe, saving announces and shows the goal, G opens the Goals view', async () => {
-  const env = await boot({ 'a.txt': '@ call Bob\n~ Partner network\n~ DERG work\n' });
+test('buckets: y opens a bucket chooser that passes axe, hover focuses a choice, saving announces and shows the bucket, G opens the Buckets view', async () => {
+  const env = await boot({ 'a.txt': '@ call Bob\n~ Partner network jira:label\n~ DERG work jira:label\n' });
   try {
     const { window } = await openPage(env);
     const doc = window.document;
@@ -395,27 +395,32 @@ test('goals: y opens a goal chooser that passes axe, saving announces and shows 
     const live = () => doc.getElementById('live').textContent;
     await waitFor(() => rows().length === 3, 'items');
     key(window, doc.activeElement, 'y');
-    await waitFor(() => doc.getElementById('goals-dialog').hasAttribute('open'), 'chooser opens');
-    const boxes = () => [...doc.querySelectorAll('#goals-choices input')];
-    assert.deepEqual([...doc.querySelectorAll('#goals-choices label')].map((l) => l.textContent), ['Partner network, 0 tasks, notes/a.txt', 'DERG work, 0 tasks, notes/a.txt']);
+    await waitFor(() => doc.getElementById('buckets-dialog').hasAttribute('open'), 'chooser opens');
+    const boxes = () => [...doc.querySelectorAll('#buckets-choices input')];
+    assert.deepEqual([...doc.querySelectorAll('#buckets-choices label')].map((l) => l.textContent), ['Partner network, 0 tasks', 'DERG work, 0 tasks']);
     assert.equal(doc.activeElement, boxes()[0]);
     window.eval(axe.source);
-    const results = await window.axe.run(doc.getElementById('goals-dialog'), { rules: { 'color-contrast': { enabled: false }, region: { enabled: false } } });
+    const results = await window.axe.run(doc.getElementById('buckets-dialog'), { rules: { 'color-contrast': { enabled: false }, region: { enabled: false } } });
     assert.equal(results.violations.length, 0, results.violations.map((v) => v.id).join());
 
+    // Moving the mouse over a choice focuses it, so VoiceOver reads it.
+    doc.querySelectorAll('#buckets-choices label')[1].dispatchEvent(new window.MouseEvent('pointermove', { bubbles: true }));
+    assert.equal(doc.activeElement, boxes()[1]);
+    key(window, boxes()[1], 'ArrowUp');
+    assert.equal(doc.activeElement, boxes()[0]);
     boxes()[1].checked = true;
     key(window, boxes()[0], 'ArrowDown');
     assert.equal(doc.activeElement, boxes()[1]);
     key(window, boxes()[1], 'Enter');
-    await waitFor(() => /Linked to goal: DERG work\. Task: call Bob/.test(live()), 'saved and announced');
-    await waitFor(() => /Goal: DERG work/.test(rows()[0].textContent), 'meta shows the goal');
+    await waitFor(() => /Bucket: DERG work\. Task: call Bob/.test(live()), 'saved and announced');
+    await waitFor(() => /Bucket: DERG work/.test(rows()[0].textContent), 'meta shows the bucket');
     assert.equal(doc.activeElement, rows()[0]);
-    assert.match(fs.readFileSync(path.join(env.notes, 'a.txt'), 'utf8'), /^@ call Bob goal:derg-work\n~ Partner network\n~ DERG work goal:derg-work\n$/);
+    assert.match(fs.readFileSync(path.join(env.notes, 'a.txt'), 'utf8'), /^@ call Bob goal:derg-work\n~ Partner network jira:label\n~ DERG work jira:label goal:derg-work\n$/);
 
     key(window, doc.activeElement, 'G');
-    await waitFor(() => /^Goals/.test(doc.getElementById('list-heading').textContent) && rows().length === 3, 'goals view');
+    await waitFor(() => /^Buckets/.test(doc.getElementById('list-heading').textContent) && rows().length === 3, 'buckets view');
     assert.deepEqual(rows().map((r) => /Level 2\./.test(r.textContent)), [false, false, true]);
-    assert.match(rows()[1].textContent, /1 open, 0 done linked task/);
+    assert.match(rows()[1].textContent, /1 open, 0 done task/);
     window.close();
   } finally {
     env.close();
