@@ -195,9 +195,75 @@
         <label for="nt-results">Matching tasks</label>
         <select id="nt-results" size="6"></select>
       </div>
-      <label for="nt-list">Put it on list</label>
-      <select id="nt-list"></select>
       <p id="nt-error" class="error" role="alert"></p>
+
+      <div id="nt-options">
+        <h3 id="nt-h-dates">Dates</h3>
+        <div role="group" aria-labelledby="nt-h-dates">
+          <label for="nt-start">Start date</label>
+          <input id="nt-start" type="text" autocomplete="off" spellcheck="false" aria-describedby="nt-date-hint">
+          <label for="nt-due">Due date (end date)</label>
+          <input id="nt-due" type="text" autocomplete="off" spellcheck="false" aria-describedby="nt-date-hint">
+          <label for="nt-checkin">Check-in date</label>
+          <input id="nt-checkin" type="text" autocomplete="off" spellcheck="false" aria-describedby="nt-date-hint">
+          <p id="nt-date-hint" class="hint">Examples: fri, nov 20, +3d, 2026-11-20. Add a time after the due or check-in date: fri 2pm. Leave empty for none.</p>
+          <div class="row"><input type="checkbox" id="nt-today"><label for="nt-today">Pick for today (My Day)</label></div>
+        </div>
+
+        <h3 id="nt-h-status">Status</h3>
+        <div role="group" aria-labelledby="nt-h-status">
+          <label for="nt-waiting">Waiting</label>
+          <select id="nt-waiting">
+            <option value="">Not waiting</option>
+            <option value="waitingOnOthers">Waiting on others</option>
+            <option value="waitingOnMe">Waiting on me</option>
+          </select>
+          <div class="row"><input type="checkbox" id="nt-inProgress"><label for="nt-inProgress">In progress</label></div>
+          <div class="row"><input type="checkbox" id="nt-ongoing"><label for="nt-ongoing">Ongoing</label></div>
+          <div class="row"><input type="checkbox" id="nt-important"><label for="nt-important">Important</label></div>
+          <div class="row"><input type="checkbox" id="nt-question"><label for="nt-question">Open question</label></div>
+          <label for="nt-asks">Ask who (for a question; names separated by commas)</label>
+          <input id="nt-asks" type="text" autocomplete="off" spellcheck="false">
+          <div class="row"><input type="checkbox" id="nt-done"><label for="nt-done">Already done</label></div>
+        </div>
+
+        <h3 id="nt-h-priority">Priority and Jira</h3>
+        <div role="group" aria-labelledby="nt-h-priority">
+          <label for="nt-priority">Priority</label>
+          <select id="nt-priority">
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+            <option value="low">Low</option>
+          </select>
+          <label for="nt-jira">Jira</label>
+          <select id="nt-jira">
+            <option value="default">Default (follows its list)</option>
+            <option value="yes">Send to Jira</option>
+            <option value="skip">Keep out of Jira</option>
+          </select>
+        </div>
+
+        <h3 id="nt-h-where">List, buckets and blockers</h3>
+        <div role="group" aria-labelledby="nt-h-where">
+          <label for="nt-list">Put it on list</label>
+          <select id="nt-list"></select>
+          <h4 id="nt-h-buckets">Buckets</h4>
+          <p id="nt-buckets-empty" class="hint" hidden>No buckets yet. A bucket is a line marked jira:label.</p>
+          <div id="nt-buckets" role="group" aria-labelledby="nt-h-buckets"></div>
+          <h4 id="nt-h-blockers">Blocked by</h4>
+          <label for="nt-blockers-filter">Filter tasks it waits for</label>
+          <input id="nt-blockers-filter" type="text" autocomplete="off" spellcheck="false" aria-describedby="nt-blockers-count">
+          <p id="nt-blockers-count" class="hint" aria-live="polite"></p>
+          <div id="nt-blockers" role="group" aria-labelledby="nt-h-blockers"></div>
+        </div>
+
+        <h3 id="nt-h-note">Note</h3>
+        <div role="group" aria-labelledby="nt-h-note">
+          <label for="nt-note">First note (optional)</label>
+          <input id="nt-note" type="text" autocomplete="off" spellcheck="false">
+        </div>
+        <p class="hint">Shortcut: in the task box, separate options with semicolons, for example: call sam; &gt; wayne; due fri; pri h; *.</p>
+      </div>
       <p><button type="submit" id="nt-go">Add</button> <button type="button" id="nt-cancel">Cancel</button></p>
     </form>
   </dialog>
@@ -339,7 +405,7 @@
         <tr><th scope="row">Option and n</th><td>Make a new list</td></tr>
         <tr><th scope="row">Delete or Backspace</th><td>In a list: take the item off that list. In a list that keeps its tasks in a file, and in any other view, including triage: delete the task and its subtasks. The text stays in the file with a dollar sign at the start, and the app stops showing it. u undoes it</td></tr>
         <tr><th scope="row">Right arrow, Left arrow</th><td>Expand or collapse a task to show its notes and subtasks. Tasks with notes start collapsed</td></tr>
-        <tr><th scope="row">m</th><td>Create a new task straight away, without searching</td></tr>
+        <tr><th scope="row">m</th><td>Create a new task straight away, without searching. The box lists every option under headings; Enter in the name field creates it with the defaults. In the name you can also type options after semicolons, for example: call sam; &gt; wayne; due oct 14 2027; pri h; *; inprogress</td></tr>
         <tr><th scope="row">shift and n</th><td>In a list: add a note that is not a task, to the list's notes file. In triage: previous file</td></tr>
         <tr><th scope="row">l</th><td>Choose which lists the task is on. With only My list, it adds or removes straight away. In triage, it marks the line as a to-do first, then opens the list picker: Up and Down move through the lists, Space ticks one, Enter saves and moves on to the next line. Ticking a list that keeps its tasks in another file moves the task there, with its notes and subtasks</td></tr>
         <tr><th scope="row">shift and l</th><td>Add the task to the list you are viewing or used last, or remove it</td></tr>

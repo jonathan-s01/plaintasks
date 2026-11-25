@@ -12,6 +12,8 @@ const { insertLinesAfter, appendLines, replaceLines, moveLine, createTextFile, C
 const { parseWhen, parseFriendly, formatDate, formatTime, toISO } = require('./dates');
 const { modeFor, TEXT_EXT } = require('./indexer');
 const { matcher, fileBacked, heldBack } = require('./views');
+const { bucketIndex, isBucket } = require('./buckets');
+const { parseQuick, QuickError } = require('./quickadd');
 
 const own = (s) => /^[ \t]*/.exec(s)[0];
 const clean = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
@@ -370,9 +372,127 @@ function install(App, HttpError) {
     return { ...this.publicConfig(), ok: true, message: `New tasks will be saved to ${this.masterLabel()}` };
   };
 
-  /** Appends a new task to the master file, and puts it on a list if one is given. */
+  const NEW_FLAGS = ['done', 'inProgress', 'ongoing', 'important', 'question', 'waitingOnMe', 'waitingOnOthers'];
+  const ASK_NAME = /^[\p{L}\p{N}](?:[\p{L}\p{N}._-]*[\p{L}\p{N}])?$/u;
+
+  /** Finds one item by id or by (part of) its text, so the form can send ids and the shorthand can send names. */
+  function pickOne(list, ref, what) {
+    const byId = list.find((x) => x.id === ref);
+    if (byId) return byId;
+    const q = clean(ref).toLowerCase();
+    const exact = list.filter((x) => x.text.toLowerCase() === q);
+    if (exact.length === 1) return exact[0];
+    const some = list.filter((x) => x.text.toLowerCase().includes(q));
+    if (some.length === 1) return some[0];
+    if (!some.length) throw new HttpError(400, `No ${what} matches "${ref}".`);
+    throw new HttpError(400, `"${ref}" matches ${some.length} ${what}s: ${some.slice(0, 4).map((x) => x.text).join('; ')}. Type more of its name.`);
+  }
+
+  /** Everything the new task box offers beyond a name: the buckets and the open tasks it could wait for. */
+  proto.newTaskChoices = function newTaskChoices() {
+    return {
+      buckets: bucketIndex(this.index).list.filter((b) => !b.flags.done).map((b) => ({ id: b.id, text: b.text })),
+      tasks: this.index.tasks
+        .filter((c) => !c.flags.done && !isBucket(c))
+        .map((c) => ({ id: c.id, text: c.text, file: c.fileLabel, line: c.line })),
+    };
+  };
+
+  /** Checks every option and turns it into line operations, so a bad option writes nothing. */
+  proto.newTaskOptions = function newTaskOptions(raw) {
+    const v = raw || {};
+    const steps = [];
+    const bits = [];
+    const flags = [...new Set((Array.isArray(v.flags) ? v.flags : []).map(String))];
+    for (const f of flags) if (!NEW_FLAGS.includes(f)) throw new HttpError(400, `Unknown status: ${f}`);
+    if (flags.includes('waitingOnMe') && flags.includes('waitingOnOthers')) throw new HttpError(400, 'A task cannot wait on me and on others at once.');
+    const asks = [...new Set((Array.isArray(v.asks) ? v.asks : []).map((a) => clean(a).toLowerCase()).filter(Boolean))];
+    for (const a of asks) if (!ASK_NAME.test(a)) throw new HttpError(400, `"${a}" cannot be used as a person to ask. Use one word, such as cory.`);
+    if (asks.length && !flags.includes('question')) flags.push('question');
+    for (const f of flags) {
+      steps.push([f]);
+      bits.push(f === 'done' ? 'done' : ({ inProgress: 'in progress', ongoing: 'ongoing', important: 'important', question: 'question', waitingOnMe: 'waiting on me', waitingOnOthers: 'waiting on others' })[f]);
+    }
+    for (const [key, label, op] of [['start', 'start date', 'start'], ['due', 'due date', 'due'], ['checkin', 'check-in date', 'checkin']]) {
+      const w = this.whenArg(v[key], label);
+      if (w.arg) {
+        steps.push([op, w.arg]);
+        bits.push(`${key === 'checkin' ? 'check in' : key} ${w.text}`);
+      }
+    }
+    if (v.today) {
+      if (flags.includes('done')) throw new HttpError(400, 'A done task cannot be picked for My Day.');
+      steps.push(['today', toISO(this.now())]);
+      bits.push('picked for today');
+    }
+    const pr = v.priority == null || v.priority === '' ? 'medium' : String(v.priority).toLowerCase();
+    if (!['high', 'medium', 'low'].includes(pr)) throw new HttpError(400, 'Priority is high, medium or low.');
+    if (pr !== 'medium') {
+      steps.push(['priority', pr]);
+      bits.push(`priority ${pr}`);
+    }
+    if (asks.length) {
+      steps.push(['ask', asks]);
+      bits.push(`ask ${asks.join(' and ')}`);
+    }
+    const jira = v.jira == null || v.jira === '' ? 'default' : String(v.jira);
+    if (jira === 'yes') {
+      steps.push(['jiraYes', true]);
+      bits.push('goes to Jira');
+    } else if (jira === 'skip') {
+      steps.push(['jiraSkip', true]);
+      bits.push('kept out of Jira');
+    } else if (jira !== 'default') throw new HttpError(400, 'Jira is default, yes or skip.');
+    const notes = (Array.isArray(v.notes) ? v.notes : []).map(clean).filter(Boolean);
+    for (const n of notes) if (markerInfo(n)) throw new HttpError(400, 'A note cannot start with a task symbol. Add a word before it.');
+    let buckets = [];
+    const refs = (Array.isArray(v.buckets) ? v.buckets : []).map(String);
+    if (refs.length) {
+      const all = bucketIndex(this.index).list.filter((b) => !b.flags.done);
+      buckets = [...new Set(refs.map((r) => pickOne(all, r, 'bucket').id))];
+      bits.push(`bucket ${buckets.map((id) => this.index.get(id).text).join(' and ')}`);
+    }
+    let blockers = [];
+    const waits = (Array.isArray(v.blockedBy) ? v.blockedBy : []).map(String);
+    if (waits.length) {
+      const all = this.index.tasks.filter((c) => !c.flags.done && !isBucket(c));
+      blockers = [...new Set(waits.map((r) => pickOne(all, r, 'task').id))];
+      bits.push(`blocked by ${blockers.map((id) => this.index.get(id).text).join(' and ')}`);
+    }
+    if (notes.length) bits.push(notes.length === 1 ? 'one note' : `${notes.length} notes`);
+    return { steps, bits, notes, buckets, blockers };
+  };
+
+  /**
+   * Appends a new task to the master file, and puts it on a list if one is given. value holds the options (see
+   * newTaskOptions); value.text may also use the ";" shorthand, which overrides the same option and adds to the lists.
+   * Everything is one undo step.
+   */
   proto.newTask = function newTask(value, listId) {
-    const text = clean(value && value.text);
+    let v = value || {};
+    if (String(v.text || '').includes(';')) {
+      let q;
+      try {
+        q = parseQuick(v.text);
+      } catch (err) {
+        if (err instanceof QuickError) throw new HttpError(400, err.message);
+        throw err;
+      }
+      const o = q.options;
+      v = {
+        ...v,
+        text: q.text,
+        ...Object.fromEntries(['start', 'due', 'checkin', 'today', 'priority', 'jira'].filter((k) => o[k] !== undefined).map((k) => [k, o[k]])),
+        flags: [...new Set([...(v.flags || []), ...o.flags])],
+        asks: [...(v.asks || []), ...o.asks],
+        buckets: [...(v.buckets || []), ...o.buckets],
+        blockedBy: [...(v.blockedBy || []), ...o.blockedBy],
+        notes: [...(v.notes || []), ...o.notes],
+      };
+      if (o.flags.includes('waitingOnMe')) v.flags = v.flags.filter((f) => f !== 'waitingOnOthers');
+      if (o.flags.includes('waitingOnOthers')) v.flags = v.flags.filter((f) => f !== 'waitingOnMe');
+    }
+    const text = clean(v.text);
     if (!text) throw new HttpError(400, 'Type the new task first.');
     if (markerInfo(text)) throw new HttpError(400, 'Type the task without a leading symbol. The app adds the to-do symbol for you.');
     const home = listId ? this.getList(listId) : null;
@@ -384,36 +504,53 @@ function install(App, HttpError) {
     if (!master || !fs.existsSync(master)) {
       throw new HttpError(409, master ? 'The file for new tasks is missing. Choose another.' : 'Choose which file new tasks are saved to.', 'no-master');
     }
+    const opts = this.newTaskOptions(v);
     const parsed = this.parsedFor(master);
-    const todoChar = Object.entries(parsed.symbols).find(([, v]) => v === 'todo');
-    const line = `${todoChar ? todoChar[0] : '@'} ${text}`;
-    let res;
+    const todoChar = Object.entries(parsed.symbols).find(([, val]) => val === 'todo');
+    let line = `${todoChar ? todoChar[0] : '@'} ${text}`;
     try {
-      res = appendLines(master, [line]);
+      for (const [op, arg] of opts.steps) line = applyOp(line, op, arg, { symbols: parsed.symbols, today: this.now() });
     } catch (err) {
-      this.writeFailed(err, 'save the new task');
+      if (err instanceof OpError) throw new HttpError(400, err.message);
+      throw err;
     }
-    this.pushUndo({ type: 'insert', file: master, lineIndex: res.lineIndex, lines: [line], text });
-    this.lastWriteAt = Date.now();
-    this.index.refresh(this.now());
-    const id = this.idAt(master, res.lineIndex);
-    const fresh = id ? this.index.get(id) : null;
-    let message = `Created task in ${fileBacked(home) ? this.fileEntry(master).label : this.masterLabel()}: ${text}`;
-    if (fileBacked(home)) {
-      if (fresh) this.stateData.created[fresh.listKey] = toISO(this.now());
-      this.stateData.lastList = home.id;
-      this.saveState();
-      message = `Created task in ${home.name}, at the end of ${this.fileEntry(master).label}: ${text}`;
-    } else if (fresh && listId) {
-      const target = this.getList(listId);
-      this.mutateLists((lists) => {
-        const l = lists.find((x) => x.id === target.id);
-        if (!l.keys.includes(fresh.listKey)) l.keys.push(fresh.listKey);
-        this.stateData.created[fresh.listKey] = toISO(this.now());
-        this.stateData.lastList = target.id;
-      }, text, id);
-      message += `. Added to ${target.name}`;
-    }
+    let id;
+    let message;
+    this.oneUndo(text, () => {
+      let res;
+      try {
+        res = appendLines(master, [line]);
+      } catch (err) {
+        this.writeFailed(err, 'save the new task');
+      }
+      this.pushUndo({ type: 'insert', file: master, lineIndex: res.lineIndex, lines: [line], text });
+      this.lastWriteAt = Date.now();
+      this.index.refresh(this.now());
+      id = this.idAt(master, res.lineIndex);
+      const fresh = id ? this.index.get(id) : null;
+      message = `Created task in ${fileBacked(home) ? this.fileEntry(master).label : this.masterLabel()}: ${text}`;
+      if (fileBacked(home)) {
+        if (fresh) this.stateData.created[fresh.listKey] = toISO(this.now());
+        this.stateData.lastList = home.id;
+        this.saveState();
+        message = `Created task in ${home.name}, at the end of ${this.fileEntry(master).label}: ${text}`;
+      } else if (fresh && listId) {
+        const target = this.getList(listId);
+        this.mutateLists((lists) => {
+          const l = lists.find((x) => x.id === target.id);
+          if (!l.keys.includes(fresh.listKey)) l.keys.push(fresh.listKey);
+          this.stateData.created[fresh.listKey] = toISO(this.now());
+          this.stateData.lastList = target.id;
+        }, text, id);
+        message += `. Added to ${target.name}`;
+      }
+      const now = () => this.task(this.idAt(master, res.lineIndex));
+      if (opts.buckets.length) this.bucketSet(now(), { ids: opts.buckets });
+      if (opts.blockers.length) this.blockSet(now(), { ids: opts.blockers });
+      for (const n of opts.notes) this.addNote(now(), { text: n, amp: true }, listId);
+      id = this.idAt(master, res.lineIndex) || id;
+    });
+    if (opts.bits.length) message += `. Set: ${opts.bits.join(', ')}`;
     return { ok: true, message, undo: true, focusId: id };
   };
 

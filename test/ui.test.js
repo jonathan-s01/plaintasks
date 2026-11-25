@@ -821,3 +821,54 @@ test('AI instructions: the header button opens the local file in a box that pass
     env.close();
   }
 });
+
+test('the new task box lists every option under headings (passes axe), starts from the current view, and Enter alone still creates with defaults', async () => {
+  const env = await boot({ 'a.txt': '@* one\n@ blocker id:blk\n', 'b.txt': '~ Partners jira:label\n' });
+  try {
+    const { window } = await openPage(env);
+    const doc = window.document;
+    const rows = () => [...doc.getElementById('tree').querySelectorAll('[role=option]')];
+    const submit = (id) => doc.getElementById(id).dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+    const master = path.join(env.notes, 'a.txt');
+    env.app.setMaster({ path: master });
+    window.eval(axe.source);
+    await waitFor(() => rows().length >= 2, 'items');
+
+    key(window, doc.activeElement, '7');
+    await waitFor(() => doc.getElementById('view').value === 'important', 'important view');
+    key(window, doc.activeElement, 'm');
+    await waitFor(() => doc.getElementById('newtask-dialog').hasAttribute('open') && doc.getElementById('nt-blockers').children.length === 2 && doc.getElementById('nt-buckets').children.length === 1, 'dialog with choices');
+    const heads = [...doc.getElementById('newtask-dialog').querySelectorAll('h3')].map((h) => h.textContent);
+    assert.deepEqual(heads, ['Dates', 'Status', 'Priority and Jira', 'List, buckets and blockers', 'Note']);
+    assert.equal(doc.getElementById('nt-start').value, 'today');
+    assert.equal(doc.getElementById('nt-important').checked, true, 'the important view makes new tasks important');
+    assert.equal(doc.getElementById('nt-priority').value, 'medium');
+    const r = await window.axe.run(doc.getElementById('newtask-dialog'), { rules: { 'color-contrast': { enabled: false }, region: { enabled: false } } });
+    assert.equal(r.violations.length, 0, r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.html).join(' | ')}`).join('\n'));
+
+    doc.getElementById('nt-text').value = 'plain one';
+    submit('newtask-form');
+    await waitFor(() => /plain one/.test(fs.readFileSync(master, 'utf8')), 'created');
+    assert.match(fs.readFileSync(master, 'utf8'), /^@\* plain one start:2026-11-16\n?$/m);
+
+    key(window, doc.activeElement, '1');
+    await waitFor(() => doc.getElementById('view').value === 'open', 'open view');
+    key(window, doc.activeElement, 'm');
+    await waitFor(() => doc.getElementById('newtask-dialog').hasAttribute('open') && doc.getElementById('nt-blockers').children.length > 0, 'dialog again');
+    assert.equal(doc.getElementById('nt-important').checked, false, 'defaults reset');
+    doc.getElementById('nt-text').value = 'everything';
+    doc.getElementById('nt-due').value = 'nov 20 2pm';
+    doc.getElementById('nt-waiting').value = 'waitingOnOthers';
+    doc.getElementById('nt-priority').value = 'high';
+    doc.getElementById('nt-jira').value = 'skip';
+    doc.getElementById('nt-note').value = 'ping Wayne';
+    doc.getElementById('nt-buckets').querySelector('input').checked = true;
+    submit('newtask-form');
+    await waitFor(() => /everything/.test(fs.readFileSync(master, 'utf8')), 'created with options');
+    const text = fs.readFileSync(master, 'utf8');
+    assert.match(text, /^@> everything start:2026-11-16 due:2026-11-20 14:00 p:high jira:skip goal:partners$/m);
+    assert.match(text, /\[2026-11-16\] ping Wayne/);
+  } finally {
+    await env.close();
+  }
+});

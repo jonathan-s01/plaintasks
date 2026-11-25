@@ -76,6 +76,11 @@ ADDING TASKS
 
 n: add a task. Type to search the tasks you have, pick one to add to a list, or choose Create new task.
 m: create a new task straight away, without searching.
+
+The new task box shows every option under headings: Dates (start, due, check-in, My Day), Status (waiting on others or me, in progress, ongoing, important, question and who to ask, done), Priority and Jira, List, buckets and blockers, and Note. Type the name and press Enter to create it with the defaults, or set options first. Options reset each time the box opens. Defaults: the list you are viewing, Medium priority, start date today, no due date, and if you are in a view such as Questions, Important or In progress, that property is switched on. Everything is one undo. Options apply only to a new task, not to an existing task you add to a list.
+
+Shorthand in the task name: separate parts with a semicolon. The first part is the name. Each later part is a full word, its first three letters, or a symbol: > waiting on others, < waiting on me, * important, % in progress, ~ ongoing, + done, ? question. Text after > or < becomes a note, text after ? names who to ask. Words: start, due (or end), checkin, today, priority (h, m or l), important, inprogress, ongoing, question, ask, done, jira (yes, skip), bucket or goal (comma list), blocked by (a task id or name), note. Example: call sam; > wayne; due oct 14 2027; sta nov 10 2026; pri h; *; +; <; inprogress
+A part that is not understood stops the task being created and says which one. A task name cannot itself contain a semicolon.
 Shift and n: in a list, add a note that is not a task to the list's notes file.
 
 

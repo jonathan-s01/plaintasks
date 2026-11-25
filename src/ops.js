@@ -170,6 +170,14 @@ function applyOp(raw, op, arg, ctx) {
       if (arg) d.body = appendToken(d.body, 'jira:yes');
       return compose(d);
     }
+    case 'ask': {
+      // arg: names of the people an open question is for. Rewrites every ask: token.
+      const names = arg || [];
+      let body = d.body.replace(new RegExp(ASK_RE.source, 'gu'), () => '').replace(/[ \t]+$/, '');
+      for (const x of names) body = appendToken(body, `ask:${x}`);
+      d.body = body;
+      return compose(d);
+    }
     case 'goals': {
       // arg: { own: id of this goal or null, links: ids of goals this task belongs to }. Rewrites every goal: token.
       const ids = [arg && arg.own, ...((arg && arg.links) || [])].filter(Boolean);

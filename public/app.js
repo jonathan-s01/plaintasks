@@ -948,23 +948,110 @@
     }
   }
 
+  // What a new task starts with in each view: the view's own meaning, so it shows up in the view it was made in.
+  const VIEW_DEFAULTS = {
+    questions: { question: true },
+    important: { important: true },
+    inProgress: { inProgress: true },
+    waitingMe: { waiting: 'waitingOnMe' },
+    waitingOthers: { waiting: 'waitingOnOthers' },
+    myday: { today: true },
+  };
+
+  function updateBlockerCount() {
+    const all = $('nt-blockers').querySelectorAll('input').length;
+    const shown = $('nt-blockers').querySelectorAll('.row:not([hidden])').length;
+    const ticked = $('nt-blockers').querySelectorAll('input:checked').length;
+    $('nt-blockers-count').textContent = all ? `${ticked} ticked. Showing ${shown} of ${all} tasks.` : 'No open tasks to wait for.';
+  }
+
+  function resetNewTaskOptions() {
+    const d = VIEW_DEFAULTS[st.view] || {};
+    $('nt-start').value = 'today';
+    for (const id of ['nt-due', 'nt-checkin', 'nt-asks', 'nt-note', 'nt-blockers-filter']) $(id).value = '';
+    $('nt-today').checked = !!d.today;
+    $('nt-waiting').value = d.waiting || '';
+    $('nt-inProgress').checked = !!d.inProgress;
+    $('nt-ongoing').checked = false;
+    $('nt-important').checked = !!d.important;
+    $('nt-question').checked = !!d.question;
+    $('nt-done').checked = false;
+    $('nt-priority').value = 'medium';
+    $('nt-jira').value = 'default';
+    $('nt-buckets').replaceChildren();
+    $('nt-blockers').replaceChildren();
+    $('nt-buckets-empty').hidden = true;
+    updateBlockerCount();
+  }
+
+  async function loadNewTaskChoices(seq) {
+    try {
+      const data = await api('/api/newtask-options');
+      if (seq !== nt.seq || !$('newtask-dialog').open) return;
+      $('nt-buckets-empty').hidden = data.buckets.length > 0;
+      $('nt-buckets').replaceChildren(...data.buckets.map((b, i) => el('div', { class: 'row' },
+        el('input', { type: 'checkbox', id: `ntb-${i}`, value: b.id }),
+        el('label', { for: `ntb-${i}`, text: b.text }))));
+      $('nt-blockers').replaceChildren(...data.tasks.map((c, i) => el('div', { class: 'row', 'data-text': `${c.text} ${c.file}`.toLowerCase() },
+        el('input', { type: 'checkbox', id: `ntk-${i}`, value: c.id }),
+        el('label', { for: `ntk-${i}`, text: `${c.text}, list ${c.file}, line ${c.line}` }))));
+      updateBlockerCount();
+    } catch (err) {
+      $('nt-error').textContent = err.message;
+    }
+  }
+
   function openNewTask(search) {
     nt.search = search;
     nt.seq += 1;
     $('newtask-title').textContent = search ? 'Add a task' : 'Create a new task';
     $('nt-hint').textContent = search
-      ? 'Type to search your tasks. Press Down to choose a match to add to a list, or the last choice to create a new task. Enter confirms.'
-      : 'The task is added to the end of the master list file with the to-do symbol.';
+      ? 'Type to search your tasks. Press Down to choose a match to add to a list, or the last choice to create a new task. Enter confirms. The options below apply only to a new task.'
+      : 'Type the task and press Enter to create it, or set options below first. It is added to the end of the master list file with the to-do symbol.';
     $('nt-results-wrap').hidden = !search;
     $('nt-go').textContent = search ? 'Add' : 'Create task';
     $('nt-text').value = '';
     $('nt-error').textContent = '';
     ntOptions([], '');
+    resetNewTaskOptions();
     const cur = curListId();
     $('nt-list').replaceChildren(el('option', { value: '', text: 'No list' }), ...st.summary.lists.map((l) => el('option', { value: l.id, text: l.name })));
     $('nt-list').value = cur || '';
     openDialog($('newtask-dialog'), st.activeId);
     $('nt-text').focus();
+    loadNewTaskChoices(nt.seq);
+  }
+
+  $('nt-blockers-filter').addEventListener('input', () => {
+    const terms = $('nt-blockers-filter').value.toLowerCase().split(/\s+/).filter(Boolean);
+    for (const row of $('nt-blockers').querySelectorAll('.row')) row.hidden = !terms.every((t) => row.dataset.text.includes(t));
+    updateBlockerCount();
+  });
+  $('nt-blockers').addEventListener('change', updateBlockerCount);
+  speakOnHover($('nt-buckets'));
+  speakOnHover($('nt-blockers'));
+
+  function newTaskValue(text) {
+    const val = { text };
+    for (const [k, id] of [['start', 'nt-start'], ['due', 'nt-due'], ['checkin', 'nt-checkin']]) {
+      const x = $(id).value.trim();
+      if (x) val[k] = x;
+    }
+    const flags = ['inProgress', 'ongoing', 'important', 'question', 'done'].filter((f) => $(`nt-${f}`).checked);
+    if ($('nt-waiting').value) flags.push($('nt-waiting').value);
+    if (flags.length) val.flags = flags;
+    const asks = $('nt-asks').value.split(/[,\s]+/).filter(Boolean);
+    if (asks.length) val.asks = asks;
+    if ($('nt-today').checked) val.today = true;
+    val.priority = $('nt-priority').value;
+    val.jira = $('nt-jira').value;
+    const buckets = [...$('nt-buckets').querySelectorAll('input:checked')].map((c) => c.value);
+    if (buckets.length) val.buckets = buckets;
+    const blockedBy = [...$('nt-blockers').querySelectorAll('input:checked')].map((c) => c.value);
+    if (blockedBy.length) val.blockedBy = blockedBy;
+    const note = $('nt-note').value.trim();
+    if (note) val.notes = [note];
+    return val;
   }
 
   $('nt-text').addEventListener('input', () => {
@@ -1015,7 +1102,7 @@
         $('nt-text').focus();
         return;
       }
-      const res = await post({ op: 'newTask', value: { text }, list });
+      const res = await post({ op: 'newTask', value: newTaskValue(text), list });
       closeDialog($('newtask-dialog'));
       await finish(res, idx);
     } catch (err) {
