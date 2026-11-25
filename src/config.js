@@ -24,6 +24,13 @@ function writeJsonAtomic(file, data) {
   fs.renameSync(tmp, file);
 }
 
+function writeTextAtomic(file, text) {
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  const tmp = `${file}.${process.pid}.${crypto.randomBytes(3).toString('hex')}.tmp`;
+  fs.writeFileSync(tmp, text, { mode: 0o600 });
+  fs.renameSync(tmp, file);
+}
+
 function readJson(file, fallback) {
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -90,6 +97,12 @@ function loadConfig(dir) {
   return cfg;
 }
 
+/** Local AI instructions for chats: config.json "aiInstructions", else ai-instructions.md in the config folder. */
+function aiInstructionsFile(dir, cfg = {}) {
+  const p = typeof cfg.aiInstructions === 'string' ? cfg.aiInstructions.trim() : '';
+  return p ? path.resolve(expandHome(p)) : path.join(dir, 'ai-instructions.md');
+}
+
 function saveConfig(dir, cfg) {
   writeJsonAtomic(path.join(dir, 'config.json'), cfg);
 }
@@ -149,4 +162,4 @@ function sessionToken(dir) {
   return token;
 }
 
-module.exports = { sessionToken, DEFAULT_LIST, SORT_MODES, configDir, loadConfig, saveConfig, loadState, saveState, normalizeFolder, expandHome, cleanRel, UNMARKED_MODES };
+module.exports = { aiInstructionsFile, writeTextAtomic, sessionToken, DEFAULT_LIST, SORT_MODES, configDir, loadConfig, saveConfig, loadState, saveState, normalizeFolder, expandHome, cleanRel, UNMARKED_MODES };

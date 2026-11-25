@@ -734,6 +734,32 @@ class App {
     };
   }
 
+  // ---- local AI instructions (read by chats opened in the plaintasks repo; never committed) ----
+
+  aiInstructions() {
+    const file = cfgMod.aiInstructionsFile(this.dir, this.config);
+    try {
+      return { file, exists: true, text: fs.readFileSync(file, 'utf8') };
+    } catch (err) {
+      if (err.code === 'ENOENT') return { file, exists: false, text: '' };
+      throw new HttpError(500, `Could not read ${file}: ${err.message}`);
+    }
+  }
+
+  setAiInstructions(body) {
+    const text = body && body.text;
+    if (typeof text !== 'string') throw new HttpError(400, 'text must be a string');
+    if (text.length > 200000) throw new HttpError(413, 'The instructions are too long. Keep them under 200,000 characters.');
+    const file = cfgMod.aiInstructionsFile(this.dir, this.config);
+    const norm = text.replace(/\r\n?/g, '\n');
+    try {
+      cfgMod.writeTextAtomic(file, norm && !norm.endsWith('\n') ? `${norm}\n` : norm);
+    } catch (err) {
+      throw new HttpError(500, `Could not save ${file}: ${err.message}`);
+    }
+    return { ok: true, file, message: `AI instructions saved to ${file}` };
+  }
+
   setFolders(list) {
     if (!Array.isArray(list)) throw new HttpError(400, 'folders must be a list');
     let folders;

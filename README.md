@@ -200,6 +200,10 @@ Settings (on the settings page, under Jira sync; nothing is hard-coded): bucket 
 
 The token stays in the Keychain as above.
 
+## AI instructions (local)
+
+The **AI instructions** button in the header opens a box to view and edit one instruction file kept only on this computer: `~/.config/plaintasks/ai-instructions.md` by default, or the path in `"aiInstructions"` in `config.json`. It is saved with mode 0600 and never goes into the repository. AI chats opened in this repository read it first (see [AGENTS.md](AGENTS.md)), so whoever sets the rules for your tasks, for example how Jira issues should be named, can give them once and every chat follows them. Command and Enter saves; Escape cancels.
+
 ## Security
 
 The server binds to `127.0.0.1` only, checks the Host and Origin headers, requires a random per-run token on every API call, accepts only JSON posts, and sends a strict Content-Security-Policy (no inline scripts or styles). It can only read and write files inside folders you added.

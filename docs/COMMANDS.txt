@@ -111,3 +111,8 @@ n and Shift and n: next or previous file.
 Shift and r: mark the whole file as reviewed.
 f: show only files that are new or changed since you reviewed them.
 Enter: show the lines around the current line.
+
+
+AI INSTRUCTIONS
+
+The AI instructions button in the header, after Sync with Jira, opens a box with the instructions that AI chats opened in the plaintasks project follow. They are saved only on this computer (by default ~/.config/plaintasks/ai-instructions.md). Tab moves to Save. Command and Enter saves. Escape cancels and changes nothing.

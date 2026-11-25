@@ -778,3 +778,46 @@ test('first run asks where to save mylist.txt (passes axe) and creates it with j
     await env.close();
   }
 });
+
+test('AI instructions: the header button opens the local file in a box that passes axe; Save writes it outside the notes, Command and Enter saves too', async () => {
+  const env = await boot({ 'a.txt': '@ one\n' });
+  try {
+    const file = path.join(env.app.dir, 'ai-instructions.md');
+    const { window } = await openPage(env);
+    const doc = window.document;
+    const live = () => doc.getElementById('live').textContent;
+    window.eval(axe.source);
+    await waitFor(() => doc.querySelector('[role=option]'), 'tasks');
+    doc.getElementById('ai-btn').click();
+    await waitFor(() => doc.getElementById('ai-dialog').hasAttribute('open'), 'ai dialog');
+    assert.equal(doc.activeElement, doc.getElementById('ai-text'));
+    assert.equal(doc.getElementById('ai-text').value, '');
+    assert.equal(doc.getElementById('ai-file').textContent, file);
+    await waitFor(() => /No AI instructions yet/.test(live()), 'empty announced');
+    const r = await window.axe.run(doc.getElementById('ai-dialog'), { rules: { 'color-contrast': { enabled: false }, region: { enabled: false } } });
+    assert.equal(r.violations.length, 0, r.violations.map((v) => v.id).join());
+
+    doc.getElementById('ai-text').value = '# Rules\r\nOne Task per objective.';
+    doc.getElementById('ai-form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+    await waitFor(() => /AI instructions saved/.test(live()) && !doc.getElementById('ai-dialog').hasAttribute('open'), 'saved');
+    assert.equal(fs.readFileSync(file, 'utf8'), '# Rules\nOne Task per objective.\n');
+    assert.equal(doc.activeElement, doc.getElementById('ai-btn'));
+    assert.equal((fs.statSync(file).mode & 0o777).toString(8), '600');
+
+    doc.getElementById('ai-btn').click();
+    await waitFor(() => doc.getElementById('ai-text').value === '# Rules\nOne Task per objective.\n', 'reloaded');
+    doc.getElementById('ai-text').value = 'Changed';
+    doc.getElementById('ai-text').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true, cancelable: true }));
+    await waitFor(() => fs.readFileSync(file, 'utf8') === 'Changed\n', 'saved with Command and Enter');
+
+    // A path in config.json wins; the API needs the session token like everything else.
+    const other = path.join(env.app.dir, 'elsewhere', 'mine.md');
+    env.app.config.aiInstructions = other;
+    assert.equal((await get(env.port, '/api/ai-instructions')).status, 403);
+    const res = JSON.parse((await get(env.port, '/api/ai-instructions', { 'x-plaintasks-token': 'test-token' })).body);
+    assert.deepEqual(res, { file: other, exists: false, text: '' });
+    window.close();
+  } finally {
+    env.close();
+  }
+});

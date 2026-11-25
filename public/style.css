@@ -219,6 +219,19 @@ dialog input[type="text"] {
   display: block;
 }
 
+textarea {
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 2px solid var(--line);
+  border-radius: 4px;
+  padding: 0.35rem 0.6rem;
+  width: 100%;
+  display: block;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
 table {
   border-collapse: collapse;
   width: 100%;

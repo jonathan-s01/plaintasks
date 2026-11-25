@@ -25,6 +25,7 @@
       <button id="toggle-completed" type="button" aria-pressed="false">Show completed</button>
       <button id="manage-btn" type="button">Manage lists</button>
       <button id="sync-btn" type="button">Sync with Jira</button>
+      <button id="ai-btn" type="button">AI instructions</button>
       <button id="help-btn" type="button">Keyboard shortcuts</button>
       <a href="/setup">Settings</a>
     </div>
@@ -285,6 +286,18 @@
     <p><button type="button" id="sync-again" hidden>Check again</button> <button type="button" id="sync-close">Close</button></p>
   </dialog>
 
+  <dialog id="ai-dialog" aria-labelledby="ai-title" aria-describedby="ai-about">
+    <form method="dialog" id="ai-form">
+      <h2 id="ai-title">AI instructions</h2>
+      <p id="ai-about">AI chats opened in the plaintasks project read these instructions before they add, change or sync tasks. They are saved only on this computer, in <span id="ai-file">the plaintasks settings folder</span>, never in the project.</p>
+      <label for="ai-text">Instructions</label>
+      <textarea id="ai-text" rows="18" spellcheck="true" aria-describedby="ai-hint"></textarea>
+      <p id="ai-hint" class="hint">Plain text or Markdown. Tab moves to Save. Command and Enter saves. Escape cancels and changes nothing.</p>
+      <p id="ai-error" class="error" role="alert"></p>
+      <p><button type="submit" id="ai-save">Save</button> <button type="button" id="ai-cancel">Cancel</button></p>
+    </form>
+  </dialog>
+
   <dialog id="help-dialog" aria-labelledby="help-title">
     <h2 id="help-title" tabindex="-1">Keyboard shortcuts</h2>
     <p>Use Up and Down to move through the list. Single-letter keys work while the list has focus. Escape closes this help.</p>
@@ -350,6 +363,7 @@
         <tr><th scope="row">slash</th><td>Jump to search</td></tr>
         <tr><th scope="row">r</th><td>Rescan the files now</td></tr>
         <tr><th scope="row">question mark</th><td>Open this help</td></tr>
+        <tr><th scope="row">AI instructions button</th><td>In the header, after Sync with Jira: view and edit the instructions that AI chats opened in the plaintasks project follow. They are saved only on this computer</td></tr>
       </tbody>
     </table>
     <p><button type="button" id="help-close">Close</button></p>

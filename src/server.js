@@ -117,6 +117,8 @@ function createServer(app, { token = crypto.randomBytes(24).toString('hex') } = 
           return send(res, 200, app.folderTree(Number(q.get('i'))));
         case '/api/rtf':
           return send(res, 200, app.rtfScan(Number(q.get('i'))));
+        case '/api/ai-instructions':
+          return send(res, 200, app.aiInstructions());
         case '/api/jira/issue':
           return send(res, 200, await app.jiraIssue(q.get('key') || ''));
         default:
@@ -138,6 +140,8 @@ function createServer(app, { token = crypto.randomBytes(24).toString('hex') } = 
           return send(res, 200, app.setFolders(body.folders));
         case '/api/rtf/convert':
           return send(res, 200, app.rtfConvert(Number(body.i), body.files, body.confirm));
+        case '/api/ai-instructions':
+          return send(res, 200, app.setAiInstructions(body));
         case '/api/jira/config':
           return send(res, 200, app.setJira(body));
         case '/api/jira/create':

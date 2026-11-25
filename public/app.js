@@ -567,6 +567,50 @@
   }));
   $('jira-close').addEventListener('click', () => closeDialog($('jira-dialog')));
 
+  // ---------- local AI instructions ----------
+
+  async function openAi() {
+    try {
+      const res = await api('/api/ai-instructions');
+      $('ai-file').textContent = res.file;
+      $('ai-text').value = res.text;
+      $('ai-error').textContent = '';
+      openDialog($('ai-dialog'), null);
+      $('ai-text').focus();
+      if (!res.exists) announce('No AI instructions yet. Type them, then Save creates the file.');
+    } catch (err) {
+      alertMessage(err.message);
+    }
+  }
+
+  async function saveAi() {
+    try {
+      const res = await api('/api/ai-instructions', { method: 'POST', body: { text: $('ai-text').value } });
+      closeDialog($('ai-dialog'));
+      $('ai-btn').focus();
+      announce(res.message);
+    } catch (err) {
+      $('ai-error').textContent = err.message;
+      $('ai-text').focus();
+    }
+  }
+
+  $('ai-btn').addEventListener('click', openAi);
+  $('ai-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    saveAi();
+  });
+  $('ai-text').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      saveAi();
+    }
+  });
+  $('ai-cancel').addEventListener('click', () => {
+    closeDialog($('ai-dialog'));
+    $('ai-btn').focus();
+  });
+
   $('help-btn').addEventListener('click', () => openHelp(null));
   $('help-close').addEventListener('click', () => closeDialog($('help-dialog')));
   // Escape closes help wherever focus or the VoiceOver cursor is, not only when the dialog itself has focus.
