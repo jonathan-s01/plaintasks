@@ -107,6 +107,8 @@ function createServer(app, { token = crypto.randomBytes(24).toString('hex') } = 
         case '/api/buckets':
         case '/api/goals':
           return send(res, 200, app.bucketChoices({ id: q.get('id'), file: q.get('file') }));
+        case '/api/newtask-options':
+          return send(res, 200, app.newTaskChoices());
         case '/api/blockers':
           return send(res, 200, app.blockChoices(q.get('id')));
         case '/api/config':

@@ -815,3 +815,55 @@ test('mylistLater stops the first-run question', async () => {
   await app.action({ op: 'mylistLater' });
   assert.equal(app.summary().mylistAsk, false);
 });
+
+test('a new task takes every option at once, writes them in one go, and one undo removes it all', async () => {
+  const { notes, app } = setup({ 'master.txt': '@ existing id:ex\n', 'b.txt': '~ Partners jira:label\n' });
+  app.setMaster({ path: path.join(notes, 'master.txt') });
+  const ex = find(app, 'existing');
+  const partners = app.newTaskChoices().buckets[0];
+  const res = await app.action({
+    op: 'newTask',
+    value: { text: 'call Sam', start: '2026-11-16', due: 'nov 20 2pm', checkin: '+3d', priority: 'high', flags: ['important', 'waitingOnOthers'], today: true, jira: 'yes', buckets: [partners.id], blockedBy: [ex.id], notes: ['Waiting on others: Wayne'] },
+  });
+  const line = read(notes, 'master.txt').split('\n')[1];
+  assert.match(line, /^@[*>]{2} call Sam /);
+  for (const tok of ['start:2026-11-16', 'due:2026-11-20 14:00', 'checkin:2026-11-19', 'p:high', 'today:2026-11-16', 'jira:yes', 'goal:partners', 'after:ex']) assert.ok(line.includes(tok), tok);
+  assert.match(read(notes, 'master.txt'), /\n {2}\[2026-11-16\] Waiting on others: Wayne\n/);
+  assert.ok(res.undo);
+  app.undo();
+  assert.equal(read(notes, 'master.txt'), '@ existing id:ex\n');
+  assert.equal(read(notes, 'b.txt'), '~ Partners jira:label\n');
+});
+
+test('a new task with a bad option writes nothing', async () => {
+  const { notes, app } = setup({ 'master.txt': '@ existing\n' });
+  app.setMaster({ path: path.join(notes, 'master.txt') });
+  await assert.rejects(() => app.action({ op: 'newTask', value: { text: 'x', due: 'blorp' } }), /Could not understand/);
+  await assert.rejects(() => app.action({ op: 'newTask', value: { text: 'x', priority: 'huge' } }), /Priority/);
+  await assert.rejects(() => app.action({ op: 'newTask', value: { text: 'x', blockedBy: ['nothing like this'] } }), /No task matches/);
+  assert.equal(read(notes, 'master.txt'), '@ existing\n');
+});
+
+test('a new task can be an open question for someone', async () => {
+  const { notes, app } = setup({ 'master.txt': '@ existing\n' });
+  app.setMaster({ path: path.join(notes, 'master.txt') });
+  await app.action({ op: 'newTask', value: { text: 'which budget code', flags: ['question'], asks: ['Cory'] } });
+  assert.equal(read(notes, 'master.txt'), '@ existing\n@? which budget code ask:cory\n');
+  const q = items(app, 'questions').find((i) => /which budget code/.test(i.text));
+  assert.ok(q);
+});
+
+test('the ; shorthand in the name sets options, with full words or three letters', async () => {
+  const { notes, app } = setup({ 'master.txt': '@ existing\n', 'b.txt': '~ Partners jira:label\n' });
+  app.setMaster({ path: path.join(notes, 'master.txt') });
+  const res = await app.action({ op: 'newTask', value: { text: 'call sam; > wayne; due oct 14 2027; sta nov 10 2026; pri h; *; inp; che fri; buc part; blo existing; jir skip; not bring notes; today' } });
+  const lines = read(notes, 'master.txt').split('\n');
+  const line = lines[1];
+  assert.match(line, /^@[>%*]{3} call sam /);
+  for (const tok of ['due:2027-10-14', 'start:2026-11-10', 'p:high', 'checkin:2026-11-20', 'goal:partners', 'after:', 'jira:skip', 'today:2026-11-16']) assert.ok(line.includes(tok), tok);
+  assert.ok(lines.some((l) => /Waiting on others: wayne/.test(l)));
+  assert.ok(lines.some((l) => /bring notes/.test(l)));
+  assert.match(res.message, /Set: /);
+  await assert.rejects(() => app.action({ op: 'newTask', value: { text: 'x; flurb' } }), /Did not understand "flurb"/);
+  await assert.rejects(() => app.action({ op: 'newTask', value: { text: 'x; due' } }), /needs a date/);
+});

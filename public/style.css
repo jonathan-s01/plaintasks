@@ -311,3 +311,19 @@ dialog fieldset .row input[type="text"] {
   width: auto;
   flex: 1 1 12rem;
 }
+
+#newtask-dialog h3,
+#newtask-dialog h4 {
+  margin: 1rem 0 0.25rem;
+}
+
+#newtask-dialog select {
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+#nt-buckets,
+#nt-blockers {
+  max-height: 12rem;
+  overflow-y: auto;
+}
