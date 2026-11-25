@@ -135,6 +135,7 @@ Press `?` in the app for the list (Escape closes it). Every command is also writ
 | Shift+`p` / Shift+`b` | cycle priority (Medium, High, Low) / choose the tasks this one is blocked by |
 | `g`, Option+Up / Down | in a list: pick up and reorder with arrows, or move one place |
 | `1`–`9`, `0`, `-`, `=` | switch view (1 open, 2 file, 3 group, 4 schedule, 5 waiting on me, 6 waiting on others, 7 important, 8 in progress, 9 completed, 0 triage, minus My list, equals All lists; other lists via `[` `]` or the View menu) |
+| Shift+`d` | Recently added: the last 15 tasks added, newest first, open and done, however they were added (in the app, by an AI chat through the API, or by editing a file while plaintasks runs). Each row says when, for example "Added today at 2:14 pm". Times are kept in `state.json`, not in your files; renaming or moving a task keeps its time |
 | `v` | jump to the view menu |
 | `c` or `h` | show / hide completed |
 | `/` | search |

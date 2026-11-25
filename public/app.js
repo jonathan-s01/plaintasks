@@ -2036,6 +2036,10 @@
       switchView('questions');
       return true;
     }
+    if (e.key === 'D') {
+      switchView('recent');
+      return true;
+    }
     if (e.key === 'J') {
       openSync();
       return true;

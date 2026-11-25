@@ -61,6 +61,7 @@ class App {
     this.undoStack = [];
     this.lastWriteAt = 0;
     this.index.refresh(this.now());
+    this.trackAdded();
   }
 
   start() {
@@ -928,5 +929,6 @@ require('./buckets').install(App, HttpError);
 require('./blocks').install(App, HttpError);
 require('./jirasync').install(App, HttpError);
 require('./placement').install(App, HttpError);
+require('./recent').install(App);
 
 module.exports = { App, HttpError };

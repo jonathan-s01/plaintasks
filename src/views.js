@@ -2,6 +2,7 @@
 
 const { formatDate, formatTime, relativeDue, daysBetween, toISO } = require('./dates');
 const { bucketIndex, sourceText } = require('./buckets');
+const { recentTasks, RECENT_COUNT } = require('./recent');
 
 const VIEWS = [
   { id: 'open', title: 'All open tasks', hierarchical: true },
@@ -18,6 +19,7 @@ const VIEWS = [
   { id: 'important', title: 'Important', empty: 'No important tasks.' },
   { id: 'inProgress', title: 'In progress', empty: 'Nothing is in progress.' },
   { id: 'completed', title: 'Completed', empty: 'No completed tasks.' },
+  { id: 'recent', title: 'Recently added', empty: `No tasks added yet. The last ${RECENT_COUNT} tasks added from now on show here, newest first, however they were added.` },
   { id: 'triage', title: 'Triage unmarked lines', empty: 'Nothing left to review.' },
 ];
 
@@ -35,6 +37,13 @@ function allViews(state) {
   return [...VIEWS.slice(0, at), LISTS_VIEW, ...(state.lists || []).map(listView), ...VIEWS.slice(at)];
 }
 const DUE_SOON_DAYS = 7;
+
+function addedWhen(iso, today) {
+  const d = new Date(iso);
+  const days = daysBetween(toISO(d), toISO(today));
+  const day = days === 0 ? 'today' : days === 1 ? 'yesterday' : formatDate(toISO(d));
+  return `${day} at ${formatTime(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`)}`;
+}
 
 function matcher(q) {
   const terms = String(q || '').toLowerCase().split(/\s+/).filter(Boolean);
@@ -302,6 +311,7 @@ function viewCounts(index, state, today) {
     else if (v.id === 'next') counts.next = nextActions(index, state, today).length;
     else if (v.id === 'questions') counts.questions = index.tasks.filter(isQuestion).length;
     else if (v.id === 'buckets') counts.buckets = bucketIndex(index).list.filter((b) => !b.flags.done).length;
+    else if (v.id === 'recent') counts.recent = recentTasks(index, state).length;
     else if (v.id === 'completed') counts.completed = index.tasks.filter(preds.completed).length;
     else counts[v.id] = index.tasks.filter((t) => !t.flags.done && preds[v.id](t)).length;
   }
@@ -583,6 +593,16 @@ function buildView(index, state, opts = {}) {
     });
   } else if (view === 'group') {
     items = buildHierarchy(index, ctx, (t) => ({ key: t.group.toLowerCase(), label: t.group || 'No group', typeWord: 'group' }));
+  } else if (view === 'recent') {
+    const at = state.addedAt || {};
+    const byId = new Map(index.tasks.map((t) => [t.id, t]));
+    items = recentTasks(index, state).filter(match).map((t) => {
+      const p = t.parentId ? byId.get(t.parentId) : null;
+      const i = describe(t, today, 1, { parentText: p ? p.text : null });
+      i.meta.unshift(`Added ${addedWhen(at[t.listKey], today)}`);
+      return i;
+    });
+    summary = 'newest first, open and done';
   } else {
     const pred = predicates(today)[view];
     let list = index.tasks.filter((t) => pred(t) && match(t) && (view === 'completed' || showCompleted || !t.flags.done));

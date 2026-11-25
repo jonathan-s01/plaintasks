@@ -32,6 +32,7 @@ Minus: My list. It keeps its tasks in mylist.txt. The first time the app runs, i
 Equals: all lists.
 Shift and g: Buckets, each bucket followed by its tasks, then No bucket: how many open and done tasks have no bucket, and the open ones.
 Shift and q: Open questions. Every open question from all files, grouped by the person to ask (from ask:), then No person. A question for two people shows under both. Each row says which list it is from, for example "Which budget code. question. Open, ask Cory. from Budget".
+Shift and d: Recently added. The last 15 tasks added, newest first, open and done, however they were added: in the app, through the API by an AI chat, or by editing a file while plaintasks is running. Each row starts with when it was added, for example "Added today at 2:14 pm". The times are kept in state.json, not in your files. A task you rename or move keeps its time.
 Shift and t: My Day. Tasks you picked for today, earlier picks still open (spoken as carried over), overdue tasks and tasks due today, High priority first. Ongoing tasks, waiting on others, blocked tasks and tasks on not-actionable lists are left out. The status line gives the counts.
 Shift and a: Next actions. Open tasks with no open subtasks, grouped by file, High priority first, then in progress. A task with subtasks shows its subtasks instead. Same exclusions as My Day.
 Left bracket and right bracket: previous or next list.

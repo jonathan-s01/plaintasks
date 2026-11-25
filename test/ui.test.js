@@ -122,6 +122,31 @@ test('pressing a view key announces the view name before anything else', async (
   }
 });
 
+test('shift+d opens Recently added: the new task is read with when it was added, can be acted on, and passes axe', async () => {
+  const env = await boot({ 'a.txt': 'Work\n@ old task\n' });
+  try {
+    fs.appendFileSync(path.join(env.notes, 'a.txt'), '@ fresh task\n');
+    env.app.index.refresh(env.app.now());
+    const { window } = await openPage(env);
+    const doc = window.document;
+    await waitFor(() => doc.querySelectorAll('[role=option]').length > 0, 'items');
+    key(window, doc.querySelector('[role=option]'), 'D');
+    await waitFor(() => doc.getElementById('view').value === 'recent' && doc.querySelectorAll('[role=option]').length === 1, 'recent view');
+    const row = doc.querySelector('[role=option]');
+    assert.match(row.textContent, /fresh task/);
+    assert.match(row.textContent, /Added today at 9 am/);
+    assert.ok(Array.from(doc.getElementById('view').options).some((o) => /^Recently added/.test(o.textContent)));
+    key(window, row, 'x');
+    await waitFor(() => /\+@ fresh task/.test(fs.readFileSync(path.join(env.notes, 'a.txt'), 'utf8')), 'done');
+    window.eval(axe.source);
+    const r = await window.axe.run(doc, { rules: { 'color-contrast': { enabled: false }, region: { enabled: false } } });
+    assert.equal(r.violations.length, 0, r.violations.map((v) => v.id).join(', '));
+    window.close();
+  } finally {
+    await env.close();
+  }
+});
+
 test('?ui=tree is a tree with roving tabindex; keyboard moves, collapses and completes', async () => {
   const env = await boot({ 'a.txt': 'Project\n@ parent task due:2026-11-20\n\t@ child task\n< reply to Sam\n' });
   try {

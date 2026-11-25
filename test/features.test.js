@@ -903,3 +903,40 @@ test('move takes a task with its notes and subtasks under another parent or next
   await assert.rejects(() => move('a1', { parent: find(app, 'a1x').id }), /itself or its own subtasks/);
   await assert.rejects(() => move('a1', {}), /Say where/);
 });
+
+test('recently added lists tasks added any way, newest first, but not existing, renamed or newly watched ones', async () => {
+  let clock = new Date(2026, 10, 16, 9, 0);
+  const { notes, app } = setup({ 'a.txt': 'Work\n@ existing one\n@ rename me please\n' });
+  app.now = () => clock;
+  app.setMaster({ path: path.join(notes, 'a.txt') });
+  assert.equal(items(app, 'recent').length, 0);
+  assert.equal(app.summary().views.find((v) => v.id === 'recent').title, 'Recently added');
+
+  await app.action({ op: 'newTask', value: { text: 'from the app' } });
+  clock = new Date(2026, 10, 16, 9, 5);
+  fs.appendFileSync(path.join(notes, 'a.txt'), '@ typed in the file\n');
+  app.index.refresh(clock);
+  clock = new Date(2026, 10, 16, 9, 10);
+  fs.writeFileSync(path.join(notes, 'a.txt'), read(notes, 'a.txt').replace('rename me please', 'rename me please now'));
+  app.index.refresh(clock);
+  await app.action({ id: find(app, 'typed in the file').id, op: 'edit', value: { text: 'typed in the file, edited' } });
+
+  let rows = items(app, 'recent').filter((i) => i.type === 'task');
+  assert.deepEqual(rows.map((i) => i.text), ['typed in the file, edited', 'from the app']);
+  assert.ok(rows[0].meta.includes('Added today at 9:05 am'), rows[0].meta.join('|'));
+  assert.equal(app.summary().views.find((v) => v.id === 'recent').count, 2);
+
+  await app.action({ id: rows[1].id, op: 'toggleDone' });
+  rows = items(app, 'recent').filter((i) => i.type === 'task');
+  assert.equal(rows.length, 2, 'done tasks stay in the view');
+
+  const more = fs.mkdtempSync(path.join(os.tmpdir(), 'pt-more-'));
+  fs.writeFileSync(path.join(more, 'b.txt'), '@ in a new folder\n');
+  app.setFolders([{ path: notes }, { path: more }]);
+  assert.equal(items(app, 'recent').filter((i) => i.type === 'task').length, 2);
+
+  for (let n = 0; n < 16; n += 1) await app.action({ op: 'newTask', value: { text: `bulk ${n}` } });
+  rows = items(app, 'recent').filter((i) => i.type === 'task');
+  assert.equal(rows.length, 15);
+  assert.ok(JSON.parse(fs.readFileSync(path.join(app.dir, 'state.json'), 'utf8')).addedAt);
+});
