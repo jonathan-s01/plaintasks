@@ -14,6 +14,7 @@ const { modeFor, TEXT_EXT } = require('./indexer');
 const { matcher, fileBacked, heldBack } = require('./views');
 const { bucketIndex, isBucket } = require('./buckets');
 const { parseQuick, QuickError } = require('./quickadd');
+const { placementOf } = require('./placement');
 
 const own = (s) => /^[ \t]*/.exec(s)[0];
 const clean = (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
@@ -496,9 +497,18 @@ function install(App, HttpError) {
     if (!text) throw new HttpError(400, 'Type the new task first.');
     if (markerInfo(text)) throw new HttpError(400, 'Type the task without a leading symbol. The app adds the to-do symbol for you.');
     const home = listId ? this.getList(listId) : null;
+    let place;
+    try {
+      place = placementOf(v);
+    } catch (err) {
+      throw new HttpError(400, err.message);
+    }
+    const anchor = place ? this.task(place.ref) : null;
+    if (anchor && anchor.kind !== 'task') throw new HttpError(400, 'Add it next to or under a task, not a note or plain line.');
+    if (anchor && fileBacked(home) && home.file !== anchor.file) throw new HttpError(400, `${home.name} keeps its tasks in ${this.fileEntry(home.file).label}, but that task is in ${anchor.fileLabel}. Choose a task in the list's file, or leave out the list.`);
     // A list that keeps its tasks in a file gets new tasks at the end of that file.
-    const master = fileBacked(home) ? home.file : this.config.masterFile;
-    if (fileBacked(home) && !this.fileEntry(master)) {
+    const master = anchor ? anchor.file : fileBacked(home) ? home.file : this.config.masterFile;
+    if (!anchor && fileBacked(home) && !this.fileEntry(master)) {
       throw new HttpError(409, `The file for ${home.name} is missing or not in a watched folder. Choose another in Manage lists (press M).`, 'no-list-file');
     }
     if (!master || !fs.existsSync(master)) {
@@ -506,6 +516,7 @@ function install(App, HttpError) {
     }
     const opts = this.newTaskOptions(v);
     const parsed = this.parsedFor(master);
+    if (anchor && anchor.flags.done && place.how === 'parent') throw new HttpError(400, `${anchor.text} is done. Reopen it first, or add the subtask somewhere else.`);
     const todoChar = Object.entries(parsed.symbols).find(([, val]) => val === 'todo');
     let line = `${todoChar ? todoChar[0] : '@'} ${text}`;
     try {
@@ -518,23 +529,32 @@ function install(App, HttpError) {
     let message;
     this.oneUndo(text, () => {
       let res;
-      try {
-        res = appendLines(master, [line]);
-      } catch (err) {
-        this.writeFailed(err, 'save the new task');
+      if (anchor) {
+        res = this.insertPlaced(anchor, place.how, (indent) => [indent + line]);
+        this.pushUndo({ ...res.undo, text });
+      } else {
+        try {
+          res = appendLines(master, [line]);
+        } catch (err) {
+          this.writeFailed(err, 'save the new task');
+        }
+        this.pushUndo({ type: 'insert', file: master, lineIndex: res.lineIndex, lines: [line], text });
       }
-      this.pushUndo({ type: 'insert', file: master, lineIndex: res.lineIndex, lines: [line], text });
       this.lastWriteAt = Date.now();
       this.index.refresh(this.now());
       id = this.idAt(master, res.lineIndex);
       const fresh = id ? this.index.get(id) : null;
-      message = `Created task in ${fileBacked(home) ? this.fileEntry(master).label : this.masterLabel()}: ${text}`;
-      if (fileBacked(home)) {
+      message = `Created task in ${anchor ? anchor.fileLabel : fileBacked(home) ? this.fileEntry(master).label : this.masterLabel()}: ${text}`;
+      if (anchor) {
+        message = place.how === 'parent' ? `Created subtask of ${anchor.text}, in ${anchor.fileLabel}: ${text}` : `Created task ${place.how} ${anchor.text}, in ${anchor.fileLabel}: ${text}`;
+        if (res.parent && place.how !== 'parent') message += `. It is a subtask of ${res.parent.text}`;
+      }
+      if (fileBacked(home) && !anchor) {
         if (fresh) this.stateData.created[fresh.listKey] = toISO(this.now());
         this.stateData.lastList = home.id;
         this.saveState();
         message = `Created task in ${home.name}, at the end of ${this.fileEntry(master).label}: ${text}`;
-      } else if (fresh && listId) {
+      } else if (fresh && listId && !fileBacked(home)) {
         const target = this.getList(listId);
         this.mutateLists((lists) => {
           const l = lists.find((x) => x.id === target.id);

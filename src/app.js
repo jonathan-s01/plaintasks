@@ -288,6 +288,8 @@ class App {
         return this.todoList(t, value);
       case 'listMove':
         return this.listMove(t, value, list);
+      case 'move':
+        return this.moveTask(t, value);
       case 'open':
         this.opener(t.file, t.line);
         return { ok: true, message: `Opening ${t.fileLabel}. The task is on line ${t.line}.` };
@@ -925,5 +927,6 @@ require('./filelists').install(App, HttpError);
 require('./buckets').install(App, HttpError);
 require('./blocks').install(App, HttpError);
 require('./jirasync').install(App, HttpError);
+require('./placement').install(App, HttpError);
 
 module.exports = { App, HttpError };

@@ -501,7 +501,7 @@ function install(App, HttpError) {
         label: `Create ${sub ? `Sub-task of ${top.jira || top.text}` : `Task${cfg.epic ? ` in epic ${cfg.epic}` : ''}`}, status ${wantedStatus(cfg, kind, list)}${t.priority && t.priority !== 'medium' ? `, priority ${cfg.priorities[t.priority]}` : ''}${buckets.length ? `, ${buckets.length === 1 ? 'label' : 'labels'} ${buckets.join(', ')}` : ''}${items0 ? `, includes ${items0 === 1 ? '1 checklist item' : `${items0} checklist items`}` : ''}`,
         from: null,
         to: { kind, text: t.text },
-        checked: kind !== 'done',
+        checked: true,
       });
     }
 

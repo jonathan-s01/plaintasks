@@ -149,14 +149,15 @@ test('jira sync: creates Tasks under the epic and Sub-tasks under their main tas
   await syncedList(app, 'a.txt', { jiraLabels: 'a11y' });
   const plan = await app.syncPreview();
   const creates = plan.items.filter((i) => i.group === 'create');
-  assert.deepEqual(creates.map((i) => [i.task, i.checked]), [['Build partner network', true], ['Write scan', true], ['sub step', true], ['Old thing', false]]);
+  assert.deepEqual(creates.map((i) => [i.task, i.checked]), [['Build partner network', true], ['Write scan', true], ['sub step', true], ['Old thing', true]]);
   assert.match(creates[2].label, /^Create Sub-task of Write scan, .*includes 2 checklist items$/);
   assert.ok(!plan.info.some((i) => /deeper|deepest/.test(i.task)), 'checklist items are not listed as not synced');
   assert.ok(!plan.items.some((i) => i.field === 'link'), 'no Relates links: ~ is only a status');
   const before = read(notes, 'a.txt');
   assert.equal(jira.calls.filter((c) => c.method !== 'GET' && c.path !== '/search/jql').length, 0, 'the preview sends nothing');
 
-  const res = await app.syncApply({ choices: choose(plan) });
+  const oldThing = creates.find((i) => i.task === 'Old thing').id;
+  const res = await app.syncApply({ choices: choose(plan, { [oldThing]: 'skip' }) });
   assert.match(res.message, /Jira sync finished/);
   assert.ok(res.results.every((r) => r.ok), JSON.stringify(res.results));
   const text = read(notes, 'a.txt');

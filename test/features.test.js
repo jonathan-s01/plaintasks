@@ -867,3 +867,39 @@ test('the ; shorthand in the name sets options, with full words or three letters
   await assert.rejects(() => app.action({ op: 'newTask', value: { text: 'x; flurb' } }), /Did not understand "flurb"/);
   await assert.rejects(() => app.action({ op: 'newTask', value: { text: 'x; due' } }), /needs a date/);
 });
+
+test('newTask adds a subtask under any parent, or before or after a task, at the right indentation; undo removes it', async () => {
+  const { notes, app } = setup({ 'a.txt': 'Work\n@ alpha\n\t@ a1\n\t\tnote on a1\n@ beta\n' });
+  const sub = async (value) => app.action({ op: 'newTask', value });
+  let res = await sub({ text: 'a2', parent: find(app, 'alpha').id });
+  assert.equal(read(notes, 'a.txt'), 'Work\n@ alpha\n\t@ a1\n\t\tnote on a1\n\t@ a2\n@ beta\n');
+  assert.match(res.message, /Created subtask of alpha, in Work: a2/);
+  assert.equal(app.task(res.focusId).text, 'a2');
+  res = await sub({ text: 'b1; due 2026-12-01', parent: find(app, 'beta').id });
+  assert.equal(read(notes, 'a.txt'), 'Work\n@ alpha\n\t@ a1\n\t\tnote on a1\n\t@ a2\n@ beta\n\t@ b1 due:2026-12-01\n');
+  res = await sub({ text: 'a0', before: find(app, 'a1').id });
+  assert.match(res.message, /Created task before a1, in Work: a0\. It is a subtask of alpha/);
+  await sub({ text: 'gamma', after: find(app, 'alpha').id });
+  assert.equal(read(notes, 'a.txt'), 'Work\n@ alpha\n\t@ a0\n\t@ a1\n\t\tnote on a1\n\t@ a2\n@ gamma\n@ beta\n\t@ b1 due:2026-12-01\n');
+  app.undo();
+  app.undo();
+  assert.equal(read(notes, 'a.txt'), 'Work\n@ alpha\n\t@ a1\n\t\tnote on a1\n\t@ a2\n@ beta\n\t@ b1 due:2026-12-01\n');
+  await assert.rejects(() => sub({ text: 'x', parent: find(app, 'beta').id, after: find(app, 'alpha').id }), /only one of/);
+});
+
+test('move takes a task with its notes and subtasks under another parent or next to a task, and refuses its own block', async () => {
+  const { notes, app } = setup({ 'a.txt': '@ alpha\n\t@ a1\n\t\tnote\n\t\t@ a1x\n@ beta\n@ gamma\n' });
+  const move = (text, value) => app.action({ id: find(app, text).id, op: 'move', value });
+  let res = await move('a1', { parent: find(app, 'beta').id });
+  assert.equal(read(notes, 'a.txt'), '@ alpha\n@ beta\n\t@ a1\n\t\tnote\n\t\t@ a1x\n@ gamma\n');
+  assert.match(res.message, /Moved under beta: a1/);
+  assert.equal(app.task(res.focusId).text, 'a1');
+  await move('a1', { after: find(app, 'gamma').id });
+  assert.equal(read(notes, 'a.txt'), '@ alpha\n@ beta\n@ gamma\n@ a1\n\tnote\n\t@ a1x\n');
+  await move('gamma', { before: find(app, 'alpha').id });
+  assert.equal(read(notes, 'a.txt'), '@ gamma\n@ alpha\n@ beta\n@ a1\n\tnote\n\t@ a1x\n');
+  app.undo();
+  assert.equal(read(notes, 'a.txt'), '@ alpha\n@ beta\n@ gamma\n@ a1\n\tnote\n\t@ a1x\n');
+  await assert.rejects(() => move('a1', { parent: find(app, 'a1x').id }), /itself or its own subtasks/);
+  await assert.rejects(() => move('a1', {}), /Say where/);
+});
