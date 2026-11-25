@@ -544,7 +544,8 @@ function install(App, HttpError) {
             label: `${fieldName} differs${sn ? ' and both sides changed' : ' (first sync)'}`,
             from: s.jira, to: s.file, pullKind,
             choices: { file: `Keep file: ${fileWords}`, jira: `Take Jira: ${jiraWords}` },
-            choice: 'skip',
+            // plaintasks made this issue from the file, so on a first sync the file is the source of truth.
+            choice: !sn && ours ? 'file' : 'skip',
           });
         } else if (jiraChanged) {
           add({
@@ -719,8 +720,23 @@ function install(App, HttpError) {
               continue;
             }
             if (ctx.flaggedField && t.flags.waitingOnOthers) await client.update(made.key, { fields: { [ctx.flaggedField]: [{ value: 'Impediment' }] } });
-            const fresh = (await this.fetchIssues(client, cfg, '', [made.key])).get(made.key.toUpperCase());
-            if (fresh && !statusInSync(cfg, kind, fresh, list, true)) await this.moveIssue(client, cfg, made.key, kind, list);
+            // Read the new issue directly: JQL search can lag behind a create and miss it, which left done tasks at To Do.
+            let fresh = null;
+            try {
+              fresh = await client.v3('GET', `/issue/${encodeURIComponent(made.key)}?fields=status,resolution`);
+            } catch {
+              /* unknown status: move it below */
+            }
+            const known = fresh && fresh.fields && fresh.fields.status;
+            const landsRight = kind === 'open' && !(list && list.jiraStatus);
+            if (known ? !statusInSync(cfg, kind, fresh, list, true) : !landsRight) {
+              try {
+                await this.moveIssue(client, cfg, made.key, kind, list);
+              } catch (err) {
+                note(false, `Created ${made.key}: ${t.text}, but could not set its status to ${wantedStatus(cfg, kind, list)}: ${err.message}`);
+                continue;
+              }
+            }
             note(true, `Created ${made.key}: ${t.text}`);
           } catch (err) {
             note(false, `Could not create ${t.text}: ${err.message}`);

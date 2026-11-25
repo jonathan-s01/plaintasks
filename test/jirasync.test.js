@@ -34,6 +34,8 @@ const status = (name) => ({ name, statusCategory: { key: CATEGORY[name] } });
 function mockJira() {
   const issues = new Map();
   const calls = [];
+  // Jira's search index can lag behind a create; while true, new issues are missing from /search/jql.
+  const state = { lag: false, fresh: new Set() };
   let next = 100;
   const add = (key, fields) => issues.set(key, { key, fields: { status: status('To Do'), resolution: null, labels: [], issuelinks: [], ...fields } });
   const reply = (code, j) => ({ ok: code < 300, status: code, json: async () => j, text: async () => (j == null ? '' : JSON.stringify(j)) });
@@ -45,14 +47,16 @@ function mockJira() {
     if (opts.method === 'GET' && p === '/field') return reply(200, [{ id: 'summary', name: 'Summary' }, { id: 'customfield_10021', name: 'Flagged' }]);
     if (opts.method === 'POST' && p === '/search/jql') {
       const keys = (/key in \(([^)]*)\)/.exec(body.jql) || [, ''])[1].split(',').filter(Boolean);
-      return reply(200, { issues: keys.filter((k) => issues.has(k)).map((k) => structuredClone(issues.get(k))), isLast: true });
+      return reply(200, { issues: keys.filter((k) => issues.has(k) && !(state.lag && state.fresh.has(k))).map((k) => structuredClone(issues.get(k))), isLast: true });
     }
     if (opts.method === 'POST' && p === '/issue') {
       const key = `A11Y-${next++}`;
       add(key, { ...body.fields });
+      state.fresh.add(key);
       return reply(201, { id: '1', key });
     }
     let m = /^\/issue\/([^/]+)$/.exec(p);
+    if (m && opts.method === 'GET') return issues.has(m[1]) ? reply(200, structuredClone(issues.get(m[1]))) : reply(404, { errorMessages: ['not found'] });
     if (m && opts.method === 'PUT') {
       const is = issues.get(m[1]);
       Object.assign(is.fields, body.fields || {});
@@ -63,6 +67,7 @@ function mockJira() {
       return reply(204, null);
     }
     m = /^\/issue\/([^/]+)\/transitions$/.exec(p);
+    if (m && opts.method === 'POST' && state.failTransitions) return reply(400, { errorMessages: ['Transition is not valid'] });
     if (m && opts.method === 'POST') {
       const is = issues.get(m[1]);
       const name = TRANSITIONS[body.transition.id];
@@ -85,7 +90,7 @@ function mockJira() {
     }
     return reply(404, { errorMessages: [`no mock for ${opts.method} ${p}`] });
   };
-  return { issues, calls, add, fetch };
+  return { issues, calls, add, fetch, state };
 }
 
 function setup(files) {
@@ -482,4 +487,38 @@ test('jira sync: opt-in; only main tasks marked jira:yes are created, subtasks o
   assert.match((await app.action({ id: item('unmarked child').id, op: 'jiraYes' })).message, /Press j on the main task instead: Unmarked$/);
   assert.match((await app.action({ id: item('Linked').id, op: 'jiraYes' })).message, /^Already in Jira as A11Y-7/);
   assert.equal(read(notes, 'a.txt'), before, 'refusals write nothing');
+});
+
+test('jira sync: a done task created in Jira ends up resolved even when search lags, and a first-sync status conflict on an issue plaintasks made keeps the file', async () => {
+  const { notes, app, jira } = setup({ 'a.txt': '+ Finished audit done:2026-11-10 jira:yes\n' });
+  await syncedList(app, 'a.txt');
+  jira.state.lag = true;
+  const plan = await app.syncPreview();
+  const res = await app.syncApply({ choices: choose(plan, { [plan.items[0].id]: 'apply' }) });
+  assert.ok(res.results.every((r) => r.ok), JSON.stringify(res.results));
+  assert.match(read(notes, 'a.txt'), /jira:A11Y-100/);
+  const f = jira.issues.get('A11Y-100').fields;
+  assert.deepEqual([f.status.name, f.resolution.name, f.duedate], ['Resolved', 'Done', '2026-11-10']);
+  const creates = jira.calls.findIndex((c) => c.method === 'POST' && c.path === '/issue');
+  assert.ok(jira.calls.slice(creates).some((c) => c.path === '/issue/A11Y-100/transitions' && c.body.fields.resolution.id === '10000'), 'resolved in the same apply');
+
+  // An issue plaintasks created that is still To Do with no status snapshot: the file side is preselected.
+  jira.state.lag = false;
+  f.status = status('To Do');
+  f.resolution = null;
+  delete app.stateData.jira.synced['A11Y-100'];
+  const again = await app.syncPreview();
+  const conflict = again.items.find((i) => i.id === 'A11Y-100:status');
+  assert.deepEqual([conflict.group, conflict.choice], ['conflict', 'file']);
+});
+
+test('jira sync: when the status transition after a create fails, the result says the issue was created and its status was not set', async () => {
+  const { notes, app, jira } = setup({ 'a.txt': '+ Finished audit done:2026-11-10 jira:yes\n' });
+  await syncedList(app, 'a.txt');
+  jira.state.failTransitions = true;
+  const plan = await app.syncPreview();
+  const res = await app.syncApply({ choices: choose(plan, { [plan.items[0].id]: 'apply' }) });
+  assert.deepEqual(res.results.map((r) => r.ok), [false]);
+  assert.match(res.results[0].text, /^Created A11Y-100: Finished audit, but could not set its status to Resolved: .*Transition is not valid/);
+  assert.match(read(notes, 'a.txt'), /jira:A11Y-100/, 'the key is still written, so it is not created twice');
 });
