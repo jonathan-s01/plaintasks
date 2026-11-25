@@ -20,6 +20,8 @@ Your settings live outside the repo, in `~/.config/plaintasks/` (override with `
 
 ## How tasks are recognised
 
+The complete reference for the file format, every marker and token, how each maps to Jira, and the quick-add shorthand is [docs/FORMAT.md](docs/FORMAT.md).
+
 A marker is one or more of these symbols at the start of a line (after optional indentation). A space after it is normal, but `+Wayne thing` and `@call Sam` work too (not for `*`, `%` and `~` alone, and not when a digit follows, so `+1 for that`, `~/Documents` and `~5 min` stay plain text; `~~` is always strikethrough). Markers combine, e.g. `+*` or `@%`. A `$` at the start of a line (`$ old thing`, always with a space, so `$5 lunch` stays plain text) means deleted: the app hides the line and everything nested under it, and leaves the text in your file.
 
 | Symbol | Meaning |
